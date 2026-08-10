@@ -1,0 +1,58 @@
+# https://goframe.org/docs/web/server-config-file-template
+server:
+  address:     ":8000"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+  dumpRouterMap: true
+  accessLogEnabled: true
+  errorLogEnabled: true
+
+# https://goframe.org/docs/core/glog-config
+logger:
+  level : "all"
+  stdout: true
+  ctxKeys: ["RequestId"]
+
+# https://goframe.org/docs/core/gdb-config-file
+database:
+  default:
+    type:    "mysql"
+    host:    "127.0.0.1"
+    port:    "3306"
+    user:    "root"
+    pass:    "root"
+    name:    "hinay_admin"
+    charset: "utf8mb4"
+    debug:   true
+
+# https://goframe.org/docs/core/gredis-config
+redis:
+  default:
+    address: "127.0.0.1:6379"
+    db:      0
+
+# JWT 配置
+jwt:
+  secret:     "hinay-admin-please-change-me"
+  expireSec:  86400      # token 过期时间(秒) 24h
+  issuer:     "hinay-admin"
+  header:     "Authorization"
+
+# Casbin 配置(策略表名固定 casbin_rule)
+casbin:
+  enable: true
+  model: |
+    [request_definition]
+    r = sub, obj, act
+    
+    [policy_definition]
+    p = sub, obj, act
+    
+    [role_definition]
+    g = _, _
+    
+    [policy_effect]
+    e = some(where (p.eft == allow))
+    
+    [matchers]
+    m = g(r.sub, p.sub) && keyMatch(r.obj, p.obj) && (r.act == p.act || p.act == "*")

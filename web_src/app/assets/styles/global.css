@@ -1,0 +1,65 @@
+html, body, #__nuxt, #__layout {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  background: #f0f2f5;
+  color: #303133;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.app-page {
+  padding: 16px;
+}
+
+.app-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.app-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.app-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* 页面标题与图标组合 */
+.app-page__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+}
+
+/* 全局卡片圆角与阴影微调 */
+.el-card {
+  border-radius: 8px;
+}
+
+/* 全局按钮与图标间距微调 */
+.el-button [class*='el-icon'] + span,
+.el-button span + [class*='el-icon'] {
+  margin-left: 4px;
+}
+
+/* 表格表头背景轻微发白, 增强层次 */
+.el-table th.el-table__cell {
+  background-color: #fafbfc;
+}

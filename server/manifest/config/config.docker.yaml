@@ -1,0 +1,56 @@
+# Docker 环境专用配置
+# 通过环境变量 GF_GCFG_FILE=config.docker.yaml 指定加载此文件
+
+server:
+  address:     ":8000"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+  dumpRouterMap: true
+  accessLogEnabled: true
+  errorLogEnabled: true
+
+logger:
+  level : "all"
+  stdout: true
+  ctxKeys: ["RequestId"]
+
+database:
+  default:
+    type:    "mysql"
+    host:    "mysql"
+    port:    "3306"
+    user:    "root"
+    pass:    "${MYSQL_ROOT_PASSWORD}"
+    name:    "hinay_admin"
+    charset: "utf8mb4"
+    extra:  "collation=utf8mb4_unicode_ci"
+    debug:   true
+
+redis:
+  default:
+    address: "redis:6379"
+    db:      0
+
+jwt:
+  secret:     "${JWT_SECRET}"
+  expireSec:  86400
+  issuer:     "hinay-admin"
+  header:     "Authorization"
+
+casbin:
+  enable: true
+  model: |
+    [request_definition]
+    r = sub, obj, act
+
+    [policy_definition]
+    p = sub, obj, act
+
+    [role_definition]
+    g = _, _
+
+    [policy_effect]
+    e = some(where (p.eft == allow))
+
+    [matchers]
+    m = g(r.sub, p.sub) && keyMatch(r.obj, p.obj) && (r.act == p.act || p.act == "*")
