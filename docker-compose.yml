@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:8.0
+    image: mariadb:11.8.8
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hinay123456}
@@ -16,7 +16,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:6-alpine
+    image: redis:8.10.0
     restart: unless-stopped
     volumes:
       - redis_data:/data

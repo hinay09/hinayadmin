@@ -5,11 +5,11 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
 WORKDIR /build
 
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --ignore-scripts
+COPY package.json ./
+RUN yarn install --ignore-scripts
 
 COPY . .
-RUN yarn install --frozen-lockfile
+RUN yarn install
 RUN yarn build
 
 # ---- 运行阶段 ----
