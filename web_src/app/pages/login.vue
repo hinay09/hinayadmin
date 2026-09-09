@@ -17,9 +17,11 @@ const api = useAuthApi()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+// 安全: 不预填默认凭据; 默认账号提示仅存在于开发构建
+const showDefaultHint = import.meta.dev
 const form = reactive({
-  username: 'admin',
-  password: '123456',
+  username: '',
+  password: '',
 })
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -39,7 +41,11 @@ async function handleSubmit() {
     const menusRes = await api.menus()
     userStore.setMenus(menusRes.menus, menusRes.permissions)
     ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || '/'
+    // 开放跳转防护: 仅允许站内路径, 拒绝 //host、/\host 与外部 URL
+    const raw = (route.query.redirect as string) || '/'
+    const redirect = raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\')
+      ? raw
+      : '/'
     router.replace(redirect)
   }
   catch {}
@@ -88,7 +94,8 @@ async function handleSubmit() {
           登录
         </el-button>
       </el-form>
-      <div class="tips">默认账号: admin / 123456</div>
+      <!-- 默认凭据提示仅在开发构建渲染, 生产构建(import.meta.dev=false)不输出 -->
+      <div v-if="showDefaultHint" class="tips">默认账号: admin / 123456 (仅开发环境)</div>
     </div>
   </div>
 </template>

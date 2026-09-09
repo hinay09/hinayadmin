@@ -60,11 +60,16 @@ export const useUserStore = defineStore('user', {
     restore() {
       if (import.meta.client && !this.token) {
         const t = localStorage.getItem('hinay_token')
-        if (t) {
-          this.token = t
-          const e = localStorage.getItem('hinay_token_expire')
-          if (e) this.expireAt = Number(e)
+        const e = Number(localStorage.getItem('hinay_token_expire') || 0)
+        if (!t) return
+        // 已过期的 token 不再恢复, 避免带着失效凭据发请求
+        if (e && e < Date.now() / 1000) {
+          localStorage.removeItem('hinay_token')
+          localStorage.removeItem('hinay_token_expire')
+          return
         }
+        this.token = t
+        if (e) this.expireAt = e
       }
     },
 

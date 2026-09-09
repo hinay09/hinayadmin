@@ -53,9 +53,8 @@ export function useRequest() {
       headers['Authorization'] = `Bearer ${userStore.token}`
     }
 
-    const fullUrl = url.startsWith('http')
-      ? url
-      : `${config.public.apiBase}${url}`
+    // 仅允许站内相对路径拼接 apiBase, 拒绝调用方传入完整外部 URL
+    const fullUrl = `${config.public.apiBase}${url}`
 
     try {
       const res = await $fetch<ApiResult<T>>(fullUrl, {

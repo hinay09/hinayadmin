@@ -214,6 +214,13 @@ type AuditLogItem struct {
 	Action     string      `json:"action"`
 	Resource   string      `json:"resource"`
 	ResourceId string      `json:"resourceId"`
+	Method     string      `json:"method"`
+	Path       string      `json:"path"`
+	StatusCode int         `json:"statusCode"`
+	Code       int         `json:"code"`
+	Message    string      `json:"message"`
+	DurationMs int64       `json:"durationMs"`
+	RequestId  string      `json:"requestId"`
 	Detail     string      `json:"detail"`
 	Ip         string      `json:"ip"`
 	UserAgent  string      `json:"userAgent"`

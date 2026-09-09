@@ -20,6 +20,7 @@ import (
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/response"
 	"hinay.cn/admin/utility/xerror"
 )
@@ -36,6 +37,36 @@ func NewFile() *sFile {
 
 // uploadDir 上传文件存储目录。
 const uploadDir = "resource/upload"
+
+// maxUploadSize 单文件大小上限(20MB, 与 nginx client_max_body_size 保持一致)。
+const maxUploadSize = 20 << 20
+
+// allowedUploadExts 上传扩展名白名单。
+// 安全约束: 排除 html/htm/svg/xml 等可被浏览器当页面执行的类型(存储型 XSS 载体),
+// 以及 php/jsp/sh 等可执行脚本(防止反代/托管环境开启脚本解析导致 RCE)。
+var allowedUploadExts = map[string]bool{
+	// 图片
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true, ".ico": true,
+	// 文档
+	".pdf": true, ".txt": true, ".csv": true, ".md": true,
+	".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
+	// 压缩包
+	".zip": true, ".rar": true, ".7z": true, ".tar": true, ".gz": true,
+	// 音视频
+	".mp3": true, ".mp4": true, ".wav": true, ".mov": true,
+	// 数据
+	".json": true,
+}
+
+// dangerousContentTypes 内容嗅探识别为这些类型的文件直接拒绝
+// (真实内容是页面/脚本的文件, 即使扩展名在白名单内也不允许)。
+var dangerousContentTypes = map[string]bool{
+	"text/html":             true,
+	"image/svg+xml":         true,
+	"application/xhtml+xml": true,
+	"text/xml":              true,
+	"application/xml":       true,
+}
 
 // ensureDir 确保目录存在。
 func ensureDir(dir string) error {
@@ -72,9 +103,29 @@ func (s *sFile) List(ctx context.Context, req *v1.FileListReq) (res *v1.FileList
 }
 
 // Upload 上传文件。
+// 校验链: 扩展名白名单 -> 大小上限 -> 文件头内容嗅探(拒绝页面/脚本类真实内容)。
 func (s *sFile) Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader) (res *v1.FileUploadRes, err error) {
-	originalName := header.Filename
+	originalName := filepath.Base(header.Filename)
 	ext := strings.ToLower(filepath.Ext(originalName))
+	if !allowedUploadExts[ext] {
+		return nil, xerror.New(xerror.CodeBusinessError, "不支持的文件类型: "+ext)
+	}
+	if header.Size > maxUploadSize {
+		return nil, xerror.New(xerror.CodeBusinessError, "文件大小不能超过 20MB")
+	}
+
+	// 内容嗅探: 读文件头识别真实类型, 拒绝伪装扩展名的页面/脚本内容
+	var mimeType string
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	mimeType = mimeutil.Detect(head[:n])
+	if dangerousContentTypes[mimeType] {
+		return nil, xerror.New(xerror.CodeBusinessError, "文件内容包含可执行页面, 已拒绝")
+	}
+	if _, serr := file.Seek(0, io.SeekStart); serr != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, serr, "读取文件失败")
+	}
+
 	// 生成唯一文件名
 	saveName := fmt.Sprintf("%s%s", guid.S(), ext)
 
@@ -96,7 +147,6 @@ func (s *sFile) Upload(ctx context.Context, file multipart.File, header *multipa
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "写入文件失败")
 	}
 
-	mimeType := header.Header.Get("Content-Type")
 	fileSize := header.Size
 	url := fmt.Sprintf("/upload/%s/%s", dateDir, saveName)
 

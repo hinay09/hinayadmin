@@ -1,9 +1,14 @@
 # https://goframe.org/docs/web/server-config-file-template
+# 复制为 config.yaml 后, 必须完成以下两件事:
+#   1. 执行 `openssl rand -hex 32` 生成随机 JWT 密钥并填入 jwt.secret
+#      (secret 缺失/过短/为占位符时服务会拒绝启动, 防止带公开弱密钥部署)
+#   2. 修改数据库与 Redis 连接信息
 server:
   address:     ":8000"
+  # openapi/swagger 仅建议开发环境开启; 生产环境必须注释掉以下两行, 避免接口清单对外泄露
   openapiPath: "/api.json"
   swaggerPath: "/swagger"
-  dumpRouterMap: true
+  dumpRouterMap: false
   accessLogEnabled: true
   errorLogEnabled: true
 
@@ -23,7 +28,7 @@ database:
     pass:    "root"
     name:    "hinay_admin"
     charset: "utf8mb4"
-    debug:   true
+    debug:   false    # 生产环境保持 false, 避免含敏感参数的 SQL 进入日志
 
 # https://goframe.org/docs/core/gredis-config
 redis:
@@ -31,9 +36,15 @@ redis:
     address: "127.0.0.1:6379"
     db:      0
 
+# CORS 跨域来源白名单(显式枚举, 不支持 *; 认证走 Authorization 头, 不启用 Cookie 凭据)
+# 按实际前端域名配置; 不配置则不下发 CORS 头(仅同源可用)
+cors:
+  allowOrigins:
+    - "http://localhost:3000"
+
 # JWT 配置
 jwt:
-  secret:     "hinay-admin-please-change-me"
+  secret:     "CHANGE-ME-openssl-rand-hex-32"   # 占位符, 必须替换, 否则服务拒绝启动
   expireSec:  86400      # token 过期时间(秒) 24h
   issuer:     "hinay-admin"
   header:     "Authorization"
@@ -44,15 +55,15 @@ casbin:
   model: |
     [request_definition]
     r = sub, obj, act
-    
+
     [policy_definition]
     p = sub, obj, act
-    
+
     [role_definition]
     g = _, _
-    
+
     [policy_effect]
     e = some(where (p.eft == allow))
-    
+
     [matchers]
     m = g(r.sub, p.sub) && keyMatch(r.obj, p.obj) && (r.act == p.act || p.act == "*")

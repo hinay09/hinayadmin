@@ -3,14 +3,16 @@ services:
     image: mariadb:11.8.8
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hinay123456}
+      # 密码必填(从 .env 读取), 不提供弱默认回退值, 避免带公开已知口令部署
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-hinay_admin}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./server/manifest/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-hinay123456}"]
+      # 使用镜像内置 healthcheck.sh, 避免密码出现在进程列表中
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,11 +33,12 @@ services:
       context: ./server
       dockerfile: Dockerfile
     restart: unless-stopped
+    # 仅绑定宿主机回环地址供本地调试; 对外流量统一走 web(nginx) 入口
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hinay123456}
-      JWT_SECRET: ${JWT_SECRET:-hinay-admin-please-change-me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET (openssl rand -hex 32)}
       GF_GCFG_FILE: config.docker.yaml
     depends_on:
       mysql:

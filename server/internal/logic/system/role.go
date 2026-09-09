@@ -166,6 +166,31 @@ func (s *sRole) GetMenus(ctx context.Context, req *v1.RoleGetMenusReq) (res *v1.
 	return &v1.RoleGetMenusRes{MenuIds: ids}, nil
 }
 
+// validApiMethods 允许配置的 HTTP 方法枚举。
+var validApiMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true, "*": true,
+}
+
+// validateApiPolicy 校验单条 API 策略, 防止意外写入超宽通配或非 API 路径导致越权。
+func validateApiPolicy(path, method string) error {
+	path = strings.TrimSpace(path)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if !strings.HasPrefix(path, "/api/") {
+		return xerror.New(xerror.CodeBusinessError, "API 路径必须以 /api/ 开头: "+path)
+	}
+	if strings.ContainsAny(path, " \t") || strings.Contains(path, "..") {
+		return xerror.New(xerror.CodeBusinessError, "API 路径包含非法字符: "+path)
+	}
+	// 通配符只允许结尾的 "/*", 避免中间通配意外放大授权面
+	if strings.Contains(path, "*") && !strings.HasSuffix(path, "/*") {
+		return xerror.New(xerror.CodeBusinessError, `API 路径通配符只支持结尾 "/*": `+path)
+	}
+	if !validApiMethods[method] {
+		return xerror.New(xerror.CodeBusinessError, "非法的 HTTP 方法: "+method)
+	}
+	return nil
+}
+
 // AssignApis 角色分配 API 权限。
 func (s *sRole) AssignApis(ctx context.Context, req *v1.RoleAssignApisReq) (res *v1.RoleAssignApisRes, err error) {
 	var role *model.SysRole
@@ -174,7 +199,13 @@ func (s *sRole) AssignApis(ctx context.Context, req *v1.RoleAssignApisReq) (res 
 	}
 	apis := make([]casbinx.ApiPolicy, 0, len(req.Apis))
 	for _, a := range req.Apis {
-		apis = append(apis, casbinx.ApiPolicy{Path: a.Path, Method: a.Method})
+		if verr := validateApiPolicy(a.Path, a.Method); verr != nil {
+			return nil, verr
+		}
+		apis = append(apis, casbinx.ApiPolicy{
+			Path:   strings.TrimSpace(a.Path),
+			Method: strings.ToUpper(strings.TrimSpace(a.Method)),
+		})
 	}
 	if err = casbinx.SetRoleApis(ctx, role.Code, apis); err != nil {
 		return nil, err

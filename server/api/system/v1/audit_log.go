@@ -10,8 +10,10 @@ import (
 // AuditLogListReq 操作日志分页列表。
 type AuditLogListReq struct {
 	g.Meta   `path:"/system/audit-logs" tags:"SystemAuditLog" method:"get" summary:"操作日志分页列表"`
-	Keyword  string `json:"keyword"  in:"query" dc:"用户名/操作/资源模糊"`
+	Keyword  string `json:"keyword"  in:"query" dc:"用户名/路径/资源/消息模糊"`
+	Username string `json:"username" in:"query" dc:"用户名精确过滤"`
 	Action   string `json:"action"   in:"query" dc:"操作类型精确过滤"`
+	Result   string `json:"result"   in:"query" dc:"结果过滤: success/fail" v:"in:,success,fail"`
 	StartAt  string `json:"startAt" in:"query" dc:"开始时间"`
 	EndAt    string `json:"endAt"   in:"query" dc:"结束时间"`
 	Page     int    `json:"page"     in:"query" d:"1"  dc:"页码"`

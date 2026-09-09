@@ -1,11 +1,11 @@
 # Docker 环境专用配置
 # 通过环境变量 GF_GCFG_FILE=config.docker.yaml 指定加载此文件
+# 该配置用于容器(生产)部署, 默认关闭 openapi/swagger/SQL 调试等调试面
 
 server:
   address:     ":8000"
-  openapiPath: "/api.json"
-  swaggerPath: "/swagger"
-  dumpRouterMap: true
+  # 生产环境不暴露 openapi/swagger 接口清单
+  dumpRouterMap: false
   accessLogEnabled: true
   errorLogEnabled: true
 
@@ -24,13 +24,18 @@ database:
     name:    "hinay_admin"
     charset: "utf8mb4"
     extra:  "collation=utf8mb4_unicode_ci"
-    debug:   true
+    debug:   false
 
 redis:
   default:
     address: "redis:6379"
     db:      0
 
+# CORS 跨域来源白名单: 容器内由 nginx 同源反代, 无跨域需求, 保持为空
+cors:
+  allowOrigins: []
+
+# JWT 配置 (secret 由环境变量 JWT_SECRET 注入, 未设置时启动脚本占位符保留, 服务拒绝启动)
 jwt:
   secret:     "${JWT_SECRET}"
   expireSec:  86400

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/util/guid"
@@ -21,6 +20,7 @@ import (
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/jwtx"
+	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/password"
 	"hinay.cn/admin/utility/xerror"
 )
@@ -49,7 +49,14 @@ func dedupUint64(in []uint64) []uint64 {
 }
 
 // Login 用户名密码登录。
+// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
+	failKey := consts.LoginFailPrefix + clientIp(ctx) + ":" + req.Username
+	// 锁定检查: 窗口内失败次数已达上限
+	if n, rerr := g.Redis().Do(ctx, "GET", failKey); rerr == nil && n != nil && n.Int64() >= consts.LoginFailMax {
+		return nil, xerror.New(xerror.CodeBusinessError, "失败次数过多, 请 15 分钟后再试")
+	}
+
 	var u *model.SysUser
 	err = dao.SysUser.Ctx(ctx).
 		Where("username", req.Username).
@@ -59,14 +66,21 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询用户失败")
 	}
 	if u == nil {
+		// 与"密码错误"走相同 bcrypt 计算与错误码, 抹平时间差与提示差异, 防用户名枚举
+		password.Verify(dummyBcryptHash, req.Password)
+		recordLoginFailure(ctx, failKey)
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}
 	if u.Status != consts.StatusEnabled {
 		return nil, xerror.New(xerror.CodeUserDisabled)
 	}
 	if !password.Verify(u.Password, req.Password) {
+		recordLoginFailure(ctx, failKey)
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}
+
+	// 登录成功, 清除失败计数
+	_, _ = g.Redis().Do(ctx, "DEL", failKey)
 
 	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
 	if err != nil {
@@ -84,6 +98,38 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 			Roles:    roles,
 		},
 	}, nil
+}
+
+// dummyBcryptHash 任意随机明文的合法 bcrypt 哈希, 仅用于用户不存在时制造等时比较。
+const dummyBcryptHash = "$2a$10$7EqJtq98hPqEX7fNZaFWoOhi5B0G1S3kA9dQ5tqKqQ9wYvJmQ3kOu"
+
+// clientIp 从请求上下文提取客户端 IP。
+func clientIp(ctx context.Context) string {
+	if r := g.RequestFromCtx(ctx); r != nil {
+		return r.GetClientIp()
+	}
+	return "unknown"
+}
+
+// recordLoginFailure 累计一次登录失败; 首次失败时设置统计窗口 TTL。
+func recordLoginFailure(ctx context.Context, failKey string) {
+	n, err := g.Redis().Do(ctx, "INCR", failKey)
+	if err != nil {
+		return
+	}
+	if n != nil && n.Int64() == 1 {
+		_, _ = g.Redis().Do(ctx, "EXPIRE", failKey, consts.LoginFailWindowSec)
+	}
+}
+
+// blacklistToken 将 token 原子写入黑名单, TTL 覆盖 token 剩余生命周期。
+func blacklistToken(ctx context.Context, token string) error {
+	ttl := int64(86400)
+	if v, cerr := g.Cfg().Get(ctx, "jwt.expireSec"); cerr == nil && v.Int64() > 0 {
+		ttl = v.Int64()
+	}
+	_, err := g.Redis().Do(ctx, "SET", consts.JWTBlacklistPrefix+token, 1, "EX", ttl)
+	return err
 }
 
 // Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
@@ -105,12 +151,9 @@ func (s *sAuth) Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.Refres
 	// 旧 token 加入黑名单
 	oldToken := contextx.JwtToken(ctx)
 	if oldToken != "" {
-		expire := time.Hour * 24
-		if v, cerr := g.Cfg().Get(ctx, "jwt.expireSec"); cerr == nil {
-			expire = time.Duration(v.Int64()) * time.Second
+		if berr := blacklistToken(ctx, oldToken); berr != nil {
+			return nil, xerror.Wrap(xerror.CodeBusinessError, berr, "旧token注销失败")
 		}
-		_, _ = g.Redis().Set(ctx, consts.JWTBlacklistPrefix+oldToken, 1)
-		_, _ = g.Redis().Expire(ctx, consts.JWTBlacklistPrefix+oldToken, int64(expire.Seconds()))
 	}
 
 	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
@@ -126,15 +169,9 @@ func (s *sAuth) Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRe
 	if token == "" {
 		return &v1.LogoutRes{}, nil
 	}
-	// 设置过期时间略大于 jwt 过期, 这里直接 24h
-	expire := time.Hour * 24
-	if v, cerr := g.Cfg().Get(ctx, "jwt.expireSec"); cerr == nil {
-		expire = time.Duration(v.Int64()) * time.Second
+	if err = blacklistToken(ctx, token); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "登出失败")
 	}
-	if _, err = g.Redis().Set(ctx, consts.JWTBlacklistPrefix+token, 1); err != nil {
-		return nil, err
-	}
-	_, _ = g.Redis().Expire(ctx, consts.JWTBlacklistPrefix+token, int64(expire.Seconds()))
 	return &v1.LogoutRes{}, nil
 }
 
@@ -235,7 +272,13 @@ func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (
 // avatarUploadDir 头像存储目录。
 const avatarUploadDir = "resource/upload/avatar"
 
-// allowedAvatarTypes 允许的头像 MIME 类型。
+// allowedAvatarExts 允许的头像扩展名(不含 svg: svg 可内嵌脚本, 是存储型 XSS 载体)。
+var allowedAvatarExts = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+}
+
+// allowedAvatarTypes 允许的、由服务端内容嗅探得到的 MIME 类型。
+// multipart 的 Content-Type 头完全由客户端控制, 不可作为校验依据。
 var allowedAvatarTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
@@ -251,10 +294,9 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 	}
 
 	file := req.File
-	// 校验文件类型
+	// 扩展名白名单
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	mime := file.Header.Get("Content-Type")
-	if !allowedAvatarTypes[mime] {
+	if !allowedAvatarExts[ext] {
 		return nil, xerror.New(xerror.CodeBusinessError, "仅支持 JPG/PNG/GIF/WEBP 格式")
 	}
 	// 校验文件大小 (2MB)
@@ -274,6 +316,16 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "读取文件失败")
 	}
 	defer src.Close()
+
+	// 内容嗅探: 按文件头识别真实类型, 拒绝伪造扩展名/伪造 Content-Type 的文件
+	head := make([]byte, 512)
+	n, _ := src.Read(head)
+	if detected := mimeutil.Detect(head[:n]); !allowedAvatarTypes[detected] {
+		return nil, xerror.New(xerror.CodeBusinessError, "文件内容不是有效的图片")
+	}
+	if _, serr := src.Seek(0, io.SeekStart); serr != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, serr, "读取文件失败")
+	}
 
 	dst, err := os.Create(savePath)
 	if err != nil {

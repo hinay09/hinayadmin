@@ -347,17 +347,24 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', 'common', '/api/v1/message/private',       'POST',   '', '', '');
 
 -- ------------------------------------------------------------
--- 操作日志: 由中间件自动写入, 记录 POST/PUT/DELETE 操作
+-- 操作日志: 由中间件自动写入, 记录 POST/PUT/DELETE 操作(含成功/失败/未授权)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_audit_log`;
 CREATE TABLE `sys_audit_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID',
   `username`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '用户名',
-  `action`      VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '操作类型(create/update/delete/upload/...)',
+  `action`      VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '操作类型(create/update/delete/upload/login/...)',
   `resource`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '操作资源(如user/role/menu/dict/file)',
   `resource_id` VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '资源标识',
-  `detail`      TEXT         NOT NULL                   COMMENT '详情(JSON格式)',
+  `method`      VARCHAR(10)  NOT NULL DEFAULT ''        COMMENT 'HTTP方法',
+  `path`        VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '请求路径',
+  `status_code` INT          NOT NULL DEFAULT 0        COMMENT 'HTTP状态码',
+  `code`        INT          NOT NULL DEFAULT 0        COMMENT '业务码(0=成功)',
+  `message`     VARCHAR(512) NOT NULL DEFAULT ''        COMMENT '业务消息/失败原因',
+  `duration_ms` INT          NOT NULL DEFAULT 0        COMMENT '耗时(毫秒)',
+  `request_id`  VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '请求ID(链路追踪)',
+  `detail`      TEXT         NOT NULL                   COMMENT '详情(脱敏后的请求体)',
   `ip`          VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT 'IP地址',
   `user_agent`  VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'User-Agent',
   `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -365,7 +372,8 @@ CREATE TABLE `sys_audit_log` (
   KEY `idx_user` (`user_id`),
   KEY `idx_action` (`action`),
   KEY `idx_resource` (`resource`),
-  KEY `idx_created` (`created_at`)
+  KEY `idx_created` (`created_at`),
+  KEY `idx_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
 
 -- ------------------------------------------------------------

@@ -29,6 +29,16 @@ const (
 	AuthScheme = "Bearer "
 	// JWTBlacklistPrefix Redis 中 JWT 黑名单 Key 前缀。
 	JWTBlacklistPrefix = "hinay:jwt:black:"
+	// LoginFailPrefix Redis 中登录失败计数 Key 前缀。
+	LoginFailPrefix = "hinay:login:fail:"
+)
+
+// 登录防暴力破解配置。
+const (
+	// LoginFailMax 统计窗口内允许的最大失败次数, 超过后锁定。
+	LoginFailMax = 5
+	// LoginFailWindowSec 失败计数统计窗口(秒)。
+	LoginFailWindowSec = 900
 )
 
 // 通用状态

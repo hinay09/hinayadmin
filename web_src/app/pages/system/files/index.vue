@@ -37,11 +37,12 @@ function formatSize(bytes: number): string {
   return `${size.toFixed(2)} ${units[i]}`
 }
 
+// 仅放行 http(s) 与站内绝对路径, 拦截 javascript:/data: 等危险 scheme
 function fileUrl(url: string): string {
   if (!url) return ''
-  if (url.startsWith('http')) return url
-  // /upload/... 路径不经过 /api/v1, 直接访问后端静态文件
-  return url
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/')) return url
+  return ''
 }
 
 async function loadList() {

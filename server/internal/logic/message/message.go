@@ -441,6 +441,8 @@ func buildInboxQuery(
 	isRead *int,
 ) (*gdb.Model, error) {
 	q := dao.BizMessage.Ctx(ctx).As("m")
+	// 安全说明: gf 的 LeftJoin ON 子句不支持占位符参数; 此处 userId 是 JWT claims 解出的
+	// uint64, %d 格式化后不可能引入任意字符, 无注入面。禁止将此写法复制到字符串来源的场景。
 	q = q.LeftJoin("biz_message_read r", fmt.Sprintf("r.message_id = m.id AND r.user_id = %d", userId))
 	q = q.Where("m.deleted_at IS NULL").Where("m.status", 1)
 	q = q.Where("IFNULL(r.hidden, 0) = 0")

@@ -29,10 +29,22 @@ func (s *sAuditLog) List(ctx context.Context, req *v1.AuditLogListReq) (res *v1.
 
 	if req.Keyword != "" {
 		kw := "%" + strings.TrimSpace(req.Keyword) + "%"
-		q = q.Where("username LIKE ? OR action LIKE ? OR resource LIKE ?", kw, kw, kw)
+		q = q.Where(
+			"username LIKE ? OR path LIKE ? OR resource LIKE ? OR message LIKE ? OR request_id LIKE ?",
+			kw, kw, kw, kw, kw,
+		)
+	}
+	if req.Username != "" {
+		q = q.Where("username", req.Username)
 	}
 	if req.Action != "" {
 		q = q.Where("action", req.Action)
+	}
+	switch req.Result {
+	case "success":
+		q = q.Where("code = 0 AND status_code < 400")
+	case "fail":
+		q = q.Where("(code != 0 OR status_code >= 400)")
 	}
 	if req.StartAt != "" {
 		q = q.Where("created_at >= ?", req.StartAt)
