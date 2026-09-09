@@ -6,7 +6,7 @@ import { ref, reactive } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { User, Lock, Histogram, Right } from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
-import { useUserStore } from '~/stores/user'
+import { useUserStore, safeRedirect } from '~/stores/user'
 import { useAuthApi } from '~/composables/useApi'
 
 definePageMeta({ layout: 'blank', title: '登录' })
@@ -68,12 +68,8 @@ async function handleSubmit() {
     const menusRes = await api.menus()
     userStore.setMenus(menusRes.menus, menusRes.permissions)
     ElMessage.success('登录成功')
-    // 开放跳转防护: 仅允许站内路径, 拒绝 //host、/\host 与外部 URL
-    const raw = (route.query.redirect as string) || '/'
-    const redirect = raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\')
-      ? raw
-      : '/'
-    router.replace(redirect)
+    // 开放跳转防护: 仅允许站内路径
+    router.replace(safeRedirect(route.query.redirect as string))
   }
   catch {}
   finally {

@@ -1,7 +1,8 @@
 /**
  * 全局路由守卫: 未登录跳 /login; 已登录拉取菜单。
+ * token 持久化在 cookie, SSR 阶段即可识别登录态, 刷新不闪跳 /login。
  */
-import { useUserStore } from '~/stores/user'
+import { useUserStore, safeRedirect } from '~/stores/user'
 import { useAuthApi } from '~/composables/useApi'
 
 export default defineNuxtRouteMiddleware(async (to) => {
@@ -16,7 +17,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (isLoginPage) {
-    return navigateTo('/')
+    // 已登录访问登录页: 回到来源页(如有合法 redirect 参数)或首页
+    return navigateTo(safeRedirect(to.query.redirect as string))
   }
 
   // 已登录但未拉取菜单 -> 拉取
