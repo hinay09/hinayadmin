@@ -49,41 +49,14 @@ func dedupUint64(in []uint64) []uint64 {
 	return out
 }
 
-// luaGetDel 原子"取出并删除"脚本, 保证一次性私钥不可被重复使用。
-const luaGetDel = `local v = redis.call('GET', KEYS[1])
-if v then redis.call('DEL', KEYS[1]) end
-return v`
-
-// PublicKey 生成一次性登录加密公钥。
-// 每次调用生成全新 RSA 密钥对, 私钥存 Redis 并设置 TTL, 用后即毁;
-// 按 IP 限流防止匿名端点被刷导致密钥生成 DoS。
-func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error) {
-	// 单 IP 每分钟限流
-	limitKey := consts.PubKeyLimitPrefix + clientIp(ctx)
-	if n, lerr := g.Redis().Do(ctx, "INCR", limitKey); lerr == nil && n != nil && n.Int64() == 1 {
-		_, _ = g.Redis().Do(ctx, "EXPIRE", limitKey, 60)
-	} else if n != nil && n.Int64() > consts.PubKeyMaxPerMin {
-		return nil, xerror.New(xerror.CodeBusinessError, "请求过于频繁, 请稍后再试")
-	}
-
-	kp, err := rsax.Generate()
-	if err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "生成加密密钥失败")
-	}
-	if _, err = g.Redis().Do(ctx, "SET", consts.RSAKeyPrefix+kp.KeyId, kp.PrivatePem, "EX", consts.RSAKeyTTLSec); err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "保存加密密钥失败")
-	}
-	return &v1.PublicKeyRes{KeyId: kp.KeyId, PublicKey: kp.PublicPem}, nil
-}
-
 // decryptPassword 用一次性私钥解密登录密码密文。
-// 私钥取出即删除(EVAL 原子操作), 同一 keyId 无法二次使用。
+// GETDEL 为 Redis 原子命令(6.2+): 取值即删除, 同一 keyId 无法被并发/重复使用。
 func decryptPassword(ctx context.Context, keyId, cipher string) (string, error) {
-	priv, err := g.Redis().Do(ctx, "EVAL", luaGetDel, 1, consts.RSAKeyPrefix+keyId)
+	priv, err := g.Redis().GroupString().GetDel(ctx, consts.RSAKeyPrefix+keyId)
 	if err != nil {
 		return "", xerror.Wrap(xerror.CodeBusinessError, err, "读取加密密钥失败")
 	}
-	if priv == nil || priv.IsEmpty() {
+	if priv == nil || priv.IsNil() || priv.IsEmpty() {
 		return "", xerror.New(xerror.CodeRsaKeyInvalid)
 	}
 	plain, derr := rsax.Decrypt(priv.String(), cipher)
@@ -93,13 +66,37 @@ func decryptPassword(ctx context.Context, keyId, cipher string) (string, error) 
 	return plain, nil
 }
 
+// PublicKey 生成一次性登录加密公钥。
+// 每次调用生成全新 RSA 密钥对, 私钥存 Redis 并设置 TTL, 用后即毁;
+// 按 IP 限流防止匿名端点被刷导致密钥生成 DoS。
+func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error) {
+	// 单 IP 每分钟限流
+	limitKey := consts.PubKeyLimitPrefix + clientIp(ctx)
+	if n, lerr := g.Redis().GroupString().Incr(ctx, limitKey); lerr == nil {
+		if n == 1 {
+			_, _ = g.Redis().GroupGeneric().Expire(ctx, limitKey, 60)
+		} else if n > consts.PubKeyMaxPerMin {
+			return nil, xerror.New(xerror.CodeBusinessError, "请求过于频繁, 请稍后再试")
+		}
+	}
+
+	kp, err := rsax.Generate()
+	if err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "生成加密密钥失败")
+	}
+	if err = g.Redis().GroupString().SetEX(ctx, consts.RSAKeyPrefix+kp.KeyId, kp.PrivatePem, consts.RSAKeyTTLSec); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "保存加密密钥失败")
+	}
+	return &v1.PublicKeyRes{KeyId: kp.KeyId, PublicKey: kp.PublicPem}, nil
+}
+
 // Login 用户名密码登录。
 // 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
 // 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
 	failKey := consts.LoginFailPrefix + clientIp(ctx) + ":" + req.Username
 	// 锁定检查: 窗口内失败次数已达上限
-	if n, rerr := g.Redis().Do(ctx, "GET", failKey); rerr == nil && n != nil && n.Int64() >= consts.LoginFailMax {
+	if n, rerr := g.Redis().GroupString().Get(ctx, failKey); rerr == nil && n != nil && !n.IsNil() && n.Int64() >= consts.LoginFailMax {
 		return nil, xerror.New(xerror.CodeBusinessError, "失败次数过多, 请 15 分钟后再试")
 	}
 
@@ -135,7 +132,7 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	}
 
 	// 登录成功, 清除失败计数
-	_, _ = g.Redis().Do(ctx, "DEL", failKey)
+	_, _ = g.Redis().GroupGeneric().Del(ctx, failKey)
 
 	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
 	if err != nil {
@@ -168,12 +165,12 @@ func clientIp(ctx context.Context) string {
 
 // recordLoginFailure 累计一次登录失败; 首次失败时设置统计窗口 TTL。
 func recordLoginFailure(ctx context.Context, failKey string) {
-	n, err := g.Redis().Do(ctx, "INCR", failKey)
+	n, err := g.Redis().GroupString().Incr(ctx, failKey)
 	if err != nil {
 		return
 	}
-	if n != nil && n.Int64() == 1 {
-		_, _ = g.Redis().Do(ctx, "EXPIRE", failKey, consts.LoginFailWindowSec)
+	if n == 1 {
+		_, _ = g.Redis().GroupGeneric().Expire(ctx, failKey, consts.LoginFailWindowSec)
 	}
 }
 
@@ -183,8 +180,7 @@ func blacklistToken(ctx context.Context, token string) error {
 	if v, cerr := g.Cfg().Get(ctx, "jwt.expireSec"); cerr == nil && v.Int64() > 0 {
 		ttl = v.Int64()
 	}
-	_, err := g.Redis().Do(ctx, "SET", consts.JWTBlacklistPrefix+token, 1, "EX", ttl)
-	return err
+	return g.Redis().GroupString().SetEX(ctx, consts.JWTBlacklistPrefix+token, 1, ttl)
 }
 
 // Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
