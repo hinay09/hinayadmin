@@ -147,6 +147,15 @@ yarn dev
 # http://localhost:3000  (/api 已通过 nitro.devProxy 反代到 :8000)
 ```
 
+> **本地预览生产构建时需要指定后端地址**: `nitro.devProxy` 仅在 `yarn dev` 模式生效,
+> `yarn preview` / `node .output/server/index.mjs` 没有 `/api` 代理, 需通过环境变量指向后端:
+>
+> ```bash
+> NUXT_PUBLIC_API_BASE=http://127.0.0.1:8000/api/v1 node .output/server/index.mjs
+> ```
+>
+> Docker 部署无需此变量, 由 nginx 统一反代 `/api` 到后端。
+
 ### 5. 默认账号
 
 ```
