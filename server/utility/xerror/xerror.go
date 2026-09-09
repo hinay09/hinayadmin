@@ -18,6 +18,8 @@ var (
 	CodeUserDisabled   = gcode.New(50003, "用户已被禁用", nil)
 	CodeUsernameExists = gcode.New(50004, "用户名已存在", nil)
 	CodeRoleCodeExists = gcode.New(50010, "角色编码已存在", nil)
+	// CodeRsaKeyInvalid 登录加密密钥缺失/过期/解密失败, 前端应重新获取公钥后重试。
+	CodeRsaKeyInvalid = gcode.New(50005, "登录加密已失效, 请重试", nil)
 )
 
 // New 构造业务错误。

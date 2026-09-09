@@ -22,6 +22,7 @@ import (
 	"hinay.cn/admin/utility/jwtx"
 	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/password"
+	"hinay.cn/admin/utility/rsax"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -48,13 +49,67 @@ func dedupUint64(in []uint64) []uint64 {
 	return out
 }
 
+// luaGetDel 原子"取出并删除"脚本, 保证一次性私钥不可被重复使用。
+const luaGetDel = `local v = redis.call('GET', KEYS[1])
+if v then redis.call('DEL', KEYS[1]) end
+return v`
+
+// PublicKey 生成一次性登录加密公钥。
+// 每次调用生成全新 RSA 密钥对, 私钥存 Redis 并设置 TTL, 用后即毁;
+// 按 IP 限流防止匿名端点被刷导致密钥生成 DoS。
+func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error) {
+	// 单 IP 每分钟限流
+	limitKey := consts.PubKeyLimitPrefix + clientIp(ctx)
+	if n, lerr := g.Redis().Do(ctx, "INCR", limitKey); lerr == nil && n != nil && n.Int64() == 1 {
+		_, _ = g.Redis().Do(ctx, "EXPIRE", limitKey, 60)
+	} else if n != nil && n.Int64() > consts.PubKeyMaxPerMin {
+		return nil, xerror.New(xerror.CodeBusinessError, "请求过于频繁, 请稍后再试")
+	}
+
+	kp, err := rsax.Generate()
+	if err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "生成加密密钥失败")
+	}
+	if _, err = g.Redis().Do(ctx, "SET", consts.RSAKeyPrefix+kp.KeyId, kp.PrivatePem, "EX", consts.RSAKeyTTLSec); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "保存加密密钥失败")
+	}
+	return &v1.PublicKeyRes{KeyId: kp.KeyId, PublicKey: kp.PublicPem}, nil
+}
+
+// decryptPassword 用一次性私钥解密登录密码密文。
+// 私钥取出即删除(EVAL 原子操作), 同一 keyId 无法二次使用。
+func decryptPassword(ctx context.Context, keyId, cipher string) (string, error) {
+	priv, err := g.Redis().Do(ctx, "EVAL", luaGetDel, 1, consts.RSAKeyPrefix+keyId)
+	if err != nil {
+		return "", xerror.Wrap(xerror.CodeBusinessError, err, "读取加密密钥失败")
+	}
+	if priv == nil || priv.IsEmpty() {
+		return "", xerror.New(xerror.CodeRsaKeyInvalid)
+	}
+	plain, derr := rsax.Decrypt(priv.String(), cipher)
+	if derr != nil {
+		return "", xerror.New(xerror.CodeRsaKeyInvalid)
+	}
+	return plain, nil
+}
+
 // Login 用户名密码登录。
+// 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
 // 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
 	failKey := consts.LoginFailPrefix + clientIp(ctx) + ":" + req.Username
 	// 锁定检查: 窗口内失败次数已达上限
 	if n, rerr := g.Redis().Do(ctx, "GET", failKey); rerr == nil && n != nil && n.Int64() >= consts.LoginFailMax {
 		return nil, xerror.New(xerror.CodeBusinessError, "失败次数过多, 请 15 分钟后再试")
+	}
+
+	// 解密密码(一次性私钥), 解密失败不计入密码错误次数
+	plainPassword, derr := decryptPassword(ctx, req.KeyId, req.Password)
+	if derr != nil {
+		return nil, derr
+	}
+	if len(plainPassword) < 6 || len(plainPassword) > 32 {
+		return nil, xerror.New(xerror.CodeParamInvalid, "密码长度 6-32")
 	}
 
 	var u *model.SysUser
@@ -67,14 +122,14 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	}
 	if u == nil {
 		// 与"密码错误"走相同 bcrypt 计算与错误码, 抹平时间差与提示差异, 防用户名枚举
-		password.Verify(dummyBcryptHash, req.Password)
+		password.Verify(dummyBcryptHash, plainPassword)
 		recordLoginFailure(ctx, failKey)
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}
 	if u.Status != consts.StatusEnabled {
 		return nil, xerror.New(xerror.CodeUserDisabled)
 	}
-	if !password.Verify(u.Password, req.Password) {
+	if !password.Verify(u.Password, plainPassword) {
 		recordLoginFailure(ctx, failKey)
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}

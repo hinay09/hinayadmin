@@ -13,7 +13,9 @@ import (
 
 type (
 	IAuth interface {
-		// Login 用户名密码登录。
+		// PublicKey 生成一次性登录加密公钥(私钥存 Redis, TTL 内单次使用)。
+		PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error)
+		// Login 用户名密码登录(密码为 RSA 加密密文, 服务端解密后校验)。
 		Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
 		// Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
 		Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.RefreshRes, err error)

@@ -11,6 +11,7 @@ import (
 )
 
 type IAuthV1 interface {
+	PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error)
 	Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
 	Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.RefreshRes, err error)
 	Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRes, err error)

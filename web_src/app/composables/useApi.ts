@@ -7,9 +7,11 @@ import type { LoginUser, MenuNode } from '~/stores/user'
 export function useAuthApi() {
   const r = useRequest()
   return {
-    login: (username: string, password: string) =>
+    publicKey: () =>
+      r.get<{ keyId: string; publicKey: string }>('/auth/public-key'),
+    login: (username: string, password: string, keyId: string) =>
       r.post<{ token: string; expireAt: number; userInfo: LoginUser }>(
-        '/auth/login', { username, password },
+        '/auth/login', { username, password, keyId },
       ),
     logout: () => r.post('/auth/logout'),
     userInfo: () => r.get<LoginUser>('/auth/userInfo'),

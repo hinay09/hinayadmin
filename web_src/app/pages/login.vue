@@ -5,6 +5,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { User, Lock, Histogram, Right } from '@element-plus/icons-vue'
+import { JSEncrypt } from 'jsencrypt'
 import { useUserStore } from '~/stores/user'
 import { useAuthApi } from '~/composables/useApi'
 
@@ -28,13 +29,39 @@ const rules: FormRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+/** RSA_CODE_KEY_INVALID 后端一次性密钥失效的错误码, 此时静默换新密钥重试一次 */
+const RSA_CODE_KEY_INVALID = 50005
+
+/** 取一次性公钥并加密密码, 返回密文与 keyId */
+async function encryptPassword(plain: string) {
+  const { keyId, publicKey } = await api.publicKey()
+  const encryptor = new JSEncrypt()
+  encryptor.setPublicKey(publicKey)
+  const cipher = encryptor.encrypt(plain)
+  if (!cipher) throw new Error('密码加密失败')
+  return { keyId, cipher }
+}
+
+async function doLogin() {
+  const { keyId, cipher } = await encryptPassword(form.password)
+  return api.login(form.username, cipher, keyId)
+}
+
 async function handleSubmit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
   loading.value = true
   try {
-    const res = await api.login(form.username, form.password)
+    let res
+    try {
+      res = await doLogin()
+    }
+    catch (err: any) {
+      // 一次性密钥过期/已用: 换新密钥重试一次, 仍失败则正常抛出
+      if (err?.code !== RSA_CODE_KEY_INVALID) throw err
+      res = await doLogin()
+    }
     userStore.setToken(res.token, res.expireAt)
     userStore.setUserInfo(res.userInfo)
     // 拉取菜单

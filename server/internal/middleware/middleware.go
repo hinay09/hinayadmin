@@ -155,7 +155,8 @@ func Auth(r *ghttp.Request) {
 
 // publicPaths 公开接口白名单: Auth 与 Casbin 中间件均跳过。
 var publicPaths = map[string]struct{}{
-	"/api/v1/auth/login": {},
+	"/api/v1/auth/login":      {},
+	"/api/v1/auth/public-key": {},
 }
 
 // authWhitelist 基础会话类接口白名单。

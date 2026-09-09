@@ -67,7 +67,9 @@ export function useRequest() {
           return (res.data ?? null) as T
         }
         ElMessage.error(res.message || '请求失败')
-        throw new Error(res.message || `code=${res.code}`)
+        const bizErr: any = new Error(res.message || `code=${res.code}`)
+        bizErr.code = res.code
+        throw bizErr
       }
       return res as unknown as T
     }

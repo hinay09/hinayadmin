@@ -31,6 +31,10 @@ const (
 	JWTBlacklistPrefix = "hinay:jwt:black:"
 	// LoginFailPrefix Redis 中登录失败计数 Key 前缀。
 	LoginFailPrefix = "hinay:login:fail:"
+	// RSAKeyPrefix Redis 中一次性 RSA 私钥 Key 前缀。
+	RSAKeyPrefix = "hinay:rsa:priv:"
+	// PubKeyLimitPrefix 公钥接口限流计数 Key 前缀。
+	PubKeyLimitPrefix = "hinay:rsa:limit:"
 )
 
 // 登录防暴力破解配置。
@@ -39,6 +43,14 @@ const (
 	LoginFailMax = 5
 	// LoginFailWindowSec 失败计数统计窗口(秒)。
 	LoginFailWindowSec = 900
+)
+
+// 登录密码 RSA 加密配置。
+const (
+	// RSAKeyTTLSec 一次性私钥存活时间(秒), 覆盖取公钥到提交登录的时间窗。
+	RSAKeyTTLSec = 120
+	// PubKeyMaxPerMin 公钥接口单 IP 每分钟最大请求次数(防密钥生成 DoS)。
+	PubKeyMaxPerMin = 20
 )
 
 // 通用状态

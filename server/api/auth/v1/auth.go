@@ -8,11 +8,25 @@ import (
 	"hinay.cn/admin/internal/model"
 )
 
+// PublicKeyReq 获取一次性登录加密公钥。
+type PublicKeyReq struct {
+	g.Meta `path:"/auth/public-key" tags:"Auth" method:"get" summary:"获取登录加密公钥"`
+}
+
+// PublicKeyRes 公钥响应。
+type PublicKeyRes struct {
+	KeyId     string `json:"keyId"     dc:"密钥标识, 登录时随密文一并提交"`
+	PublicKey string `json:"publicKey" dc:"RSA 公钥(PEM), 用于加密登录密码"`
+}
+
 // LoginReq 登录请求。
+// 密码须先用 PublicKey 接口返回的公钥加密(RSA PKCS#1 v1.5, base64),
+// 每个密钥对仅可使用一次, 过期或已使用需重新获取。
 type LoginReq struct {
 	g.Meta   `path:"/auth/login" tags:"Auth" method:"post" summary:"登录"`
 	Username string `v:"required#请输入账号" json:"username" dc:"账号"`
-	Password string `v:"required|length:6,32#请输入密码" json:"password" dc:"密码"`
+	Password string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
+	KeyId    string `v:"required#缺少加密密钥标识" json:"keyId" dc:"公钥标识"`
 }
 
 // LoginRes 登录响应。

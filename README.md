@@ -169,9 +169,9 @@ cp .env.example .env
 按需修改 `.env` 中的密码和密钥:
 
 ```bash
-MYSQL_ROOT_PASSWORD=hinay123456    # MySQL root 密码
-MYSQL_DATABASE=hinay_admin         # 数据库名
-JWT_SECRET=hinay-admin-please-change-me  # JWT 密钥, 生产环境务必修改
+MYSQL_ROOT_PASSWORD=<强密码>                    # MySQL root 密码
+MYSQL_DATABASE=hinay_admin                      # 数据库名
+JWT_SECRET=<openssl rand -hex 32 生成>           # JWT 密钥, 必填且至少 32 位随机字符
 ```
 
 ### 2. 构建并启动
@@ -191,12 +191,11 @@ docker compose up -d --build
 | 服务 | 地址 | 说明 |
 | --- | --- | --- |
 | 前端 | http://localhost | Nginx 反向代理入口 |
-| 后端 API | http://localhost:8000/api/v1 | Go API 服务 |
-| Swagger | http://localhost:8000/swagger | API 文档 |
+| 后端 API | http://127.0.0.1:8000/api/v1 | Go API 服务 (仅绑定回环, 供本机调试) |
 | MySQL | localhost:3306 | 数据库 |
 | Redis | localhost:6379 | 缓存 |
 
-默认账号: `admin` / `123456`
+默认账号: `admin` / `123456` (仅开发环境提示, 首次部署后请立即修改默认密码)
 
 ### 4. 常用命令
 
@@ -296,7 +295,8 @@ casbin:
 
 | 模块 | 路径 | 方法 | 说明 |
 | --- | --- | --- | --- |
-| 鉴权 | `/api/v1/auth/login` | POST | 登录 (公开, 中间件白名单) |
+| 鉴权 | `/api/v1/auth/public-key` | GET | 获取一次性登录加密公钥 (公开, 单 IP 限流) |
+| 鉴权 | `/api/v1/auth/login` | POST | 登录 (公开, 密码须用公钥 RSA 加密后提交) |
 | 鉴权 | `/api/v1/auth/refresh` | POST | 刷新 Token |
 | 鉴权 | `/api/v1/auth/logout` | POST | 登出 (Token 加 Redis 黑名单) |
 | 鉴权 | `/api/v1/auth/userInfo` | GET | 当前用户信息 |
