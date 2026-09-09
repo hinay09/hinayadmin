@@ -25,3 +25,5 @@ dist-ssr
 
 # Docker
 .env
+# GUI 测试证据截图(本地会话产物)
+gui-test-screenshots/
