@@ -71,6 +71,7 @@ type (
 		// List 分页列表。
 		List(ctx context.Context, req *v1.FileListReq) (res *v1.FileListRes, err error)
 		// Upload 上传文件。
+		// 校验链: 扩展名白名单 -> 大小上限 -> 文件头内容嗅探(拒绝页面/脚本类真实内容)。
 		Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader) (res *v1.FileUploadRes, err error)
 		// Delete 删除文件（软删记录）。
 		Delete(ctx context.Context, req *v1.FileDeleteReq) (res *v1.FileDeleteRes, err error)

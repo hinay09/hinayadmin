@@ -13,9 +13,13 @@ import (
 
 type (
 	IAuth interface {
-		// PublicKey 生成一次性登录加密公钥(私钥存 Redis, TTL 内单次使用)。
+		// PublicKey 生成一次性登录加密公钥。
+		// 每次调用生成全新 RSA 密钥对, 私钥存 Redis 并设置 TTL, 用后即毁;
+		// 按 IP 限流防止匿名端点被刷导致密钥生成 DoS。
 		PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error)
-		// Login 用户名密码登录(密码为 RSA 加密密文, 服务端解密后校验)。
+		// Login 用户名密码登录。
+		// 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
+		// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 		Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
 		// Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
 		Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.RefreshRes, err error)
