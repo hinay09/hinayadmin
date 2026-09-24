@@ -2,7 +2,7 @@
 /**
  * 默认布局: el-container + 侧边栏菜单 + 顶部用户信息 + 面包屑。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import {
@@ -17,15 +17,23 @@ import {
   House,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '~/stores/user'
+import { useConfigStore } from '~/stores/config'
 import { useAuthApi } from '~/composables/useApi'
 import { filterDisplayMenus } from '~/utils/router'
 import type { MenuNode } from '~/stores/user'
 
 const userStore = useUserStore()
 const { userInfo, menus } = storeToRefs(userStore)
+const configStore = useConfigStore()
+const { siteName, siteLogo, copyright } = storeToRefs(configStore)
 const route = useRoute()
 const router = useRouter()
 const api = useAuthApi()
+
+// 全局配置(sys_config)驱动品牌区/页脚展示; 会话内只拉取一次, 失败静默回退默认值
+onMounted(() => {
+  configStore.ensureLoaded()
+})
 
 // 后端 /auth/menus 已返回菜单树, 仅过滤掉按钮节点。
 const menuTree = computed(() => filterDisplayMenus(menus.value))
@@ -94,8 +102,9 @@ function handleFullscreen() {
   <el-container class="app-layout">
     <el-aside :width="collapse ? '64px' : '220px'" class="app-aside">
       <div class="logo">
-        <el-icon class="logo-icon"><Histogram /></el-icon>
-        <span v-if="!collapse" class="logo-text">Hinay Admin</span>
+        <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
+        <el-icon v-else class="logo-icon"><Histogram /></el-icon>
+        <span v-if="!collapse" class="logo-text">{{ siteName }}</span>
       </div>
       <el-menu
         :default-active="activeMenu"
@@ -174,6 +183,7 @@ function handleFullscreen() {
       <el-main class="app-main">
         <slot />
       </el-main>
+      <el-footer v-if="copyright" class="app-footer" height="36px">{{ copyright }}</el-footer>
     </el-container>
   </el-container>
 </template>
@@ -203,6 +213,12 @@ function handleFullscreen() {
 .logo-icon {
   font-size: 22px;
   color: #409eff;
+}
+.logo-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 4px;
 }
 .logo-text {
   white-space: nowrap;
@@ -297,5 +313,15 @@ function handleFullscreen() {
 .app-main {
   background: #f0f2f5;
   padding: 16px;
+}
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f2f5;
+  border-top: 1px solid #ebeef5;
+  color: #909399;
+  font-size: 12px;
+  padding: 0;
 }
 </style>

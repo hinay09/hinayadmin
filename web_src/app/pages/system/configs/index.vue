@@ -7,10 +7,13 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import { Search, Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { useConfigApi, type ConfigItem } from '~/composables/useApi'
+import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '全局配置' })
 
 const configApi = useConfigApi()
+// 配置变更后刷新全局展示(侧边栏品牌/浏览器标题/页脚等)与本页缓存
+const configStore = useConfigStore()
 
 // ============================================================
 // 列表
@@ -145,6 +148,7 @@ async function handleSubmit() {
       ElMessage.success('新增成功')
     }
     drawerVisible.value = false
+    configStore.refresh()
     loadList()
   } catch {
   } finally {
@@ -157,6 +161,7 @@ async function handleDelete(row: ConfigItem) {
   try {
     await configApi.remove(row.id)
     ElMessage.success('删除成功')
+    configStore.refresh()
     loadList()
   } catch {
   }

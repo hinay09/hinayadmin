@@ -21,11 +21,14 @@ import {
   Calendar,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '~/stores/user'
+import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '仪表盘' })
 
 const userStore = useUserStore()
 const { userInfo } = storeToRefs(userStore)
+const configStore = useConfigStore()
+const { siteName } = storeToRefs(configStore)
 
 /* ---------------- KPI 概览 (mock) ---------------- */
 interface Kpi {
@@ -202,7 +205,7 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
         <div class="hello">
           你好, <span class="name">{{ userInfo?.nickname || userInfo?.username || 'Admin' }}</span> 👋
         </div>
-        <div class="sub">欢迎使用 Hinay Admin 后台管理系统, 祝你工作愉快。</div>
+        <div class="sub">欢迎使用 {{ siteName }} 后台管理系统, 祝你工作愉快。</div>
       </div>
       <div class="welcome-meta">
         <el-button type="primary" plain :icon="User" size="small" @click="$router.push('/profile')">个人中心</el-button>

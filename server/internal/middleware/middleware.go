@@ -172,6 +172,10 @@ var authWhitelist = map[string]struct{}{
 	"/api/v1/auth/password": {},
 	"/api/v1/auth/refresh":  {},
 	"/api/v1/auth/avatar":   {},
+	// 全局配置读取(仅启用项): 前端布局(站点名/Logo/页脚版权)对任何已登录用户展示,
+	// 若走逐角色 Casbin 授权, 未配置该 API 策略的普通用户会在进布局时 403。
+	// 放入白名单 = 登录即可读; 匿名访问仍被 Auth 中间件拦截。
+	"/api/v1/system/configs/all": {},
 }
 
 // isAuthWhitelisted 判断给定路径是否命中已登录用户白名单。

@@ -2,19 +2,26 @@
 /**
  * 登录页
  */
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { User, Lock, Histogram, Right } from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
+import { storeToRefs } from 'pinia'
 import { useUserStore, safeRedirect } from '~/stores/user'
+import { useConfigStore } from '~/stores/config'
 import { useAuthApi } from '~/composables/useApi'
 
 definePageMeta({ layout: 'blank', title: '登录' })
 
 const userStore = useUserStore()
+const configStore = useConfigStore()
+const { siteName, siteLogo, copyright } = storeToRefs(configStore)
 const route = useRoute()
 const router = useRouter()
 const api = useAuthApi()
+
+// 配置接口需登录后才能访问, 登录页读本地缓存展示(上次登录时写入), 无缓存回退默认值
+onMounted(() => configStore.restore())
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
@@ -82,8 +89,9 @@ async function handleSubmit() {
   <div class="login-page">
     <div class="login-card">
       <div class="login-title">
-        <el-icon class="login-logo"><Histogram /></el-icon>
-        <span>Hinay Admin</span>
+        <img v-if="siteLogo" :src="siteLogo" class="login-logo-img" alt="logo">
+        <el-icon v-else class="login-logo"><Histogram /></el-icon>
+        <span>{{ siteName }}</span>
       </div>
       <div class="login-sub">通用后台管理脚手架</div>
       <el-form
@@ -120,11 +128,13 @@ async function handleSubmit() {
       <!-- 默认凭据提示仅在开发构建渲染, 生产构建(import.meta.dev=false)不输出 -->
       <div v-if="showDefaultHint" class="tips">默认账号: admin / 123456 (仅开发环境)</div>
     </div>
+    <div v-if="copyright" class="login-copyright">{{ copyright }}</div>
   </div>
 </template>
 
 <style scoped>
 .login-page {
+  position: relative;
   min-height: 100vh;
   background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
   display: flex;
@@ -151,6 +161,21 @@ async function handleSubmit() {
 .login-logo {
   font-size: 26px;
   color: #1890ff;
+}
+.login-logo-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.login-copyright {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
 }
 .login-sub {
   font-size: 13px;
