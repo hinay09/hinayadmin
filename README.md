@@ -287,7 +287,7 @@ casbin:
     [policy_effect]
     e = some(where (p.eft == allow))
     [matchers]
-    m = g(r.sub, p.sub) && keyMatch(r.obj, p.obj) && (r.act == p.act || p.act == "*")
+    m = g(r.sub, p.sub) && keyMatch2(r.obj, p.obj) && (r.act == p.act || p.act == "*")
 ```
 
 > Casbin 模型使用 `g(r.sub, p.sub)`, 因此 `sub` 直接传 `username`, 由 g 策略自动解析其角色。

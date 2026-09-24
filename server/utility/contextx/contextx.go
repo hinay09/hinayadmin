@@ -12,6 +12,7 @@ package contextx
 
 import (
 	"context"
+	"slices"
 
 	"github.com/gogf/gf/v2/net/ghttp"
 
@@ -105,10 +106,5 @@ func IsAdmin(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	for _, r := range roles {
-		if r == "admin" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(roles, consts.RoleAdmin)
 }
