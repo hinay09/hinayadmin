@@ -38,7 +38,7 @@ Key behaviors enforced by these middlewares:
 - **MiddlewareHandlerResponse**: GoFrame built-in — unwraps controller return values into `{code, message, data}` JSON.
 - **Auth**: Parses JWT from `Authorization: Bearer <token>`, checks Redis blacklist (logout tokens), writes `LoginUser` to ctx. `/api/v1/auth/login` and `/api/v1/auth/public-key` are in `publicPaths` (unauthenticated). Login passwords are RSA-encrypted: frontend fetches a one-time keypair via `GET /auth/public-key` (private key stored in Redis with 120s TTL, single-use via atomic GETDEL), encrypts with the public key (PKCS#1 v1.5 + jsencrypt), and submits ciphertext + keyId; the backend decrypts before bcrypt verification.
 - **Casbin**: Enforces `(username, path, method)` via `g(r.sub, p.sub)` matcher. Super admin (`admin` role) always allowed. Session endpoints (`/auth/menus`, `/auth/userInfo`, `/auth/logout`, etc.) are on `authWhitelist` — any authenticated user passes, no RBAC check. This prevents users with no roles from being locked out after login.
-- **OperationLog**: After `r.Middleware.Next()`, fires an async goroutine with `context.Background()` to insert audit log for POST/PUT/DELETE. Skips multipart uploads and 4xx responses.
+- **OperationLog**: After `r.Middleware.Next()`, fires an async goroutine with `context.Background()` to insert audit log for POST/PUT/DELETE (4xx/ExitAll-interrupted requests are also recorded via defer). Multipart uploads are recorded too — the raw body is not captured (no binary into DB); instead, upload logic stashes a file summary (name/size/content-type) via `contextx.SetAuditUpload`, which the middleware defer reads into the `detail` column.
 
 ## Context & User Extraction (`server/utility/contextx/`)
 

@@ -323,10 +323,12 @@ func OperationLog(r *ghttp.Request) {
 	start := time.Now()
 
 	// 请求体在 pre 阶段读取并脱敏(截断保护, 最多 2048 字节)
-	// 跳过 multipart/form-data(文件上传), 避免触发 body too large
+	// multipart(文件上传)不读原始请求体(避免二进制入库),
+	// 审计记录照常产生, detail 由上传逻辑经 ctx 暂存的文件摘要填充(见 defer)。
 	detail := ""
 	ct := r.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "multipart/") {
+	isMultipart := strings.HasPrefix(ct, "multipart/")
+	if !isMultipart {
 		if body := r.GetBodyString(); body != "" {
 			detail = sanitizeLogBody(body, 2048)
 		}
@@ -352,6 +354,15 @@ func OperationLog(r *ghttp.Request) {
 			resource, action = "auth", "logout"
 		case "/api/v1/auth/refresh":
 			resource, action = "auth", "refresh"
+		}
+
+		// multipart: detail 用上传逻辑暂存的文件摘要 (无摘要时给占位说明, 记录本身不缺)
+		if isMultipart {
+			if summary := r.GetCtxVar(consts.CtxAuditUploadName, "").String(); summary != "" {
+				detail = truncateForColumn(summary, 512)
+			} else {
+				detail = "(multipart 文件上传, 无文件摘要)"
+			}
 		}
 
 		statusCode := r.Response.Status

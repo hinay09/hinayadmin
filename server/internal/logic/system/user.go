@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"hinay.cn/admin/internal/logic/pwdpolicy"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/excelx"
 	"hinay.cn/admin/utility/password"
 	"hinay.cn/admin/utility/response"
@@ -404,6 +406,9 @@ func (s *sUser) ImportTemplate(ctx context.Context, req *v1.UserImportTemplateRe
 
 // Import 用户导入 (通用导入示例): 逐行校验, 行级错误不中断整体导入。
 func (s *sUser) Import(ctx context.Context, req *v1.UserImportReq) (res *v1.UserImportRes, err error) {
+	// 审计: 暂存导入文件摘要, OperationLog 记录入库
+	contextx.SetAuditUpload(ctx, fmt.Sprintf("%s (%d bytes, %s)",
+		filepath.Base(req.File.Filename), req.File.Size, req.File.Header.Get("Content-Type")))
 	f, oerr := req.File.Open()
 	if oerr != nil {
 		return nil, xerror.Wrap(xerror.CodeParamInvalid, oerr, "读取上传文件失败")

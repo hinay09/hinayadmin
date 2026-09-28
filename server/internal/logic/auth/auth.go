@@ -406,6 +406,9 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 	}
 
 	file := req.File
+	// 审计: 暂存头像文件摘要, OperationLog 记录入库
+	contextx.SetAuditUpload(ctx, fmt.Sprintf("%s (%d bytes, %s)",
+		filepath.Base(file.Filename), file.Size, file.Header.Get("Content-Type")))
 	// 扩展名白名单
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if !allowedAvatarExts[ext] {

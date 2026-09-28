@@ -105,6 +105,9 @@ func (s *sFile) List(ctx context.Context, req *v1.FileListReq) (res *v1.FileList
 // Upload 上传文件。
 // 校验链: 扩展名白名单 -> 大小上限 -> 文件头内容嗅探(拒绝页面/脚本类真实内容)。
 func (s *sFile) Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader) (res *v1.FileUploadRes, err error) {
+	// 审计: 暂存文件摘要, OperationLog 记录入库 (校验失败也留痕)
+	contextx.SetAuditUpload(ctx, fmt.Sprintf("%s (%d bytes, %s)",
+		filepath.Base(header.Filename), header.Size, header.Header.Get("Content-Type")))
 	originalName := filepath.Base(header.Filename)
 	ext := strings.ToLower(filepath.Ext(originalName))
 	if !allowedUploadExts[ext] {

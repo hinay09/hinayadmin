@@ -19,6 +19,9 @@ const (
 	CtxUserKeyName     = "ctxLoginUser"
 	CtxRequestIdName   = "RequestId"
 	CtxJwtTokenKeyName = "jwtToken"
+	// CtxAuditUploadName 上传类请求在 ctx 中暂存的文件摘要,
+	// OperationLog defer 阶段读取后作为审计 detail (multipart 不读请求体)。
+	CtxAuditUploadName = "ctxAuditUpload"
 )
 
 // 鉴权相关

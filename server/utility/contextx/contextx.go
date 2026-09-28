@@ -108,3 +108,11 @@ func IsAdmin(ctx context.Context) bool {
 	}
 	return slices.Contains(roles, consts.RoleAdmin)
 }
+
+// SetAuditUpload 上传逻辑暂存文件摘要到请求上下文, 供 OperationLog 审计记录。
+// summary 建议格式: "文件名 (N bytes, content-type)"。非 HTTP 上下文静默忽略。
+func SetAuditUpload(ctx context.Context, summary string) {
+	if r := ghttp.RequestFromCtx(ctx); r != nil {
+		r.SetCtxVar(consts.CtxAuditUploadName, summary)
+	}
+}
