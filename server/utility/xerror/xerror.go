@@ -8,8 +8,12 @@ import (
 
 // 业务错误码: 50000+ 段位避开 GoFrame 默认码。
 var (
-	CodeUnauthorized   = gcode.New(40100, "未登录或登录已过期", nil)
-	CodeForbidden      = gcode.New(40300, "无访问权限", nil)
+	CodeUnauthorized = gcode.New(40100, "未登录或登录已过期", nil)
+	CodeForbidden    = gcode.New(40300, "无访问权限", nil)
+	// CodePwdMustChange 密码被管理员重置/导入或已过期, 需先完成改密。
+	// 走 HTTP 428 Precondition Required (业务码 42800), 与 40300/HTTP 403 无权限
+	// 彻底隔离, 避免前端或中间层任何通用 403 处理误伤, 前端据此跳转改密页。
+	CodePwdMustChange  = gcode.New(42800, "密码已过期或被重置, 请先修改密码", nil)
 	CodeNotFound       = gcode.New(40400, "资源不存在", nil)
 	CodeTooManyReq     = gcode.New(42900, "请求过于频繁, 请稍后再试", nil)
 	CodeParamInvalid   = gcode.New(40000, "请求参数不合法", nil)

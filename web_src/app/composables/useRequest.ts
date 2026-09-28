@@ -145,6 +145,18 @@ export function useRequest() {
           await navigateTo('/login')
         }
       }
+      else if (data?.code === 42800 || status === 428 || err?.code === 42800) {
+        // 强制改密 (HTTP 428 Precondition Required): 密码被管理员重置/导入或已过期,
+        // 同步标志并锁定到个人中心改密页。后台轮询会反复命中, 已在改密页时静默去重。
+        userStore.mustChangePwd = true
+        if (import.meta.client && !window.location.pathname.startsWith('/profile')) {
+          ElMessage.warning(data?.message || '密码已过期或被重置, 请先修改密码')
+          await navigateTo({
+            path: '/profile',
+            query: { tab: 'password', redirect: window.location.pathname + window.location.search },
+          })
+        }
+      }
       else if (status === 403 || data?.code === 40300) {
         // 触发 Nuxt 全局错误页显示 403
         if (import.meta.client) {

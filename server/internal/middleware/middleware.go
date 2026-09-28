@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/util/guid"
@@ -156,16 +157,15 @@ func Auth(r *ghttp.Request) {
 	// 后端兜底 (纵深防御, 不依赖前端跳转):
 	//   1) 账号已禁用/删除 -> token 立即失效 (登录/续签之外的首道实时校验);
 	//   2) 强制改密 (管理员创建/重置/导入, 或密码已过期) -> 仅放行会话类白名单接口,
-	//      其余业务 API 一律 403, 直至完成改密。
+	//      其余业务 API 一律拒绝 (HTTP 428/业务码 42800), 直至完成改密。
 	// 会话类白名单(authWhitelist)与本中间件同文件, 含改密/用户信息/登出等。
 	if _, public := publicPaths[r.URL.Path]; !public {
 		if _, session := authWhitelist[r.URL.Path]; !session {
-			block, unauthorized, msg := userAccessState(ctx, claims.UserId)
-			if block {
-				if unauthorized {
+			if block, code := userAccessState(ctx, claims.UserId); block {
+				if code == xerror.CodeUnauthorized {
 					writeUnauthorized(r)
 				} else {
-					writeForbiddenWithMessage(r, msg)
+					writeBlockedWithCode(r, code)
 				}
 				return
 			}
@@ -179,24 +179,25 @@ func Auth(r *ghttp.Request) {
 }
 
 // userAccessState 查询用户当前访问状态 (每个业务请求一次主键查询)。
-// 返回: block=是否拦截, unauthorized=按 401 还是 403 处理, msg=拦截原因。
-func userAccessState(ctx context.Context, userId uint64) (block, unauthorized bool, msg string) {
+// 返回: block=是否拦截, code=拦截时使用的业务码
+// (CodeUnauthorized -> 401 踢回登录; CodePwdMustChange -> 428 引导改密)。
+func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode.Code) {
 	row, err := dao.SysUser.Ctx(ctx).
 		Fields("id, status, must_change_pwd, pwd_updated_at, deleted_at").
 		Where("id", userId).
 		One()
 	if err != nil {
 		// 查询失败 fail-close: 拒绝而非放行
-		return true, true, ""
+		return true, xerror.CodeUnauthorized
 	}
 	if row.IsEmpty() || !row["deleted_at"].IsNil() || row["status"].Int() != consts.StatusEnabled {
 		// 账号已删除/禁用: token 视为失效
-		return true, true, ""
+		return true, xerror.CodeUnauthorized
 	}
 	if row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime()) {
-		return true, false, xerror.New(xerror.CodeForbidden, "密码已过期或被重置, 请先修改密码").Error()
+		return true, xerror.CodePwdMustChange
 	}
-	return false, false, ""
+	return false, nil
 }
 
 // publicPaths 公开接口白名单: Auth 与 Casbin 中间件均跳过。
@@ -279,10 +280,20 @@ func writeUnauthorized(r *ghttp.Request) {
 	writeUnauthorizedWithMessage(r, xerror.CodeUnauthorized.Message())
 }
 
-func writeForbiddenWithMessage(r *ghttp.Request, message string) {
-	r.Response.WriteStatus(http.StatusForbidden, g.Map{
-		"code":    xerror.CodeForbidden.Code(),
-		"message": message,
+// httpStatusOf 拦截业务码对应的 HTTP 状态码:
+// 强制改密走 428 Precondition Required, 与通用 403 无权限区分,
+// 避免前端 (error.vue / showError) 或中间层任何针对 403 的通用处理误伤。
+func httpStatusOf(code gcode.Code) int {
+	if code == xerror.CodePwdMustChange {
+		return http.StatusPreconditionRequired
+	}
+	return http.StatusForbidden
+}
+
+func writeBlockedWithCode(r *ghttp.Request, code gcode.Code) {
+	r.Response.WriteStatus(httpStatusOf(code), g.Map{
+		"code":    code.Code(),
+		"message": code.Message(),
 		"data":    nil,
 	})
 	r.ExitAll()
