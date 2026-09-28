@@ -405,7 +405,28 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 8. **前端**: `composables/useApi.ts` 新增 hook + `pages/<module>/index.vue` 页面。
 9. **授权**: 通过菜单管理与角色管理为对应角色分配菜单权限码与 API 权限即可生效。
 
-新增**定时任务处理器** (网页端"定时任务"页可配置调度): 业务包 import `internal/logic/job`, 在自身 `init()` 中调用 `job.RegisterHandler("模块.动作", func(ctx, params string) (string, error) {...})` 即可——返回的字符串是执行输出摘要, 成功/失败都会写入执行日志的「输出/原因」列; 处理器名会出现在任务页的下拉框中, Go 的包初始化顺序保证注册时 service 已就绪。脚手架内置 `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog` (params: `{"days": 90}`, 输出形如"清理 sys_login_log 90 天前日志, 删除 N 行") 可直接使用。
+新增**定时任务处理器** (以数据同步任务为例, 网页端"定时任务"页配置调度, 无需改框架代码):
+
+1. **写处理器** (唯一的代码工作), 签名 `func(ctx context.Context, params string) (string, error)`:
+   - params 用 JSON 承载配置 (如 `{"source":"erp","batch":500}`), 网页端可改参数不必改代码;
+   - 返回有价值的输出摘要 (如 `同步完成: 拉取 1200 条, 新增 35, 更新 12`), 写入执行日志「输出/原因」列;
+     同时保留 `g.Log()` 双通道 (应用日志供服务端排障);
+   - 同步类任务做成**幂等** (按业务键 upsert); 执行重叠无需自行处理, 调度器为 AddSingleton,
+     上一轮未结束不会触发下一轮。
+2. **注册处理器**: 业务包 `init()` 中调用包级 `job.RegisterHandler("模块.动作", 处理函数)`
+   (命名习惯 `sync.externalData`); 用包级入口而非 `service.Job()` 注册——Go 保证被依赖包先初始化,
+   规避顺序陷阱。处理器放在**新的** logic 包时, 需在 `internal/logic/logic.go` 补一行空导入。
+3. **重启后端**: 注册发生在进程启动时, 重启后处理器名才会出现在任务页下拉框。
+4. **网页端配置**: 定时任务页 → 新增 → 选处理器/填任务名/cron (可视化生成器一键"每小时/每天"再微调)
+   /参数 JSON; 新增任务默认**暂停**。
+5. **验证上线**: 点"执行"立即跑一次 → 日志抽屉看输出摘要 → 确认后打开开关启动;
+   之后每次触发 (定时/手动) 均有执行日志 (结果/输出/耗时)。
+
+边界提醒: 多副本部署时每个实例**各自跑一份** (gcron 单机调度), 同步任务在该部署下需自行加分布式锁
+(如 Redis SETNX); 依赖外部系统时把超时控制在自己手里, 避免一轮卡死表现为执行耗时异常长。
+
+脚手架内置处理器可直接使用: `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog`
+(params: `{"days": 90}`, 输出形如"清理 sys_login_log 90 天前日志, 删除 N 行")。
 
 **Excel 导入导出接入** (工具: `utility/excelx`):
 

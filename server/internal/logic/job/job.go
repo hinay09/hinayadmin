@@ -102,6 +102,8 @@ func (s *sJob) invoke(ctx context.Context, name, params string) (string, error) 
 // registerBuiltinHandlers 脚手架内置处理器: 示例 + 日志清理自维护。
 func (s *sJob) registerBuiltinHandlers() {
 	s.RegisterHandler("demo.echo", func(ctx context.Context, params string) (string, error) {
+		// 双通道: 应用日志(服务端排障/采集) + 返回摘要(执行日志表/网页端)
+		g.Log().Infof(ctx, "定时任务示例输出: %s", params)
 		return "echo: " + params, nil
 	})
 	// 按天清理登录日志: params 形如 {"days": 90}
@@ -143,6 +145,7 @@ func cleanLogBefore(ctx context.Context, table, params string, defaultDays int) 
 		return "", err
 	}
 	n, _ := res.RowsAffected()
+	g.Log().Infof(ctx, "清理 %s %d 天前日志完成, 删除 %d 行", table, days, n)
 	return fmt.Sprintf("清理 %s %d 天前日志, 删除 %d 行", table, days, n), nil
 }
 
@@ -206,6 +209,8 @@ func (s *sJob) runJob(id uint64, name, handler, params string) {
 		} else {
 			output = output + "; " + err.Error()
 		}
+		// 失败同步写应用日志 (执行日志表入库失败时仍有服务侧痕迹)
+		g.Log().Errorf(ctx, "定时任务[%s#%d]执行失败: %v", name, id, err)
 	}
 	output = truncate(output, 1000)
 	if _, lerr := dao.SysJobLog.Ctx(ctx).Data(g.Map{
