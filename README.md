@@ -405,7 +405,7 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 8. **前端**: `composables/useApi.ts` 新增 hook + `pages/<module>/index.vue` 页面。
 9. **授权**: 通过菜单管理与角色管理为对应角色分配菜单权限码与 API 权限即可生效。
 
-新增**定时任务处理器** (网页端"定时任务"页可配置调度): 业务包 import `internal/logic/job`, 在自身 `init()` 中调用 `job.RegisterHandler("模块.动作", func(ctx, params string) error {...})` 即可, 处理器名会出现在任务页的下拉框中; Go 的包初始化顺序保证注册时 service 已就绪。脚手架内置 `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog` (params: `{"days": 90}`) 可直接使用。
+新增**定时任务处理器** (网页端"定时任务"页可配置调度): 业务包 import `internal/logic/job`, 在自身 `init()` 中调用 `job.RegisterHandler("模块.动作", func(ctx, params string) (string, error) {...})` 即可——返回的字符串是执行输出摘要, 成功/失败都会写入执行日志的「输出/原因」列; 处理器名会出现在任务页的下拉框中, Go 的包初始化顺序保证注册时 service 已就绪。脚手架内置 `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog` (params: `{"days": 90}`, 输出形如"清理 sys_login_log 90 天前日志, 删除 N 行") 可直接使用。
 
 **Excel 导入导出接入** (工具: `utility/excelx`):
 

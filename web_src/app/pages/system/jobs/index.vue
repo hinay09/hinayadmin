@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete, VideoPlay, Tickets } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, VideoPlay, Tickets, MagicStick, QuestionFilled } from '@element-plus/icons-vue'
 import { useJobApi } from '~/composables/useApi'
 import { useUserStore } from '~/stores/user'
 
@@ -28,6 +28,17 @@ const cronPresets = [
 
 // ---- 任务表单 ----
 const dialogVisible = ref(false)
+const cronBuilderVisible = ref(false)
+
+/* ---- Cron 字段示意 (popover 表格数据) ---- */
+const cronLegend = [
+  { pos: 1, field: '秒', range: '0-59' },
+  { pos: 2, field: '分钟', range: '0-59' },
+  { pos: 3, field: '小时', range: '0-23' },
+  { pos: 4, field: '日', range: '1-31' },
+  { pos: 5, field: '月', range: '1-12' },
+  { pos: 6, field: '周', range: '0-6 (0=周日)' },
+]
 const submitting = ref(false)
 const editingId = ref(0)
 const formRef = ref<FormInstance>()
@@ -262,8 +273,30 @@ onMounted(async () => {
             <el-option v-for="h in handlers" :key="h" :value="h" :label="h" />
           </el-select>
         </el-form-item>
-        <el-form-item label="cron 表达式" prop="cronExpr">
-          <el-input v-model="form.cronExpr" placeholder="6位: 秒 分 时 日 月 周" />
+        <el-form-item prop="cronExpr">
+          <template #label>
+            <span>cron 表达式</span>
+            <el-popover placement="top-start" width="420" trigger="hover">
+              <template #reference>
+                <el-icon class="cron-help-icon"><QuestionFilled /></el-icon>
+              </template>
+              <table class="cron-legend">
+                <tr><th>位置</th><th>字段</th><th>允许值</th></tr>
+                <tr v-for="r in cronLegend" :key="r.pos">
+                  <td>{{ r.pos }}</td><td>{{ r.field }}</td><td>{{ r.range }}</td>
+                </tr>
+              </table>
+              <div class="cron-sym">
+                <code>*</code> 任意值 <code>,</code> 枚举 <code>-</code> 范围 <code>/</code> 步进(起始/间隔);
+                共 6 位含秒, 无年域 (GoFrame gcron)
+              </div>
+            </el-popover>
+          </template>
+          <el-input v-model="form.cronExpr" placeholder="6位: 秒 分 时 日 月 周">
+            <template #append>
+              <el-button :icon="MagicStick" @click="cronBuilderVisible = true">可视化生成</el-button>
+            </template>
+          </el-input>
           <div class="preset-row">
             <el-tag
               v-for="p in cronPresets"
@@ -286,6 +319,9 @@ onMounted(async () => {
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- Cron 可视化生成器 -->
+    <CronBuilder v-model="cronBuilderVisible" :cron="form.cronExpr" @apply="form.cronExpr = $event" />
 
     <!-- 执行日志抽屉 -->
     <el-drawer v-model="logVisible" size="720px">
@@ -356,6 +392,36 @@ onMounted(async () => {
 .preset-tag {
   cursor: pointer;
   margin-right: 6px;
+}
+
+.cron-help-icon {
+  margin-left: 3px;
+  color: var(--el-text-color-secondary);
+  cursor: help;
+  vertical-align: middle;
+}
+
+.cron-legend {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.cron-legend th, .cron-legend td {
+  border: 1px solid var(--el-border-color-lighter);
+  padding: 3px 10px;
+  text-align: left;
+}
+
+.cron-sym {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.8;
+}
+.cron-sym code {
+  background: var(--el-fill-color);
+  padding: 0 4px;
+  border-radius: 3px;
 }
 
 .fail-msg {

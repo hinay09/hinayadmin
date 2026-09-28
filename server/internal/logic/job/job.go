@@ -59,6 +59,7 @@ func jobName(id uint64) string {
 // RegisterHandler 包级处理器注册入口。
 // 业务模块 import 本包后在自身 init() 中调用: Go 语言保证被依赖包先完成初始化,
 // 规避经由 service.Job() 注册的初始化顺序陷阱。
+// 处理器返回的字符串将作为执行输出写入 sys_job_log.output。
 func RegisterHandler(name string, fn model.JobHandler) {
 	service.Job().RegisterHandler(name, fn)
 }
@@ -68,6 +69,7 @@ func RegisterHandler(name string, fn model.JobHandler) {
 // ---------------------------------------------------------------------------
 
 // RegisterHandler 注册任务处理器 (业务模块在 init() 中调用)。
+// 处理器返回的字符串将作为执行输出写入 sys_job_log.output。
 func (s *sJob) RegisterHandler(name string, fn model.JobHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,32 +89,31 @@ func (s *sJob) Handlers() []string {
 }
 
 // invoke 调用处理器, 未注册时返回明确错误。
-func (s *sJob) invoke(ctx context.Context, name, params string) error {
+func (s *sJob) invoke(ctx context.Context, name, params string) (string, error) {
 	s.mu.RLock()
 	fn, ok := s.handlers[name]
 	s.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("处理器 %q 未注册", name)
+		return "", fmt.Errorf("处理器 %q 未注册", name)
 	}
 	return fn(ctx, params)
 }
 
 // registerBuiltinHandlers 脚手架内置处理器: 示例 + 日志清理自维护。
 func (s *sJob) registerBuiltinHandlers() {
-	s.RegisterHandler("demo.echo", func(ctx context.Context, params string) error {
-		g.Log().Infof(ctx, "定时任务示例输出: %s", params)
-		return nil
+	s.RegisterHandler("demo.echo", func(ctx context.Context, params string) (string, error) {
+		return "echo: " + params, nil
 	})
 	// 按天清理登录日志: params 形如 {"days": 90}
-	s.RegisterHandler("job.cleanLoginLog", func(ctx context.Context, params string) error {
+	s.RegisterHandler("job.cleanLoginLog", func(ctx context.Context, params string) (string, error) {
 		return cleanLogBefore(ctx, "sys_login_log", params, 90)
 	})
 	// 按天清理操作日志: params 形如 {"days": 180}
-	s.RegisterHandler("job.cleanAuditLog", func(ctx context.Context, params string) error {
+	s.RegisterHandler("job.cleanAuditLog", func(ctx context.Context, params string) (string, error) {
 		return cleanLogBefore(ctx, "sys_audit_log", params, 180)
 	})
 	// 按天清理自身执行日志: params 形如 {"days": 180}
-	s.RegisterHandler("job.cleanJobLog", func(ctx context.Context, params string) error {
+	s.RegisterHandler("job.cleanJobLog", func(ctx context.Context, params string) (string, error) {
 		return cleanLogBefore(ctx, "sys_job_log", params, 180)
 	})
 }
@@ -131,19 +132,18 @@ func daysParam(params string, defaultDays int) int {
 	return p.Days
 }
 
-// cleanLogBefore 删除 N 天前的日志行 (通用内置清理)。
+// cleanLogBefore 删除 N 天前的日志行 (通用内置清理), 返回执行摘要。
 // 硬编码表名说明: 这里操作的均为本脚手架固定日志表, 且表名不允许来自外部参数,
 // 不存在注入面。
-func cleanLogBefore(ctx context.Context, table, params string, defaultDays int) error {
+func cleanLogBefore(ctx context.Context, table, params string, defaultDays int) (string, error) {
 	days := daysParam(params, defaultDays)
 	before := gtime.Now().AddDate(0, 0, -days).Format("Y-m-d H:i:s")
 	res, err := g.DB().Model(table).Ctx(ctx).Where("created_at < ?", before).Delete()
 	if err != nil {
-		return err
+		return "", err
 	}
 	n, _ := res.RowsAffected()
-	g.Log().Infof(ctx, "清理 %s %d 天前日志完成, 删除 %d 行", table, days, n)
-	return nil
+	return fmt.Sprintf("清理 %s %d 天前日志, 删除 %d 行", table, days, n), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -194,14 +194,20 @@ func (s *sJob) unschedule(id uint64) {
 func (s *sJob) runJob(id uint64, name, handler, params string) {
 	ctx := context.Background()
 	start := time.Now()
-	err := s.invoke(ctx, handler, params)
+	out, err := s.invoke(ctx, handler, params)
 	duration := time.Since(start).Milliseconds()
 
-	output, status := "", consts.JobLogStatusSuccess
+	// 成功与失败都记录执行输出: 成功=处理器返回的摘要, 失败=错误原因
+	output, status := strings.TrimSpace(out), consts.JobLogStatusSuccess
 	if err != nil {
 		status = consts.JobLogStatusFail
-		output = truncate(err.Error(), 1000)
+		if output == "" {
+			output = err.Error()
+		} else {
+			output = output + "; " + err.Error()
+		}
 	}
+	output = truncate(output, 1000)
 	if _, lerr := dao.SysJobLog.Ctx(ctx).Data(g.Map{
 		"job_id":      id,
 		"job_name":    name,

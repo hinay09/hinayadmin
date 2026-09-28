@@ -8,8 +8,9 @@ import (
 )
 
 // JobHandler 定时任务处理器签名。
-// params 为任务配置的原始字符串(通常为 JSON), 由处理器自行解析。
-type JobHandler func(ctx context.Context, params string) error
+// params 为任务配置的原始字符串(通常为 JSON), 由处理器自行解析;
+// 返回值为执行输出摘要(成功/失败都会写入 sys_job_log.output, 供网页端查看)。
+type JobHandler func(ctx context.Context, params string) (string, error)
 
 // SysJob 数据库实体 (sys_job)。
 type SysJob struct {
