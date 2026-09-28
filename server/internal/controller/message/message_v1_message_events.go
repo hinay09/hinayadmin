@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -12,6 +13,7 @@ import (
 	"hinay.cn/admin/internal/logic/notify"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/xerror"
 )
 
 // MessageEvents 消息事件流 (SSE 长连接)。
@@ -23,6 +25,19 @@ func (c *ControllerV1) MessageEvents(ctx context.Context, req *v1.MessageEventsR
 	if user == nil {
 		return nil, nil
 	}
+
+	// 先占连接配额 (每用户/全局上限), 超限在写流响应头之前以 429 拒绝,
+	// 客户端据此停止重连并回落轮询 (MessageBell)。
+	ch, cancel, serr := notify.Subscribe(user.UserId)
+	if serr != nil {
+		r.Response.WriteStatus(http.StatusTooManyRequests, g.Map{
+			"code":    xerror.CodeTooManyReq.Code(),
+			"message": serr.Error(),
+			"data":    nil,
+		})
+		return nil, nil
+	}
+	defer cancel()
 
 	// SSE 响应头; X-Accel-Buffering 告知 nginx 禁用代理缓冲
 	r.Response.Header().Set("Content-Type", "text/event-stream")
@@ -40,15 +55,18 @@ func (c *ControllerV1) MessageEvents(ctx context.Context, req *v1.MessageEventsR
 		write("hello", cnt)
 	}
 
-	ch, cancel := notify.Subscribe(user.UserId)
-	defer cancel()
-
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
+	// 单连接最长存活 1 小时: 到点收流, 客户端退避重连。
+	// 目的: 周期性回收僵尸连接(客户端断开未被感知的场景), 释放连接配额。
+	maxAge := time.NewTimer(time.Hour)
+	defer maxAge.Stop()
 	streamCtx := r.Context()
 	for {
 		select {
 		case <-streamCtx.Done():
+			return nil, nil
+		case <-maxAge.C:
 			return nil, nil
 		case ev := <-ch:
 			write("message", ev)

@@ -54,6 +54,15 @@ async function connectSse() {
       headers: { Authorization: `Bearer ${userStore.token}` },
       signal: sseAbort.signal,
     })
+    // 429=连接数达上限(服务端每用户/全局配额), 401=会话失效:
+    // 不再重连, 交由轮询兜底 / 路由守卫处理登出。
+    if (res.status === 429 || res.status === 401) {
+      if (!ssePollFast) {
+        ssePollFast = true
+        setPollInterval()
+      }
+      return
+    }
     if (!res.ok || !res.body) throw new Error(`sse ${res.status}`)
 
     sseBackoff = 5_000
@@ -78,9 +87,11 @@ async function connectSse() {
         handleSseFrame(frame)
       }
     }
+    // 流被服务端正常收束(单连接 1 小时上限到期主动收流): 立即重连
+    throw new Error('sse closed by server')
   }
   catch {
-    // 连接断开/失败: 切回短周期轮询并退避重连
+    // 连接断开/失败/服务端收流: 切回短周期轮询并退避重连
     if (!ssePollFast) {
       ssePollFast = true
       setPollInterval()

@@ -4,10 +4,23 @@
 // 消息创建方按接收人发布事件, 连接端收到后刷新未读数并弹出提示。
 // 多副本部署时各实例独立 (消息只在接收人连接的实例上触达,
 // 未触达的由前端轮询兜底), 单实例部署无此问题。
+//
+// 资源保护: 每用户连接数上限 MaxConnsPerUser, 全局上限 MaxConnsTotal,
+// 超限订阅返回错误 (连接端应答 429), 防止连接数无限增长耗尽内存。
 package notify
 
 import (
+	"fmt"
 	"sync"
+)
+
+// 连接数上限 (资源保护)。
+const (
+	// MaxConnsPerUser 单用户并发 SSE 连接上限 (多标签页/多设备正常场景 3 条足够,
+	// 超出通常是连接泄漏或异常客户端)。
+	MaxConnsPerUser = 3
+	// MaxConnsTotal 全实例连接总上限 (内存兜底, 与用户数无关)。
+	MaxConnsTotal = 1000
 )
 
 // Event 推送给单个连接的事件。
@@ -19,35 +32,47 @@ type Event struct {
 
 // hub 连接注册表 (按用户 ID 分组)。
 type hub struct {
-	mu   sync.RWMutex
-	subs map[uint64]map[chan Event]struct{}
+	mu    sync.RWMutex
+	subs  map[uint64]map[chan Event]struct{}
+	total int // 当前连接总数 (与 subs 一致性由 mu 保证)
 }
 
 var h = &hub{subs: make(map[uint64]map[chan Event]struct{})}
 
-// Subscribe 订阅当前用户的事件流; cancel 必须在连接结束时调用, 否则 channel 泄漏。
-func Subscribe(userId uint64) (ch chan Event, cancel func()) {
+// Subscribe 订阅当前用户的事件流; cancel 必须在连接结束时调用(幂等), 否则占用连接配额。
+// 超出 MaxConnsPerUser / MaxConnsTotal 时返回错误 (连接端应答 429)。
+func Subscribe(userId uint64) (ch chan Event, cancel func(), err error) {
 	if userId == 0 {
 		c := make(chan Event, 8)
-		return c, func() {}
+		return c, func() {}, nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.total >= MaxConnsTotal {
+		return nil, nil, fmt.Errorf("连接总数已达上限(%d), 请稍后重试", MaxConnsTotal)
+	}
+	if len(h.subs[userId]) >= MaxConnsPerUser {
+		return nil, nil, fmt.Errorf("同一账号的连接数已达上限(%d), 请关闭多余页面后重试", MaxConnsPerUser)
 	}
 	c := make(chan Event, 8)
-	h.mu.Lock()
 	if h.subs[userId] == nil {
 		h.subs[userId] = make(map[chan Event]struct{})
 	}
 	h.subs[userId][c] = struct{}{}
-	h.mu.Unlock()
+	h.total++
 	return c, func() {
 		h.mu.Lock()
+		defer h.mu.Unlock()
 		if set := h.subs[userId]; set != nil {
-			delete(set, c)
+			if _, ok := set[c]; ok { // 幂等: 重复 cancel 不重复扣减
+				delete(set, c)
+				h.total--
+			}
 			if len(set) == 0 {
 				delete(h.subs, userId)
 			}
 		}
-		h.mu.Unlock()
-	}
+	}, nil
 }
 
 // PublishTo 向指定用户的所有在线连接发布事件 (无在线连接则丢弃, 由轮询兜底)。
