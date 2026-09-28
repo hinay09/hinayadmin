@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	"github.com/gogf/gf/v2/os/gtime"
@@ -61,8 +63,37 @@ func defaults() Policy {
 	return Policy{MinLength: 6, MaxLength: 32}
 }
 
-// Load 读取当前启用的密码策略 (查询失败/缺项时回退默认值, 不阻断业务)。
+// 策略 30s 内存缓存: Auth 中间件每个业务请求都会做改密判定,
+// 避免逐请求读配置表 (配置修改最迟 30s 生效)。
+var (
+	policyMu    sync.RWMutex
+	policyCache Policy
+	policyAt    time.Time
+)
+
+// policyCacheTTL 策略缓存时长。
+const policyCacheTTL = 30 * time.Second
+
+// Load 读取当前启用的密码策略 (30s 缓存; 查询失败/缺项回退默认值, 不阻断业务)。
 func Load(ctx context.Context) Policy {
+	policyMu.RLock()
+	if !policyAt.IsZero() && time.Since(policyAt) < policyCacheTTL {
+		p := policyCache
+		policyMu.RUnlock()
+		return p
+	}
+	policyMu.RUnlock()
+
+	p := loadFromDB(ctx)
+
+	policyMu.Lock()
+	policyCache, policyAt = p, time.Now()
+	policyMu.Unlock()
+	return p
+}
+
+// loadFromDB 实际查询配置表。
+func loadFromDB(ctx context.Context) Policy {
 	p := defaults()
 	rows, err := dao.SysConfig.Ctx(ctx).
 		Fields("config_key, config_value").

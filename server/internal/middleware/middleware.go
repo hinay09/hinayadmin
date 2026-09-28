@@ -17,6 +17,7 @@ import (
 	"hinay.cn/admin/internal/consts"
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/logic/casbinx"
+	"hinay.cn/admin/internal/logic/pwdpolicy"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
@@ -152,10 +153,50 @@ func Auth(r *ghttp.Request) {
 	newCtx = context.WithValue(newCtx, consts.CtxJwtTokenKey, tokenStr)
 	r.SetCtx(newCtx)
 
+	// 后端兜底 (纵深防御, 不依赖前端跳转):
+	//   1) 账号已禁用/删除 -> token 立即失效 (登录/续签之外的首道实时校验);
+	//   2) 强制改密 (管理员创建/重置/导入, 或密码已过期) -> 仅放行会话类白名单接口,
+	//      其余业务 API 一律 403, 直至完成改密。
+	// 会话类白名单(authWhitelist)与本中间件同文件, 含改密/用户信息/登出等。
+	if _, public := publicPaths[r.URL.Path]; !public {
+		if _, session := authWhitelist[r.URL.Path]; !session {
+			block, unauthorized, msg := userAccessState(ctx, claims.UserId)
+			if block {
+				if unauthorized {
+					writeUnauthorized(r)
+				} else {
+					writeForbiddenWithMessage(r, msg)
+				}
+				return
+			}
+		}
+	}
+
 	// 在线会话心跳: 异步 + 节流 (logic/online), 尽力而为, 不影响请求
 	go service.Online().Touch(context.Background(), tokenStr)
 
 	r.Middleware.Next()
+}
+
+// userAccessState 查询用户当前访问状态 (每个业务请求一次主键查询)。
+// 返回: block=是否拦截, unauthorized=按 401 还是 403 处理, msg=拦截原因。
+func userAccessState(ctx context.Context, userId uint64) (block, unauthorized bool, msg string) {
+	row, err := dao.SysUser.Ctx(ctx).
+		Fields("id, status, must_change_pwd, pwd_updated_at, deleted_at").
+		Where("id", userId).
+		One()
+	if err != nil {
+		// 查询失败 fail-close: 拒绝而非放行
+		return true, true, ""
+	}
+	if row.IsEmpty() || !row["deleted_at"].IsNil() || row["status"].Int() != consts.StatusEnabled {
+		// 账号已删除/禁用: token 视为失效
+		return true, true, ""
+	}
+	if row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime()) {
+		return true, false, xerror.New(xerror.CodeForbidden, "密码已过期或被重置, 请先修改密码").Error()
+	}
+	return false, false, ""
 }
 
 // publicPaths 公开接口白名单: Auth 与 Casbin 中间件均跳过。
@@ -236,6 +277,15 @@ func Casbin(r *ghttp.Request) {
 
 func writeUnauthorized(r *ghttp.Request) {
 	writeUnauthorizedWithMessage(r, xerror.CodeUnauthorized.Message())
+}
+
+func writeForbiddenWithMessage(r *ghttp.Request, message string) {
+	r.Response.WriteStatus(http.StatusForbidden, g.Map{
+		"code":    xerror.CodeForbidden.Code(),
+		"message": message,
+		"data":    nil,
+	})
+	r.ExitAll()
 }
 
 func writeUnauthorizedWithMessage(r *ghttp.Request, message string) {

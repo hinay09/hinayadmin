@@ -153,8 +153,32 @@ func SkipColumn(name string) bool {
 // 模型构建
 // ---------------------------------------------------------------------------
 
+// reModName 模块名白名单: 小写字母开头, 仅小写字母/数字/下划线, 长度 2-31。
+// 安全约束: mod 会拼进生成文件路径与 import 语句, 必须拒绝路径穿越类字符。
+var reModName = regexp.MustCompile(`^[a-z][a-z0-9_]{1,30}$`)
+
+// ValidateModAndTitle 校验外部输入的模块名与标题。
+// title 会进入生成的 SQL/代码文本, 拒绝引号/反斜杠/换行等破坏性与注入类字符。
+func ValidateModAndTitle(mod, title string) error {
+	if mod != "" && !reModName.MatchString(mod) {
+		return fmt.Errorf("模块名不合法: 仅允许小写字母开头的 小写字母/数字/下划线, 长度 2-31 (收到 %q)", mod)
+	}
+	if r := []rune(title); len(r) > 32 {
+		return fmt.Errorf("中文标题过长 (最多 32 字符)")
+	}
+	for _, c := range title {
+		if c == '\'' || c == '"' || c == '\\' || c == '\n' || c == '\r' || c < 0x20 {
+			return fmt.Errorf("中文标题含非法字符 (引号/反斜杠/换行/控制字符)")
+		}
+	}
+	return nil
+}
+
 // Build 由列输入构建渲染模型。
 func Build(opts BuildOptions) (*Model, error) {
+	if err := ValidateModAndTitle(opts.Mod, opts.Title); err != nil {
+		return nil, err
+	}
 	entity := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(opts.Table, "biz_"), "sys_"), "s")
 	mod := opts.Mod
 	if mod == "" {
