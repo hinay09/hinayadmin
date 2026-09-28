@@ -35,6 +35,17 @@ redis:
 cors:
   allowOrigins: []
 
+# 全局限流 (按客户端 IP 的令牌桶, 单实例内存态; 修改需重启)
+ratelimit:
+  enable: true
+  rate: 100     # 每秒允许请求数(令牌补充速率)
+  burst: 200    # 突发上限(桶容量)
+
+# 网页版代码生成 (information_schema 读表 + 预览/zip 下载/直写源码树)
+# 安全开关: 默认关闭; 直写要求服务实例运行于源码目录, 容器内自动拒绝。
+gencode:
+  enable: false
+
 # JWT 配置 (secret 由环境变量 JWT_SECRET 注入, 未设置时启动脚本占位符保留, 服务拒绝启动)
 jwt:
   secret:     "${JWT_SECRET}"

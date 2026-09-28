@@ -5,13 +5,15 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import { Search, Plus, Edit, Delete, Key, UserFilled } from '@element-plus/icons-vue'
-import { useRoleApi, useMenuApi, useApiResourceApi } from '~/composables/useApi'
+import { useRoleApi, useMenuApi, useApiResourceApi, useOrgApi } from '~/composables/useApi'
 
 definePageMeta({ title: '角色管理' })
+defineOptions({ name: 'system-roles' })
 
 const roleApi = useRoleApi()
 const menuApi = useMenuApi()
 const apiResourceApi = useApiResourceApi()
+const orgApi = useOrgApi()
 
 const loading = ref(false)
 const list = ref<any[]>([])
@@ -34,10 +36,39 @@ const form = reactive({
   sort: 0,
   status: 1,
   remark: '',
+  dataScope: 1,
 })
 const rules = {
   name: [{ required: true, message: '请输入角色名', trigger: 'blur' }],
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
+}
+
+/* ---- 数据范围 (组织数据权限) ---- */
+const scopeOptions = [
+  { value: 1, label: '全部数据' },
+  { value: 2, label: '自定义组织' },
+  { value: 3, label: '本部门' },
+  { value: 4, label: '本部门及以下' },
+  { value: 5, label: '仅本人' },
+]
+const orgTreeRef = ref()
+const orgTreeData = ref<any[]>([])
+const orgTreeLoading = ref(false)
+// 打开抽屉时待回显的自定义组织 ID (el-tree 挂载后在 @opened 中设置勾选)
+const pendingOrgIds = ref<number[]>([])
+// 内置 admin 角色不受数据范围约束, 下拉禁用
+const scopeDisabled = computed(() => isEdit.value && form.code === 'admin')
+
+async function loadOrgTree() {
+  if (orgTreeData.value.length) return
+  orgTreeLoading.value = true
+  try {
+    const res = await orgApi.tree()
+    orgTreeData.value = res.tree || []
+  }
+  finally {
+    orgTreeLoading.value = false
+  }
 }
 
 /* ---- 权限分配对话框 ---- */
@@ -116,39 +147,67 @@ async function loadList() {
 }
 
 function resetForm() {
-  Object.assign(form, { id: 0, name: '', code: '', sort: 0, status: 1, remark: '' })
+  Object.assign(form, { id: 0, name: '', code: '', sort: 0, status: 1, remark: '', dataScope: 1 })
 }
 
 function openCreate() {
   resetForm()
   drawerTitle.value = '新增角色'
   isEdit.value = false
+  pendingOrgIds.value = []
+  loadOrgTree()
   drawerVisible.value = true
 }
 
-function openEdit(row: any) {
+async function openEdit(row: any) {
   resetForm()
   Object.assign(form, row)
   drawerTitle.value = '编辑角色'
   isEdit.value = true
+  pendingOrgIds.value = []
+  await loadOrgTree()
+  // 自定义范围: 拉取已绑定的组织 ID 用于回显
+  if ((row.dataScope ?? 1) === 2) {
+    try {
+      const d = await roleApi.detail(row.id)
+      pendingOrgIds.value = (d.orgIds || []).map((v: any) => Number(v))
+    }
+    catch {
+      pendingOrgIds.value = []
+    }
+  }
   drawerVisible.value = true
+}
+
+// el-drawer 完全打开后再设置组织树勾选, 确保 el-tree DOM 已挂载
+async function handleDrawerOpened() {
+  await nextTick()
+  if (orgTreeRef.value && pendingOrgIds.value.length) {
+    orgTreeRef.value.setCheckedKeys(pendingOrgIds.value, false)
+  }
 }
 
 async function handleSubmit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+  // 自定义范围: 取组织树勾选节点
+  const orgIds = form.dataScope === 2 && orgTreeRef.value
+    ? (orgTreeRef.value.getCheckedKeys() as number[])
+    : []
   if (isEdit.value) {
     await roleApi.update(form.id, {
       name: form.name,
       sort: form.sort,
       status: form.status,
       remark: form.remark,
+      dataScope: form.dataScope,
+      orgIds,
     })
     ElMessage.success('更新成功')
   }
   else {
-    await roleApi.create({ ...form })
+    await roleApi.create({ ...form, orgIds })
     ElMessage.success('新增成功')
   }
   drawerVisible.value = false
@@ -277,7 +336,7 @@ onMounted(loadList)
       />
     </el-card>
 
-    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="420px">
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="420px" @opened="handleDrawerOpened">
       <template #header>
         <div style="display:flex;align-items:center;gap:6px;font-weight:600">
           <el-icon><UserFilled /></el-icon>
@@ -302,6 +361,25 @@ onMounted(loadList)
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="数据范围">
+          <el-select v-model="form.dataScope" :disabled="scopeDisabled" style="width:100%">
+            <el-option v-for="o in scopeOptions" :key="o.value" :value="o.value" :label="o.label" />
+          </el-select>
+          <div v-if="scopeDisabled" class="scope-tip">内置管理员角色始终拥有全部数据权限</div>
+        </el-form-item>
+        <el-form-item v-if="form.dataScope === 2" label="选择组织">
+          <el-tree
+            ref="orgTreeRef"
+            v-loading="orgTreeLoading"
+            :data="orgTreeData"
+            show-checkbox
+            node-key="id"
+            check-strictly
+            :props="{ label: 'name', children: 'children' }"
+            default-expand-all
+            style="width:100%;max-height:280px;overflow-y:auto;border:1px solid var(--el-border-color-lighter);border-radius:4px;padding:4px"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -375,3 +453,12 @@ onMounted(loadList)
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.scope-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+</style>

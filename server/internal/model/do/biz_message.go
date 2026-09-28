@@ -21,6 +21,8 @@ type BizMessage struct {
 	TargetScope any         // 系统通知范围:1=all,2=role,3=user;私信=0
 	ReceiverId  any         // 私信接收者ID
 	Status      any         // 状态:1=已发布,0=草稿
+	CreateId    any         // 创建人ID
+	UpdateId    any         // 最后修改人ID
 	CreatedAt   *gtime.Time // 创建时间
 	UpdatedAt   *gtime.Time // 更新时间
 	DeletedAt   *gtime.Time // 删除时间(软删)

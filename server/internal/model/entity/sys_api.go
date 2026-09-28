@@ -15,6 +15,8 @@ type SysApi struct {
 	Method      string      `json:"method"      orm:"method"      description:"HTTP方法(GET/POST/PUT/DELETE)"` // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   string      `json:"groupName"   orm:"group_name"  description:"分组名称"`                        // 分组名称
 	Description string      `json:"description" orm:"description" description:"接口描述"`                        // 接口描述
+	CreateId    uint64      `json:"createId"   orm:"create_id"   description:"创建人ID"`                        // 创建人ID
+	UpdateId    uint64      `json:"updateId"   orm:"update_id"   description:"最后修改人ID"`                      // 最后修改人ID
 	CreatedAt   *gtime.Time `json:"createdAt"   orm:"created_at"  description:""`                            //
 	UpdatedAt   *gtime.Time `json:"updatedAt"   orm:"updated_at"  description:""`                            //
 	DeletedAt   *gtime.Time `json:"deletedAt"   orm:"deleted_at"  description:"删除时间(软删)"`                    // 删除时间(软删)

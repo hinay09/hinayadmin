@@ -10,12 +10,14 @@ import (
 	"strings"
 
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/guid"
 	"hinay.cn/admin/internal/dao"
 
 	v1 "hinay.cn/admin/api/auth/v1"
 	"hinay.cn/admin/internal/consts"
 	"hinay.cn/admin/internal/logic/casbinx"
+	"hinay.cn/admin/internal/logic/pwdpolicy"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
@@ -95,12 +97,17 @@ func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.Pu
 // 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
 	failKey := consts.LoginFailPrefix + clientIp(ctx) + ":" + req.Username
+	ip, ua := clientIp(ctx), requestUserAgent(ctx)
 	// 锁定检查: 窗口内失败次数已达上限
 	if n, rerr := g.Redis().GroupString().Get(ctx, failKey); rerr == nil && n != nil && !n.IsNil() && n.Int64() >= consts.LoginFailMax {
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			Username: req.Username, Status: consts.LoginLogStatusFail,
+			Message: "失败次数过多, 临时锁定", Ip: ip, UserAgent: ua,
+		})
 		return nil, xerror.New(xerror.CodeBusinessError, "失败次数过多, 请 15 分钟后再试")
 	}
 
-	// 解密密码(一次性私钥), 解密失败不计入密码错误次数
+	// 解密密码(一次性私钥), 解密失败不计入密码错误次数 (协议层错误, 非登录尝试, 不记录)
 	plainPassword, derr := decryptPassword(ctx, req.KeyId, req.Password)
 	if derr != nil {
 		return nil, derr
@@ -121,13 +128,25 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		// 与"密码错误"走相同 bcrypt 计算与错误码, 抹平时间差与提示差异, 防用户名枚举
 		password.Verify(dummyBcryptHash, plainPassword)
 		recordLoginFailure(ctx, failKey)
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			Username: req.Username, Status: consts.LoginLogStatusFail,
+			Message: "用户不存在", Ip: ip, UserAgent: ua,
+		})
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}
 	if u.Status != consts.StatusEnabled {
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
+			Message: "账号已禁用", Ip: ip, UserAgent: ua,
+		})
 		return nil, xerror.New(xerror.CodeUserDisabled)
 	}
 	if !password.Verify(u.Password, plainPassword) {
 		recordLoginFailure(ctx, failKey)
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
+			Message: "密码错误", Ip: ip, UserAgent: ua,
+		})
 		return nil, xerror.New(xerror.CodePasswordWrong)
 	}
 
@@ -139,15 +158,39 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "签发token失败")
 	}
 	roles, _ := casbinx.GetUserRoles(ctx, u.Username)
+
+	// 最近登录信息落库 (u 内存中仍是本次之前的值, 响应里展示的是"上次登录")
+	_, _ = dao.SysUser.Ctx(ctx).Where("id", u.Id).Data(g.Map{
+		"last_login_at": gtime.Now(),
+		"last_login_ip": ip,
+	}).Update()
+	service.LoginLog().Record(ctx, model.LoginLogEntry{
+		UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess, Ip: ip, UserAgent: ua,
+	})
+	// 注册在线会话 (尽力而为)
+	service.Online().Register(ctx, token, model.OnlineSession{
+		UserId:    u.Id,
+		Username:  u.Username,
+		Nickname:  u.Nickname,
+		Ip:        ip,
+		UserAgent: ua,
+	})
+
+	// 强制改密判定: 管理员创建/重置/导入设置的标志, 或密码已过有效期
+	mustChange := u.MustChangePwd == 1 || pwdpolicy.Expired(ctx, u.PwdUpdatedAt)
+
 	return &v1.LoginRes{
 		Token:    token,
 		ExpireAt: exp,
 		UserInfo: &model.LoginUser{
-			UserId:   u.Id,
-			Username: u.Username,
-			Nickname: u.Nickname,
-			Avatar:   u.Avatar,
-			Roles:    roles,
+			UserId:        u.Id,
+			Username:      u.Username,
+			Nickname:      u.Nickname,
+			Avatar:        u.Avatar,
+			Roles:         roles,
+			LastLoginAt:   u.LastLoginAt,
+			LastLoginIp:   u.LastLoginIp,
+			MustChangePwd: mustChange,
 		},
 	}, nil
 }
@@ -163,6 +206,14 @@ func clientIp(ctx context.Context) string {
 	return "unknown"
 }
 
+// requestUserAgent 从请求上下文提取 User-Agent。
+func requestUserAgent(ctx context.Context) string {
+	if r := g.RequestFromCtx(ctx); r != nil {
+		return r.Header.Get("User-Agent")
+	}
+	return ""
+}
+
 // recordLoginFailure 累计一次登录失败; 首次失败时设置统计窗口 TTL。
 func recordLoginFailure(ctx context.Context, failKey string) {
 	n, err := g.Redis().GroupString().Incr(ctx, failKey)
@@ -175,12 +226,9 @@ func recordLoginFailure(ctx context.Context, failKey string) {
 }
 
 // blacklistToken 将 token 原子写入黑名单, TTL 覆盖 token 剩余生命周期。
+// 实现已上移到 jwtx.Blacklist (在线用户强制下线共用), 此处保留薄包装。
 func blacklistToken(ctx context.Context, token string) error {
-	ttl := int64(86400)
-	if v, cerr := g.Cfg().Get(ctx, "jwt.expireSec"); cerr == nil && v.Int64() > 0 {
-		ttl = v.Int64()
-	}
-	return g.Redis().GroupString().SetEX(ctx, consts.JWTBlacklistPrefix+token, 1, ttl)
+	return jwtx.Blacklist(ctx, token)
 }
 
 // Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
@@ -223,6 +271,8 @@ func (s *sAuth) Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRe
 	if err = blacklistToken(ctx, token); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "登出失败")
 	}
+	// 从在线会话列表剔除
+	service.Online().Remove(ctx, token)
 	return &v1.LogoutRes{}, nil
 }
 
@@ -242,13 +292,16 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 	}
 	roles, _ := casbinx.GetUserRoles(ctx, u.Username)
 	return &model.LoginUser{
-		UserId:   u.Id,
-		Username: u.Username,
-		Nickname: u.Nickname,
-		Avatar:   u.Avatar,
-		Email:    u.Email,
-		Phone:    u.Phone,
-		Roles:    roles,
+		UserId:        u.Id,
+		Username:      u.Username,
+		Nickname:      u.Nickname,
+		Avatar:        u.Avatar,
+		Email:         u.Email,
+		Phone:         u.Phone,
+		Roles:         roles,
+		LastLoginAt:   u.LastLoginAt,
+		LastLoginIp:   u.LastLoginIp,
+		MustChangePwd: u.MustChangePwd == 1 || pwdpolicy.Expired(ctx, u.PwdUpdatedAt),
 	}, nil
 }
 
@@ -309,12 +362,20 @@ func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (
 	if !password.Verify(u.Password, req.OldPassword) {
 		return nil, xerror.New(xerror.CodeBusinessError, "原密码不正确")
 	}
+	// 新密码须满足当前密码策略 (复杂度/有效期配置见 全局配置 sys.password.*)
+	if perr := pwdpolicy.Validate(ctx, req.NewPassword); perr != nil {
+		return nil, perr
+	}
 	hash, herr := password.Hash(req.NewPassword)
 	if herr != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, herr, "密码加密失败")
 	}
 	if _, err = dao.SysUser.Ctx(ctx).Where("id", cur.UserId).
-		Data(g.Map{"password": hash}).Update(); err != nil {
+		Data(g.Map{
+			"password":        hash,
+			"pwd_updated_at":  gtime.Now(),
+			"must_change_pwd": 0, // 改密成功即解除强制改密
+		}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "修改密码失败")
 	}
 	return &v1.ChangePasswordRes{}, nil

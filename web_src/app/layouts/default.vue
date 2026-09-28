@@ -180,6 +180,7 @@ function handleFullscreen() {
           </el-dropdown>
         </div>
       </el-header>
+      <TagsBar />
       <el-main class="app-main">
         <slot />
       </el-main>

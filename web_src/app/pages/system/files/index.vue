@@ -8,6 +8,7 @@ import { Search, Upload, Delete, Download } from '@element-plus/icons-vue'
 import { useFileApi } from '~/composables/useApi'
 
 definePageMeta({ title: '文件管理' })
+defineOptions({ name: 'system-files' })
 
 const api = useFileApi()
 

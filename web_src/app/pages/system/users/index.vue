@@ -4,10 +4,11 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
-import { Search, Plus, Edit, Delete, Key, User } from '@element-plus/icons-vue'
+import { Search, Plus, Edit, Delete, Key, User, Download, Upload } from '@element-plus/icons-vue'
 import { useUserApi, useRoleApi, useOrgApi } from '~/composables/useApi'
 
 definePageMeta({ title: '用户管理' })
+defineOptions({ name: 'system-users' })
 
 const userApi = useUserApi()
 const roleApi = useRoleApi()
@@ -62,6 +63,57 @@ const rules = computed(() => ({
     type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change',
   }],
 }))
+
+/* ---- Excel 导出 / 导入 (通用导入导出示例) ---- */
+const exporting = ref(false)
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    await userApi.export({ keyword: query.keyword || undefined, status: query.status })
+  }
+  catch (e: any) {
+    ElMessage.error(e?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
+}
+
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref<File | null>(null)
+const fileInputRef = ref<HTMLInputElement>()
+const importResult = ref<{ successCount: number; failCount: number; errors: string[] } | null>(null)
+
+function openImport() {
+  importFile.value = null
+  importResult.value = null
+  importVisible.value = true
+}
+
+function onFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  importFile.value = input.files?.[0] || null
+}
+
+async function handleImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择文件')
+    return
+  }
+  importing.value = true
+  try {
+    importResult.value = await userApi.import(importFile.value)
+    if (importResult.value.successCount > 0) loadList()
+  }
+  catch (e: any) {
+    ElMessage.error(e?.message || '导入失败')
+  }
+  finally {
+    importing.value = false
+  }
+}
 
 async function loadList() {
   loading.value = true
@@ -175,9 +227,10 @@ async function handleDelete(row: any) {
 }
 
 async function handleResetPwd(row: any) {
-  const { value } = await ElMessageBox.prompt('请输入新密码', '重置密码', {
+  // 提示语同时说明: 密码须满足策略, 且该用户下次登录将被强制修改
+  const { value } = await ElMessageBox.prompt('请输入新密码 (重置后该用户下次登录须修改密码)', '重置密码', {
     inputPattern: /^.{6,32}$/,
-    inputErrorMessage: '密码长度 6-32',
+    inputErrorMessage: '密码长度 6-32 (复杂度等策略由服务端校验)',
   })
   try {
     await userApi.resetPwd(row.id, value)
@@ -211,6 +264,8 @@ onMounted(() => {
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="() => { query.page = 1; loadList() }">查询</el-button>
           <el-button v-permission="'system:user:create'" type="success" :icon="Plus" @click="openCreate">新增</el-button>
+          <el-button v-permission="'system:user:list'" :loading="exporting" :icon="Download" @click="handleExport">导出</el-button>
+          <el-button v-permission="'system:user:create'" :icon="Upload" @click="openImport">导入</el-button>
         </el-form-item>
       </el-form>
 
@@ -310,5 +365,57 @@ onMounted(() => {
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-drawer>
-  </div>
+      <!-- 导入弹窗 -->
+    <el-dialog v-model="importVisible" title="导入用户" width="520px">
+      <el-alert type="info" :closable="false" style="margin-bottom:12px">
+        <template #title>
+          请先
+          <el-link type="primary" style="vertical-align:baseline" @click="userApi.importTemplate()">下载导入模板</el-link>
+          , 按模板列顺序填写后上传 (密码留空默认 123456)
+        </template>
+      </el-alert>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept=".xlsx"
+        style="display:none"
+        @change="onFileChange"
+      >
+      <el-button :icon="Upload" @click="fileInputRef?.click()">
+        {{ importFile ? importFile.name : '选择 xlsx 文件' }}
+      </el-button>
+
+      <div v-if="importResult" class="import-result">
+        <el-alert
+          :type="importResult.failCount === 0 ? 'success' : 'warning'"
+          :closable="false"
+          :title="`导入完成: 成功 ${importResult.successCount} 条, 失败 ${importResult.failCount} 条`"
+        />
+        <ul v-if="importResult.errors.length" class="import-errors">
+          <li v-for="(msg, i) in importResult.errors" :key="i">{{ msg }}</li>
+        </ul>
+      </div>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" @click="handleImport">开始导入</el-button>
+      </template>
+    </el-dialog>
+</div>
 </template>
+
+<style scoped>
+.import-result {
+  margin-top: 12px;
+}
+
+.import-errors {
+  margin: 8px 0 0 4px;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--el-color-danger);
+  line-height: 1.8;
+}
+</style>

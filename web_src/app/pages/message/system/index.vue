@@ -11,6 +11,7 @@ import { useMessageApi, useRoleApi, useUserApi, type MessageItem } from '~/compo
 import { useUserStore } from '~/stores/user'
 
 definePageMeta({ title: '系统通知' })
+defineOptions({ name: 'message-system' })
 
 const api = useMessageApi()
 const roleApi = useRoleApi()

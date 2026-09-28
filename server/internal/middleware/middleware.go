@@ -18,6 +18,7 @@ import (
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/logic/casbinx"
 	"hinay.cn/admin/internal/model"
+	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/jwtx"
 	"hinay.cn/admin/utility/xerror"
@@ -150,6 +151,10 @@ func Auth(r *ghttp.Request) {
 	newCtx := context.WithValue(ctx, consts.CtxUserKey, user)
 	newCtx = context.WithValue(newCtx, consts.CtxJwtTokenKey, tokenStr)
 	r.SetCtx(newCtx)
+
+	// 在线会话心跳: 异步 + 节流 (logic/online), 尽力而为, 不影响请求
+	go service.Online().Touch(context.Background(), tokenStr)
+
 	r.Middleware.Next()
 }
 
@@ -176,6 +181,8 @@ var authWhitelist = map[string]struct{}{
 	// 若走逐角色 Casbin 授权, 未配置该 API 策略的普通用户会在进布局时 403。
 	// 放入白名单 = 登录即可读; 匿名访问仍被 Auth 中间件拦截。
 	"/api/v1/system/configs/all": {},
+	// 消息事件流: 会话级实时通知, 登录即可订阅 (SSE 长连接)
+	"/api/v1/message/events": {},
 }
 
 // isAuthWhitelisted 判断给定路径是否命中已登录用户白名单。
@@ -476,4 +483,119 @@ func isNumeric(s string) bool {
 		}
 	}
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// 全局限流 (按客户端 IP 的内存令牌桶)
+// ---------------------------------------------------------------------------
+
+// rlBucket 单个 IP 的令牌桶。
+type rlBucket struct {
+	tokens float64
+	last   time.Time
+}
+
+// rateLimiter 进程内令牌桶集合; 限流为单实例内存态, 多副本部署时每副本独立配额。
+type rateLimiter struct {
+	mu      sync.Mutex
+	rate    float64 // 每秒补充令牌数
+	burst   float64 // 桶容量(突发上限)
+	buckets map[string]*rlBucket
+}
+
+var (
+	globalLimiter *rateLimiter
+	rlOnce        sync.Once
+	rlEnabled     bool
+)
+
+// initRateLimiter 惰性初始化: 读取 ratelimit 配置(修改需重启生效), 并启动过期桶清理。
+func initRateLimiter(ctx context.Context) {
+	rlOnce.Do(func() {
+		v, err := g.Cfg().Get(ctx, "ratelimit.enable", true)
+		if err == nil {
+			rlEnabled = v.Bool()
+		} else {
+			rlEnabled = true
+		}
+		if !rlEnabled {
+			return
+		}
+		rate := 100.0
+		burst := 200.0
+		if rv, err := g.Cfg().Get(ctx, "ratelimit.rate", 100); err == nil && rv.Int() > 0 {
+			rate = float64(rv.Int())
+		}
+		if bv, err := g.Cfg().Get(ctx, "ratelimit.burst", 200); err == nil && bv.Int() > 0 {
+			burst = float64(bv.Int())
+		}
+		globalLimiter = &rateLimiter{
+			rate:    rate,
+			burst:   burst,
+			buckets: make(map[string]*rlBucket),
+		}
+		// 每 5 分钟清理 10 分钟未活跃的桶, 防止 IP 空间膨胀
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				globalLimiter.mu.Lock()
+				for k, b := range globalLimiter.buckets {
+					if time.Since(b.last) > 10*time.Minute {
+						delete(globalLimiter.buckets, k)
+					}
+				}
+				globalLimiter.mu.Unlock()
+			}
+		}()
+	})
+}
+
+// allow 取一枚令牌, 无可用令牌返回 false。
+func (l *rateLimiter) allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	b, ok := l.buckets[key]
+	if !ok {
+		// 新桶预扣一枚, 首个请求直接放行
+		l.buckets[key] = &rlBucket{tokens: l.burst - 1, last: now}
+		return true
+	}
+	b.tokens += now.Sub(b.last).Seconds() * l.rate
+	if b.tokens > l.burst {
+		b.tokens = l.burst
+	}
+	b.last = now
+	if b.tokens >= 1 {
+		b.tokens--
+		return true
+	}
+	return false
+}
+
+// RateLimit 全局限流中间件: 按客户端 IP 限流, 超限返回 429。
+// 配置 (yaml, 重启生效):
+//
+//	ratelimit:
+//	  enable: true   # 关闭后完全放行
+//	  rate: 100      # 每秒允许请求数(令牌补充速率)
+//	  burst: 200     # 突发上限(桶容量)
+func RateLimit(r *ghttp.Request) {
+	initRateLimiter(r.Context())
+	if !rlEnabled || globalLimiter == nil {
+		r.Middleware.Next()
+		return
+	}
+	if !globalLimiter.allow(r.GetClientIp()) {
+		g.Log().Warningf(r.Context(), "rate limited: ip=%s path=%s", r.GetClientIp(), r.URL.Path)
+		r.Response.WriteStatus(http.StatusTooManyRequests, g.Map{
+			"code":    xerror.CodeTooManyReq.Code(),
+			"message": xerror.CodeTooManyReq.Message(),
+			"data":    nil,
+		})
+		r.ExitAll()
+		return
+	}
+	r.Middleware.Next()
 }

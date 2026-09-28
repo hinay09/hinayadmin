@@ -10,18 +10,28 @@
 - 完整的 RBAC 权限模型 (用户 / 角色 / 菜单 / API 资源 四套件)
 - JWT 登录鉴权 + Token 自动续签 (401 静默刷新) + Redis 黑名单退出
 - Casbin **双维度** 权限校验 (菜单维度 `menu:<id>` + API 维度 `path/method`)
+- 全局限流: 按客户端 IP 的内存令牌桶 (`ratelimit.*` 配置, 默认 100 req/s + 200 突发), 超限 429
 - 动态侧边栏菜单 + 前端 `v-permission` 按钮级权限
+- 多标签页管理: 已访问页面标签化 (KeepAlive 按标签缓存, 状态保留) + 右键菜单 (刷新/关闭当前/关闭其他/关闭全部), 仪表盘固定标签
 - 图标可视化选择器 (Element Plus 全图标库, 支持搜索)
-- 消息中心: 系统通知 (全员/角色/用户) + 私信 + 收件箱 + 已读/未读统计
-- 个人中心: 资料修改 + 密码修改 + 头像上传
+- 消息中心: 系统通知 (全员/角色/用户) + 私信 + 收件箱 + 已读/未读统计 + SSE 实时推送 (断线退避重连 + 轮询兜底)
+- 在线用户管理: Redis 会话跟踪 + 心跳活跃时间 + 强制下线 (黑名单即时失效)
+- 定时任务管理: gcron 调度 + 网页端配置/一键启停/立即执行 + 执行日志 + 内置日志清理处理器
+- 组织数据权限: 角色 `data_scope` (全部/自定义组织/本部门/本部门及以下/仅本人), 多角色并集, `DataScope().Apply()` 一行接入业务查询
+- Excel 通用导入导出 (`utility/excelx`): 表头加粗/列宽自适应/中文附件名下载; 用户列表导出 + 用户导入(含模板下载/行级错误报告) 示例
+- 审计字段自动填充: 业务表统一带 `create_id`/`update_id` (`internal/logic/ormfill` 按 gdb 接口回调重写 mysql 驱动 DoInsert/DoUpdate), INSERT/UPDATE 自动记录操作人, 业务层零感知, `gf gen dao` 免维护
+- 密码策略 (配置驱动 `sys.password.*`): 复杂度校验(长度/大小写/数字/特殊字符) + 有效期 + 管理员创建/重置/导入后首登强制改密, 前端锁定改密页直至完成
+- 个人中心: 资料修改 + 密码修改 + 头像上传 + 上次登录时间/IP
 - 字典管理 (类型 + 数据项, 支持批量排序)
 - 文件管理 (上传 / 列表 / MIME 过滤)
 - 全局配置 (键值对, 多类型支持: 文本 / 数字 / 布尔 / JSON)
 - 配置驱动界面: 站点名称 / Logo / 页脚版权取自 `sys_config`, 作用于侧边栏品牌区 / 登录页 / 浏览器标题 / 仪表盘, 配置管理页修改后即时生效
 - 操作日志 (自动记录 POST/PUT/DELETE)
+- 登录日志 (登录成功/失败异步落库, 记录 IP/UA/失败原因, 按条删除)
 - 统一软删除规范: 所有核心表带 `deleted_at`
 - 统一响应协议 `{ code, message, data }`
-- 跨域 / RequestId 链路追踪 / 鉴权 / 权限四级中间件
+- 中间件链: CORS / RequestId / 全局限流 / 安全响应头 / 操作日志 / JWT 鉴权 / Casbin 权限
+- 代码生成器 (CLI + 网页版): 见下方「CRUD 代码生成」
 - GoFrame 工程化分层: `api -> controller -> service -> logic -> dao` (gen ctrl / gen dao / gen service)
 
 ## 目录结构
@@ -32,7 +42,7 @@ hinay-admin/
 │   ├── api/                             # API 接口契约 (Req/Res + g.Meta 路由)
 │   │   ├── auth/v1                      #   登录/登出/当前用户/菜单/个人中心
 │   │   ├── message/v1                   #   消息中心 (系统通知 + 私信 + 收件箱)
-│   │   └── system/v1                    #   用户 / 角色 / 菜单 / API 资源 / 字典 / 文件 / 配置 / 操作日志
+│   │   └── system/v1                    #   用户/角色/菜单/API/字典/文件/配置/操作日志/登录日志/在线用户/定时任务/代码生成
 │   ├── internal/
 │   │   ├── cmd                          # 启动入口 + 路由分组
 │   │   ├── controller/                  # 控制器层 (单方法薄透传, gf gen ctrl 生成)
@@ -42,49 +52,69 @@ hinay-admin/
 │   │   ├── service/                     # 业务接口层 (IAuth/IMessage/IUser/IRole/IMenu/IApi/IDict/IFile/IConfig/IAuditLog)
 │   │   ├── logic/                       # 业务实现层 (sXxx + init 注册到 service)
 │   │   │   ├── auth                     #   登录/登出/菜单树/个人资料/改密/头像
-│   │   │   ├── system                   #   用户/角色/菜单/API/字典/文件/配置/审计日志
+│   │   │   ├── system                   #   用户/角色/菜单/API/字典/文件/配置/审计日志/登录日志
 │   │   │   ├── message                  #   消息通知 (含收件箱权限路由)
+│   │   │   ├── online                   #   在线会话 (Redis 注册/心跳/强制下线)
+│   │   │   ├── job                      #   定时任务调度 (gcron + 执行日志 + 处理器注册表)
+│   │   │   ├── datascope                #   组织数据权限 (范围并集计算 + 查询注入)
+│   │   │   ├── pwdpolicy                #   密码策略 (配置驱动复杂度/有效期)
+│   │   │   ├── notify                   #   SSE 推送枢纽 (按用户订阅/发布)
+│   │   │   ├── gencode                  #   网页版代码生成 (表/列/预览/zip/直写)
+│   │   │   ├── ormfill                  #   审计字段自动填充 (重写 mysql 驱动 DoInsert/DoUpdate)
 │   │   │   └── casbinx                  #   Casbin enforcer + 策略读写
 │   │   ├── dao/                         # 数据访问对象 (gf gen dao 自动生成, 禁止手改)
 │   │   ├── model/                       # 实体 + DO + 业务 DTO
-│   │   ├── middleware                   # CORS / RequestId / Auth / Casbin
+│   │   ├── middleware                   # CORS / RequestId / 全局限流 / 安全头 / 操作日志 / Auth / Casbin
 │   │   ├── consts                       # 常量与上下文 Key
 │   │   └── packed                       # 注册 MySQL/Redis 驱动
 │   ├── utility/
-│   │   ├── jwtx                         # JWT 签发与校验
+│   │   ├── jwtx                         # JWT 签发/校验/黑名单
+│   │   ├── crudgen                      # CRUD 代码生成核心 (DDL 解析/模板/渲染/写盘/zip, CLI 与网页共用)
+│   │   ├── excelx                       # Excel 通用导入导出
 │   │   ├── password                     # bcrypt
+│   │   ├── rsax                         # 登录密码一次性 RSA 加解密
+│   │   ├── mimeutil                     # 上传文件头内容嗅探
 │   │   ├── response                     # 统一响应 / 分页结构
 │   │   ├── contextx                     # ctx 取登录用户/Token 工具
 │   │   └── xerror                       # 错误码与包装
+│   ├── tools/crudgen/                   # 代码生成 CLI 入口 (make gen-crud)
 │   ├── manifest/
-│   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin)
-│   │   └── sql/init.sql                 # 数据库 DDL + 种子 + 初始策略
-│   └── Makefile                         # run / initdb / vet / fmt / tidy
+│   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin/ratelimit/gencode)
+│   │   └── sql/
+│   │       ├── init.sql                 # 全新安装: DDL + 种子 + 初始策略
+│   │       └── upgrade/                 # 存量库增量脚本 (0001-0009, 按序执行)
+│   └── Makefile                         # run / initdb / vet / fmt / tidy / gen-crud
 └── web_src/                             # Nuxt 4 前端
     ├── app/
     │   ├── app.vue                      # 根组件
     │   ├── layouts/                     # default(主骨架) / blank(登录)
     │   ├── pages/                       # 页面路由
-    │   │   ├── login.vue                #   登录
+    │   │   ├── login.vue                #   登录 (blank 布局)
     │   │   ├── dashboard.vue            #   仪表盘
-    │   │   ├── profile.vue              #   个人中心 (资料+头像+密码)
-    │   │   └── system/                  #   系统管理
-    │   │       ├── users/index.vue      #     用户管理
-    │   │       ├── roles/index.vue      #     角色管理
-    │   │       ├── menus/index.vue      #     菜单管理 (含图标选择器)
-    │   │       ├── apis/index.vue       #     API 管理
-    │   │       ├── dicts/index.vue      #     字典管理
-    │   │       ├── files/index.vue      #     文件管理
-    │   │       ├── configs/index.vue    #     全局配置
-    │   │       └── audit-logs/index.vue #     操作日志
+    │   │   ├── profile.vue              #   个人中心 (资料+头像+密码+上次登录)
+    │   │   ├── system/                  #   系统管理
+    │   │   │   ├── users/index.vue      #     用户管理 (含 Excel 导入导出)
+    │   │   │   ├── roles/index.vue      #     角色管理 (含数据范围/自定义组织)
+    │   │   │   ├── orgs/index.vue       #     组织机构
+    │   │   │   ├── menus/index.vue      #     菜单管理 (含图标选择器)
+    │   │   │   ├── apis/index.vue       #     API 管理
+    │   │   │   ├── dicts/index.vue      #     字典管理
+    │   │   │   ├── files/index.vue      #     文件管理
+    │   │   │   ├── configs/index.vue    #     全局配置 (含密码策略 sys.password.*)
+    │   │   │   ├── audit-logs/index.vue #     操作日志
+    │   │   │   ├── login-logs/index.vue #     登录日志
+    │   │   │   ├── online/index.vue     #     在线用户 (强制下线)
+    │   │   │   ├── jobs/index.vue       #     定时任务 (一键启停/立即执行/执行日志)
+    │   │   │   └── gencode/index.vue    #     代码生成 (表选择/列勾选/预览/下载/直写)
     │   └── message/                     #   消息中心
     │       ├── system/index.vue         #     系统通知
     │       └── private/index.vue        #     私信
-    │   ├── stores/user.ts               # Pinia 用户/菜单/权限
+    │   ├── stores/                      #   user(会话/菜单/权限) / tags(多标签页) / config(全局配置)
+    │   ├── components/                  #   MessageBell(SSE 消息铃铛) / TagsBar(多标签页)
     │   ├── composables/
-    │   │   ├── useRequest.ts            # 统一请求封装 (token 注入 / 401 静默续期)
-    │   │   └── useApi.ts                # auth / system / message API hook
-    │   ├── middleware/auth.global.ts    # 路由守卫
+    │   │   ├── useRequest.ts            # 统一请求封装 (token 注入 / 401 静默续期 / 文件下载)
+    │   │   └── useApi/                  # 按模块拆分的 API hook (auth/user/role/.../gencode)
+    │   ├── middleware/auth.global.ts    # 路由守卫 (未登录跳转 / 强制改密锁定改密页)
     │   └── plugins/
     │       ├── element-icons.ts         # 全局注册 @element-plus/icons-vue (侧边栏动态图标)
     │       ├── permission.ts            # v-permission 按钮级权限指令
@@ -205,7 +235,7 @@ docker compose up -d --build
 | MySQL | localhost:3306 | 数据库 |
 | Redis | localhost:6379 | 缓存 |
 
-默认账号: `admin` / `123456` (仅开发环境提示, 首次部署后请立即修改默认密码)
+默认账号: `admin` / `123456` — 首次登录会被强制要求修改密码 (密码策略内置保护, 见「密码策略」)
 
 ### 4. 常用命令
 
@@ -365,7 +395,7 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 
 新增业务模块的标准步骤 (以 `message` 模块为参考):
 
-1. **DDL**: 在 `server/manifest/sql/init.sql` 增加表与索引, 字段含 `deleted_at`, 顺便加初始菜单/权限码/API 资源。
+1. **DDL**: 在 `server/manifest/sql/init.sql` 增加表与索引, 字段含 `deleted_at`, 顺便加初始菜单/权限码/API 资源; 已有存量库时在 `server/manifest/sql/upgrade/` 追加一份增量脚本 (`<序号>_<模块>.sql`)。
 2. **生成 dao/model**: 配好数据库后执行 `gf gen dao`, 自动生成 `internal/dao/<table>.go` 与 `internal/model/{do,entity}/<table>.go`。
 3. **API 契约**: 在 `server/api/<module>/v1/` 编写 `XxxReq/XxxRes`, 用 `g.Meta` 声明 path/method/tags/summary, 加 `v` 校验规则。
 4. **service 接口**: 在 `server/internal/service/<module>.go` 定义 `IXxx interface { Method(ctx, *v1.XxxReq) (*v1.XxxRes, error) }` + `localXxx` 单例 + `Xxx()` 取值 + `RegisterXxx(i IXxx)`。
@@ -375,16 +405,60 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 8. **前端**: `composables/useApi.ts` 新增 hook + `pages/<module>/index.vue` 页面。
 9. **授权**: 通过菜单管理与角色管理为对应角色分配菜单权限码与 API 权限即可生效。
 
+新增**定时任务处理器** (网页端"定时任务"页可配置调度): 业务包 import `internal/logic/job`, 在自身 `init()` 中调用 `job.RegisterHandler("模块.动作", func(ctx, params string) error {...})` 即可, 处理器名会出现在任务页的下拉框中; Go 的包初始化顺序保证注册时 service 已就绪。脚手架内置 `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog` (params: `{"days": 90}`) 可直接使用。
+
+**Excel 导入导出接入** (工具: `utility/excelx`):
+
+- **导出**: 组好 `headers []string` 与 `rows [][]any` 后调用 `excelx.Build("Sheet名", headers, rows)` 得到字节流, 再 `excelx.WriteToResponse(ctx, "文件名.xlsx", content)` 直接写入响应 (GoFrame 检测到缓冲已有内容时自动跳过 JSON 包装)。示例见 `logic/system/user.go` 的 `Export`。
+- **导入**: 接口入参用 `*ghttp.UploadFile`, `excelx.Read(content)` 取回字符串二维表 (含表头), 逐行校验后写入; 建议提供配套模板下载端点 (同样用 `Build` 生成) 并返回行级错误明细。示例见 `Import` / `ImportTemplate`。
+
+**网页版代码生成** ("代码生成"页, 配置开关 `gencode.enable`, 默认关闭): 从 `information_schema` 选表 → 配置模块名/标题/列勾选(列表/表单/搜索) → 预览全部生成文件 → **zip 下载**(含 README 接线说明, 任何环境可用) 或 **直写源码树**(自动接线, 仅后端从源码目录启动的开发环境, 容器内自动拒绝)。生成产物与 CLI 完全一致 (共用 `utility/crudgen` 核心)。
+
+**CRUD 代码生成器 CLI** (`server/tools/crudgen`, 无需连库): 从 `init.sql` 解析表 DDL, 一条命令生成完整增删改查——API 契约/控制器/service/logic/model 三件套/DAO 两件套/前端 API+页面/菜单按钮 API Casbin 种子 SQL, 并自动接线 `logic.go`、`cmd.go`、`useApi/index.ts`:
+
+```bash
+cd server
+make gen-crud TABLE=biz_article TITLE="文章管理"          # 生成 (mod 默认取表名去前缀)
+make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
+```
+
+生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 upgrade SQL 并分配角色权限即可。演示见 `-dry` 输出。
+
+**密码策略**: 全局配置页修改 `sys.password.*` 即时生效——
+- 复杂度: `min_length`/`max_length`/`require_upper`/`require_lower`/`require_digit`/`require_special`, 校验挂在改密/创建用户/重置密码/Excel 导入四处 (`logic/pwdpolicy`);
+- 有效期: `expire_days` (0=永不过期), 过期后登录强制改密;
+- 强制改密: 管理员创建用户/重置密码/导入用户后, 该用户 `must_change_pwd=1`, 下次登录前端路由守卫锁定到个人中心改密页, 改密成功后自动放行并回到来源页; 内置 admin 种子即启用 (公开默认密码首登必须改)。
+
+**审计字段 `create_id` / `update_id`** (业务层零感知): 新业务表的 DDL 带上这两列 (`BIGINT UNSIGNED NOT NULL DEFAULT 0`), 并把表名登记进 `internal/logic/ormfill` 的 `fillTables` 白名单即自动生效: INSERT 补 `create_id`+`update_id`, UPDATE 补 `update_id`, 取当前登录用户 (后台写入保持 0)。实现上按 [gdb 接口回调](https://goframe.org/docs/core/gdb-interface-callback) 继承 mysql 驱动重写 `DoInsert`/`DoUpdate` 并以 "mysql" 名覆盖注册, 与 `gf gen dao` 完全解耦。数据权限 (数据范围过滤) 与此独立, 需要的业务查询自行调用 `service.DataScope().Apply(...)`。
+
+**组织数据权限接入** (业务表需带 `org_id` 字段): 在列表查询中, 于其他过滤条件之前调用:
+
+```go
+q := dao.Xxx.Ctx(ctx)
+// 一行接入: admin/全部→不加条件; 自定义/本部门/及以下→org_id IN(...); 仅本人→created_by=uid; 无范围→恒假
+q, err = service.DataScope().Apply(ctx, q, "org_id", "created_by")
+```
+
+- `orgColumn` 传业务表的组织字段, `selfColumn` 传"仅本人"的比对字段 (如 `created_by`); 两个列名只允许来自代码, 不允许来自外部输入。
+- 多角色取并集, 任一角色为"全部"则整体放行; 内置 `admin` 角色恒为全部 (与 Casbin 全局放行一致)。
+- 用户管理 (`/system/users`) 已内置接入, 可直接验证效果。
+
 ## 常用命令
 
 ```bash
 # 后端
 cd server
 make run            # go run main.go
-make initdb         # 初始化数据库
+make initdb         # 初始化数据库 (全新安装, 执行 init.sql)
 make vet            # go vet ./...
 make fmt            # gofmt -s -w .
 make tidy           # go mod tidy
+make gen-crud TABLE=biz_xxx TITLE="xx管理"   # CRUD 代码生成 (DRY=1 仅预览)
+
+# 存量库升级
+# 按序执行 server/manifest/sql/upgrade/ 下的增量脚本:
+#   0001 登录日志 / 0002 在线用户 / 0003 定时任务 / 0004 数据权限
+#   0005 Excel / 0006 移除登录日志清空 / 0007 审计字段 / 0008 密码策略 / 0009 代码生成
 
 # 前端
 cd web_src

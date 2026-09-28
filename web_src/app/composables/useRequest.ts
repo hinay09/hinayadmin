@@ -164,6 +164,45 @@ export function useRequest() {
     }
   }
 
+  /**
+   * 文件下载 (Excel 导出/模板等): 携带 Authorization 请求二进制流并触发浏览器保存。
+   * 从 Content-Disposition 解析文件名 (支持 filename*=UTF-8'')。
+   */
+  async function download(url: string, query?: Record<string, any>): Promise<void> {
+    userStore.restore()
+    const fullUrl = new URL(`${config.public.apiBase}${url}`, window.location.origin)
+    if (query) {
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== undefined && v !== null && v !== '') {
+          fullUrl.searchParams.set(k, String(v))
+        }
+      }
+    }
+    const res = await $fetch.raw(fullUrl.toString(), {
+      responseType: 'blob',
+      headers: userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {},
+    })
+    if (res.status !== 200) {
+      ElMessage.error('下载失败')
+      return
+    }
+    const disposition = res.headers.get('content-disposition') || ''
+    let filename = 'download.xlsx'
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+    if (utf8Match) {
+      filename = decodeURIComponent(utf8Match[1])
+    }
+    else if (disposition.includes('filename=')) {
+      filename = decodeURIComponent(disposition.split('filename=')[1]?.replace(/"/g, '') || filename)
+    }
+    const blob = res._data as Blob
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
   return {
     get: <T = any>(url: string, query?: any) =>
       request<T>(url, { method: 'GET', query }),
@@ -173,5 +212,6 @@ export function useRequest() {
       request<T>(url, { method: 'PUT', body }),
     del: <T = any>(url: string) =>
       request<T>(url, { method: 'DELETE' }),
+    download,
   }
 }

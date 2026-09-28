@@ -3,6 +3,7 @@ package v1
 
 import (
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gtime"
 
 	"hinay.cn/admin/utility/response"
@@ -35,6 +36,37 @@ type UserVO struct {
 
 // UserListRes 列表响应。
 type UserListRes response.PageResult
+
+// UserExportReq 用户列表导出 (xlsx 附件下载, 过滤条件与列表一致, 不分页)。
+type UserExportReq struct {
+	g.Meta  `path:"/system/users/export" tags:"SystemUser" method:"get" summary:"用户列表导出"`
+	Keyword string `json:"keyword" in:"query" dc:"账号/昵称模糊"`
+	Status  *int   `json:"status"  in:"query" dc:"状态过滤"`
+}
+
+// UserExportRes 导出响应 (内容直接写入响应流)。
+type UserExportRes struct{}
+
+// UserImportTemplateReq 用户导入模板下载 (xlsx 附件)。
+type UserImportTemplateReq struct {
+	g.Meta `path:"/system/users/import-template" tags:"SystemUser" method:"get" summary:"用户导入模板下载"`
+}
+
+// UserImportTemplateRes 模板下载响应 (内容直接写入响应流)。
+type UserImportTemplateRes struct{}
+
+// UserImportReq 用户导入 (xlsx 文件, 表头与模板一致)。
+type UserImportReq struct {
+	g.Meta `path:"/system/users/import" tags:"SystemUser" method:"post" summary:"用户导入"`
+	File   *ghttp.UploadFile `json:"file" type:"file" v:"required#请选择导入文件" dc:"xlsx 文件"`
+}
+
+// UserImportRes 导入结果 (行级错误逐条返回)。
+type UserImportRes struct {
+	SuccessCount int      `json:"successCount" dc:"成功导入条数"`
+	FailCount    int      `json:"failCount"    dc:"失败条数"`
+	Errors       []string `json:"errors"       dc:"失败明细 (最多返回前 50 条)"`
+}
 
 // UserDetailReq 详情。
 type UserDetailReq struct {

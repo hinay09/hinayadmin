@@ -21,36 +21,44 @@ type SysUserDao struct {
 
 // SysUserColumns defines and stores column names for the table sys_user.
 type SysUserColumns struct {
-	Id        string // 用户ID
-	Username  string // 登录账号
-	Password  string // bcrypt 加密密码
-	Nickname  string // 昵称
-	Avatar    string // 头像URL
-	Email     string // 邮箱
-	Phone     string // 手机号
-	OrgId     string // 所属组织ID
-	Status    string // 状态:1=启用,0=禁用
-	Remark    string // 备注
-	CreatedAt string // 创建时间
-	UpdatedAt string // 更新时间
-	DeletedAt string // 删除时间(软删)
+	Id          string // 用户ID
+	Username    string // 登录账号
+	Password    string // bcrypt 加密密码
+	Nickname    string // 昵称
+	Avatar      string // 头像URL
+	Email       string // 邮箱
+	Phone       string // 手机号
+	OrgId       string // 所属组织ID
+	Status      string // 状态:1=启用,0=禁用
+	Remark      string // 备注
+	LastLoginAt string // 最近登录时间
+	LastLoginIp string // 最近登录IP
+	CreateId    string // 创建人ID
+	UpdateId    string // 最后修改人ID
+	CreatedAt   string // 创建时间
+	UpdatedAt   string // 更新时间
+	DeletedAt   string // 删除时间(软删)
 }
 
 // sysUserColumns holds the columns for the table sys_user.
 var sysUserColumns = SysUserColumns{
-	Id:        "id",
-	Username:  "username",
-	Password:  "password",
-	Nickname:  "nickname",
-	Avatar:    "avatar",
-	Email:     "email",
-	Phone:     "phone",
-	OrgId:     "org_id",
-	Status:    "status",
-	Remark:    "remark",
-	CreatedAt: "created_at",
-	UpdatedAt: "updated_at",
-	DeletedAt: "deleted_at",
+	Id:          "id",
+	Username:    "username",
+	Password:    "password",
+	Nickname:    "nickname",
+	Avatar:      "avatar",
+	Email:       "email",
+	Phone:       "phone",
+	OrgId:       "org_id",
+	Status:      "status",
+	Remark:      "remark",
+	LastLoginAt: "last_login_at",
+	LastLoginIp: "last_login_ip",
+	CreateId:    "create_id",
+	UpdateId:    "update_id",
+	CreatedAt:   "created_at",
+	UpdatedAt:   "updated_at",
+	DeletedAt:   "deleted_at",
 }
 
 // NewSysUserDao creates and returns a new DAO object for table data access.

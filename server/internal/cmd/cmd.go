@@ -16,6 +16,7 @@ import (
 	"hinay.cn/admin/internal/controller/message"
 	"hinay.cn/admin/internal/logic/casbinx"
 	"hinay.cn/admin/internal/middleware"
+	"hinay.cn/admin/internal/service"
 )
 
 // Main 启动 HTTP 服务。
@@ -27,6 +28,11 @@ var Main = gcmd.Command{
 		// 预加载 Casbin 策略 (失败仅打日志, 不阻断启动)
 		if _, err := casbinx.Reload(ctx); err != nil {
 			g.Log().Warningf(ctx, "casbin reload on startup failed: %v", err)
+		}
+
+		// 启动定时任务调度 (失败仅打日志, 不阻断启动)
+		if err := service.Job().Start(ctx); err != nil {
+			g.Log().Warningf(ctx, "job scheduler start failed: %v", err)
 		}
 
 		s := g.Server()
@@ -43,6 +49,7 @@ var Main = gcmd.Command{
 			grp.Middleware(
 				middleware.CORS,
 				middleware.RequestId,
+				middleware.RateLimit,
 				middleware.SecurityHeaders,
 				middleware.OperationLog,
 				ghttp.MiddlewareHandlerResponse,

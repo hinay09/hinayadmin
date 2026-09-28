@@ -11,6 +11,7 @@ var (
 	CodeUnauthorized   = gcode.New(40100, "未登录或登录已过期", nil)
 	CodeForbidden      = gcode.New(40300, "无访问权限", nil)
 	CodeNotFound       = gcode.New(40400, "资源不存在", nil)
+	CodeTooManyReq     = gcode.New(42900, "请求过于频繁, 请稍后再试", nil)
 	CodeParamInvalid   = gcode.New(40000, "请求参数不合法", nil)
 	CodeBusinessError  = gcode.New(50000, "业务错误", nil)
 	CodeUserNotFound   = gcode.New(50001, "用户不存在", nil)

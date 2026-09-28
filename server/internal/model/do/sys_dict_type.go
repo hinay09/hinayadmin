@@ -17,6 +17,8 @@ type SysDictType struct {
 	TypeName  any         // 字典类型名称
 	Status    any         // 状态:1=启用,0=禁用
 	Remark    any         // 备注
+	CreateId  any         // 创建人ID
+	UpdateId  any         // 最后修改人ID
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
 	DeletedAt *gtime.Time // 删除时间(软删)

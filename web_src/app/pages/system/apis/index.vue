@@ -8,6 +8,7 @@ import { Search, Plus, Edit, Delete, Connection } from '@element-plus/icons-vue'
 import { useApiResourceApi } from '~/composables/useApi'
 
 definePageMeta({ title: 'API管理' })
+defineOptions({ name: 'system-apis' })
 
 const apiResourceApi = useApiResourceApi()
 

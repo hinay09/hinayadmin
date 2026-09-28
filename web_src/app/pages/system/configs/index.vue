@@ -10,6 +10,7 @@ import { useConfigApi, type ConfigItem } from '~/composables/useApi'
 import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '全局配置' })
+defineOptions({ name: 'system-configs' })
 
 const configApi = useConfigApi()
 // 配置变更后刷新全局展示(侧边栏品牌/浏览器标题/页脚等)与本页缓存

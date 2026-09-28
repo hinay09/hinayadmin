@@ -12,6 +12,7 @@ import (
 	v1 "hinay.cn/admin/api/message/v1"
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/logic/casbinx"
+	"hinay.cn/admin/internal/logic/notify"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
@@ -138,7 +139,55 @@ func (s *sMessage) SystemCreate(ctx context.Context, in *v1.MessageSystemCreateR
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
+	// 实时推送 (尽力而为, 失败不影响消息落库)
+	switch in.TargetScope {
+	case model.MessageScopeAll:
+		notify.PublishAll(in.Title, in.Level)
+	case model.MessageScopeUser:
+		notify.PublishTo(in.TargetIds, in.Title, in.Level)
+	case model.MessageScopeRole:
+		notify.PublishTo(s.roleMemberUserIds(ctx, in.TargetIds), in.Title, in.Level)
+	}
 	return &v1.MessageSystemCreateRes{Id: newId}, nil
+}
+
+// roleMemberUserIds 角色ID -> 成员用户ID (sys_role -> casbin g 策略 -> sys_user)。
+func (s *sMessage) roleMemberUserIds(ctx context.Context, roleIds []uint64) []uint64 {
+	if len(roleIds) == 0 {
+		return nil
+	}
+	codes, err := dao.SysRole.Ctx(ctx).Fields("code").
+		WhereIn("id", roleIds).Where("deleted_at IS NULL").Array()
+	if err != nil {
+		return nil
+	}
+	if len(codes) == 0 {
+		return nil
+	}
+	usernames, err := dao.CasbinRule.Ctx(ctx).Fields("v0").
+		Where("ptype", "g").WhereIn("v1", codes).Array()
+	if err != nil || len(usernames) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(usernames))
+	for _, u := range usernames {
+		if v := strings.TrimSpace(u.String()); v != "" {
+			names = append(names, v)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	ids, err := dao.SysUser.Ctx(ctx).Fields("id").
+		WhereIn("username", names).Where("deleted_at IS NULL").Array()
+	if err != nil {
+		return nil
+	}
+	out := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.Uint64())
+	}
+	return out
 }
 
 // PrivateCreate 发送私信。
@@ -171,6 +220,8 @@ func (s *sMessage) PrivateCreate(ctx context.Context, in *v1.MessagePrivateCreat
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
+	// 实时推送接收人 (尽力而为)
+	notify.PublishTo([]uint64{in.ReceiverId}, in.Title, in.Level)
 	return &v1.MessagePrivateCreateRes{Id: uint64(id)}, nil
 }
 

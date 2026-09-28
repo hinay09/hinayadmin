@@ -28,6 +28,12 @@ CREATE TABLE `sys_user` (
   `org_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '所属组织ID',
   `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `last_login_at` DATETIME  DEFAULT NULL              COMMENT '最近登录时间',
+  `last_login_ip` VARCHAR(64) NOT NULL DEFAULT ''    COMMENT '最近登录IP',
+  `pwd_updated_at` DATETIME  DEFAULT NULL              COMMENT '密码最后修改时间(有效期计算)',
+  `must_change_pwd` TINYINT  NOT NULL DEFAULT 0      COMMENT '强制改密:1=下次登录须改密',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
@@ -49,6 +55,8 @@ CREATE TABLE `sys_org` (
   `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
   `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
@@ -67,12 +75,30 @@ CREATE TABLE `sys_role` (
   `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
   `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `data_scope` TINYINT      NOT NULL DEFAULT 1      COMMENT '数据范围:1=全部,2=自定义,3=本部门,4=本部门及以下,5=仅本人',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统角色';
+
+-- ------------------------------------------------------------
+-- 角色自定义数据范围 <-> 组织 绑定表
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_role_org`;
+CREATE TABLE `sys_role_org` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `role_id`    BIGINT UNSIGNED NOT NULL                COMMENT '角色ID',
+  `org_id`     BIGINT UNSIGNED NOT NULL                COMMENT '组织ID',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_role_org` (`role_id`, `org_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色自定义数据范围组织绑定';
 
 -- ------------------------------------------------------------
 -- 菜单表(目录/菜单/按钮)
@@ -90,6 +116,8 @@ CREATE TABLE `sys_menu` (
   `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
   `visible`    TINYINT      NOT NULL DEFAULT 1      COMMENT '是否显示:1=是,0=否',
   `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
@@ -107,6 +135,8 @@ CREATE TABLE `sys_api` (
   `method`      VARCHAR(10)  NOT NULL COMMENT 'HTTP方法(GET/POST/PUT/DELETE)',
   `group_name`  VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '分组名称',
   `description` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '接口描述',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at`  DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at`  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`  DATETIME DEFAULT NULL COMMENT '删除时间(软删)',
@@ -150,6 +180,8 @@ CREATE TABLE `biz_message` (
   `target_scope` TINYINT      NOT NULL DEFAULT 0      COMMENT '系统通知范围:1=all,2=role,3=user;私信=0',
   `receiver_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '私信接收者ID',
   `status`       TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=已发布,0=草稿',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at`   DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
@@ -197,12 +229,12 @@ CREATE TABLE `biz_message_read` (
 -- 默认账号: admin / 123456
 -- bcrypt hash for "123456" (cost=10)
 -- ============================================================
-INSERT INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`)
-VALUES (1, 'admin', '$2a$10$tUEhjYhhbY4OgzKvJRZZWexJRuKuaWFoKFb3U0PRnVjXpSBgvyEDK', '超级管理员', 1);
+INSERT INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`,`must_change_pwd`)
+VALUES (1, 'admin', '$2a$10$tUEhjYhhbY4OgzKvJRZZWexJRuKuaWFoKFb3U0PRnVjXpSBgvyEDK', '超级管理员', 1, 1);
 
-INSERT INTO `sys_role` (`id`,`name`,`code`,`sort`,`status`,`remark`) VALUES
-  (1, '超级管理员', 'admin',  1, 1, '内置最高权限角色'),
-  (2, '普通用户',   'common', 2, 1, '示例普通角色');
+INSERT INTO `sys_role` (`id`,`name`,`code`,`sort`,`status`,`remark`,`data_scope`) VALUES
+  (1, '超级管理员', 'admin',  1, 1, '内置最高权限角色', 1),
+  (2, '普通用户',   'common', 2, 1, '示例普通角色', 5);
 
 -- 菜单(目录 + 仪表盘 + 个人中心 + 系统管理 + 公告)
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -386,6 +418,8 @@ CREATE TABLE `sys_dict_type` (
   `type_name`  VARCHAR(128) NOT NULL                   COMMENT '字典类型名称',
   `status`     TINYINT      NOT NULL DEFAULT 1         COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''         COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
@@ -405,6 +439,8 @@ CREATE TABLE `sys_dict_data` (
   `sort`       INT          NOT NULL DEFAULT 0         COMMENT '排序',
   `status`     TINYINT      NOT NULL DEFAULT 1         COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''         COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
@@ -427,6 +463,8 @@ CREATE TABLE `sys_file` (
   `mime_type`     VARCHAR(128) NOT NULL DEFAULT ''        COMMENT 'MIME类型',
   `extension`     VARCHAR(32)  NOT NULL DEFAULT ''        COMMENT '文件扩展名',
   `user_id`       BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '上传用户ID',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `deleted_at`    DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
@@ -496,6 +534,8 @@ CREATE TABLE `sys_config` (
   `remark`      VARCHAR(255) NOT NULL DEFAULT ''         COMMENT '备注',
   `status`      TINYINT      NOT NULL DEFAULT 1         COMMENT '状态:1=启用,0=禁用',
   `sort`        INT          NOT NULL DEFAULT 0         COMMENT '排序',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at`  DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
@@ -565,3 +605,183 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', 'admin', 'menu:601', 'access', '', '', ''),
   ('p', 'admin', 'menu:602', 'access', '', '', ''),
   ('p', 'admin', 'menu:603', 'access', '', '', '');
+
+-- ============================================================
+-- 登录日志
+-- ============================================================
+DROP TABLE IF EXISTS `sys_login_log`;
+CREATE TABLE `sys_login_log` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `user_id`    BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID(登录用户不存在时为0)',
+  `username`   VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '登录账号',
+  `status`     TINYINT      NOT NULL DEFAULT 0         COMMENT '结果:1=成功,0=失败',
+  `message`    VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '失败原因(成功时为空)',
+  `ip`         VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '登录IP',
+  `user_agent` VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'User-Agent',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user` (`user_id`),
+  KEY `idx_username` (`username`),
+  KEY `idx_status` (`status`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志';
+
+-- 菜单: 登录日志 (顶级, 与操作日志并列)
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (18, 0, '登录日志', 2, '/system/login-logs', 'system/login-logs/index', 'Key', 'system:login-log:list', 100, 1, 1);
+
+-- 按钮权限
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (181, 18, '登录日志删除', 3, '', '', '', 'system:login-log:delete', 1, 0, 1);
+
+-- API 资源
+INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/login-logs',      'GET',    '登录日志', '登录日志列表'),
+  ('/api/v1/system/login-logs/:id',  'DELETE', '登录日志', '删除登录日志');
+
+-- Casbin: admin 角色
+INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', 'admin', 'menu:18',  'access', '', '', ''),
+  ('p', 'admin', 'menu:181', 'access', '', '', '');
+
+-- ============================================================
+-- 在线用户
+-- ============================================================
+-- 会话数据存 Redis (hinay:online:sessions), 无需建表。
+
+-- 菜单: 在线用户 (顶级, 与操作日志/登录日志并列)
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (19, 0, '在线用户', 2, '/system/online', 'system/online/index', 'Monitor', 'system:online:list', 101, 1, 1);
+
+-- 按钮权限
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (191, 19, '强制下线', 3, '', '', '', 'system:online:kick', 1, 0, 1);
+
+-- API 资源
+INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/online',     'GET',    '在线用户', '在线用户列表'),
+  ('/api/v1/system/online/:id', 'DELETE', '在线用户', '强制下线');
+
+-- Casbin: admin 角色
+INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', 'admin', 'menu:19',  'access', '', '', ''),
+  ('p', 'admin', 'menu:191', 'access', '', '', '');
+
+-- ============================================================
+-- 定时任务
+-- ============================================================
+DROP TABLE IF EXISTS `sys_job`;
+CREATE TABLE `sys_job` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '任务ID',
+  `name`       VARCHAR(64)  NOT NULL                COMMENT '任务名称',
+  `handler`    VARCHAR(128) NOT NULL                COMMENT '处理器名称(需已注册)',
+  `cron_expr`  VARCHAR(64)  NOT NULL                COMMENT 'cron表达式(6位: 秒 分 时 日 月 周)',
+  `params`     VARCHAR(512) NOT NULL DEFAULT ''     COMMENT '任务参数(JSON, 可空)',
+  `status`     TINYINT      NOT NULL DEFAULT 0      COMMENT '状态:1=启动,0=暂停',
+  `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务';
+
+DROP TABLE IF EXISTS `sys_job_log`;
+CREATE TABLE `sys_job_log` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '日志ID',
+  `job_id`      BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '任务ID',
+  `job_name`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '任务名称(冗余, 删除任务后日志仍可读)',
+  `handler`     VARCHAR(128) NOT NULL DEFAULT ''        COMMENT '处理器名称',
+  `params`      VARCHAR(512) NOT NULL DEFAULT ''        COMMENT '任务参数(JSON)',
+  `status`      TINYINT      NOT NULL DEFAULT 0         COMMENT '结果:1=成功,0=失败',
+  `output`      VARCHAR(1024) NOT NULL DEFAULT ''       COMMENT '执行输出/失败原因',
+  `duration_ms` INT          NOT NULL DEFAULT 0         COMMENT '耗时(毫秒)',
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_job` (`job_id`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务执行日志';
+
+-- 菜单: 定时任务 (顶级, 与操作日志/登录日志/在线用户并列)
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (20, 0, '定时任务', 2, '/system/jobs', 'system/jobs/index', 'AlarmClock', 'system:job:list', 102, 1, 1);
+
+-- 按钮权限
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (201, 20, '任务新增', 3, '', '', '', 'system:job:create', 1, 0, 1),
+  (202, 20, '任务修改', 3, '', '', '', 'system:job:update', 2, 0, 1),
+  (203, 20, '任务删除', 3, '', '', '', 'system:job:delete', 3, 0, 1),
+  (204, 20, '任务启停', 3, '', '', '', 'system:job:status', 4, 0, 1),
+  (205, 20, '立即执行', 3, '', '', '', 'system:job:run', 5, 0, 1),
+  (206, 20, '执行日志', 3, '', '', '', 'system:job:log', 6, 0, 1);
+
+-- API 资源
+INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/jobs',              'GET',    '定时任务', '任务列表'),
+  ('/api/v1/system/jobs',              'POST',   '定时任务', '新增任务'),
+  ('/api/v1/system/jobs/:id',          'PUT',    '定时任务', '修改任务'),
+  ('/api/v1/system/jobs/:id',          'DELETE', '定时任务', '删除任务'),
+  ('/api/v1/system/jobs/:id/status',   'PUT',    '定时任务', '启动/暂停任务'),
+  ('/api/v1/system/jobs/:id/run',      'POST',   '定时任务', '立即执行一次'),
+  ('/api/v1/system/jobs/logs',         'GET',    '定时任务', '执行日志列表'),
+  ('/api/v1/system/jobs/handlers',     'GET',    '定时任务', '已注册处理器列表');
+
+-- Casbin: admin 角色
+INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', 'admin', 'menu:20',  'access', '', '', ''),
+  ('p', 'admin', 'menu:201', 'access', '', '', ''),
+  ('p', 'admin', 'menu:202', 'access', '', '', ''),
+  ('p', 'admin', 'menu:203', 'access', '', '', ''),
+  ('p', 'admin', 'menu:204', 'access', '', '', ''),
+  ('p', 'admin', 'menu:205', 'access', '', '', ''),
+  ('p', 'admin', 'menu:206', 'access', '', '', '');
+
+-- ============================================================
+-- Excel 导入导出 (用户模块示例)
+-- ============================================================
+INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/users/export',           'GET',  '用户管理', '用户列表导出'),
+  ('/api/v1/system/users/import',           'POST', '用户管理', '用户导入'),
+  ('/api/v1/system/users/import-template',  'GET',  '用户管理', '用户导入模板下载');
+
+-- ============================================================
+-- 密码策略 (配置驱动: 全局配置页可直接修改, 无需重启)
+-- ============================================================
+INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('sys.password.min_length',      '6',  1, '密码最小长度', '设置新密码时的最小长度', 10),
+  ('sys.password.max_length',      '32', 1, '密码最大长度', '设置新密码时的最大长度', 11),
+  ('sys.password.require_upper',   'false', 2, '密码需含大写字母', '设置新密码时校验', 12),
+  ('sys.password.require_lower',   'false', 2, '密码需含小写字母', '设置新密码时校验', 13),
+  ('sys.password.require_digit',   'false', 2, '密码需含数字',     '设置新密码时校验', 14),
+  ('sys.password.require_special', 'false', 2, '密码需含特殊字符', '设置新密码时校验', 15),
+  ('sys.password.expire_days',     '0',  1, '密码有效期(天)', '0=永不过期; 过期后登录强制改密', 16);
+
+-- ============================================================
+-- 网页版代码生成 (gencode)
+-- ============================================================
+-- 菜单: 代码生成 (顶级)
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (21, 0, '代码生成', 2, '/system/gencode', 'system/gencode/index', 'MagicStick', 'system:gencode:list', 103, 1, 1);
+
+-- 按钮权限
+INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (211, 21, '生成预览', 3, '', '', '', 'system:gencode:preview', 1, 0, 1),
+  (212, 21, '打包下载', 3, '', '', '', 'system:gencode:download', 2, 0, 1),
+  (213, 21, '写入源码', 3, '', '', '', 'system:gencode:write', 3, 0, 1);
+
+-- API 资源
+INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/gencode/tables',    'GET',  '代码生成', '可生成表清单'),
+  ('/api/v1/system/gencode/columns',   'GET',  '代码生成', '表列信息'),
+  ('/api/v1/system/gencode/preview',   'POST', '代码生成', '预览生成代码'),
+  ('/api/v1/system/gencode/download',  'GET',  '代码生成', '下载生成代码(zip)'),
+  ('/api/v1/system/gencode/write',     'POST', '代码生成', '生成并写入源码树');
+
+-- Casbin: admin 角色
+INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', 'admin', 'menu:21',  'access', '', '', ''),
+  ('p', 'admin', 'menu:211', 'access', '', '', ''),
+  ('p', 'admin', 'menu:212', 'access', '', '', ''),
+  ('p', 'admin', 'menu:213', 'access', '', '', '');

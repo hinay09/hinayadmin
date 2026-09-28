@@ -5,7 +5,7 @@
  * - 右侧: tabs - "基础资料" + "修改密码"
  * 数据接口: GET/PUT /auth/profile, PUT /auth/password
  */
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
   User,
@@ -17,11 +17,15 @@ import {
   Key,
   CircleCheck,
   UploadFilled,
+  Clock,
+  Location,
 } from '@element-plus/icons-vue'
 import { useAuthApi } from '~/composables/useApi'
 import { useUserStore } from '~/stores/user'
+import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '个人中心', layout: 'default' })
+defineOptions({ name: 'profile' })
 
 const api = useAuthApi()
 
@@ -37,7 +41,22 @@ const ROLE_NAME_MAP: Record<string, string> = {
 const roleName = (code: string) => ROLE_NAME_MAP[code] || code
 const userStore = useUserStore()
 
-const activeTab = ref<'basic' | 'password'>('basic')
+const route = useRoute()
+const configStore = useConfigStore()
+// 路由携带 ?tab=password 时直接定位改密页 (强制改密场景由路由守卫跳入)
+const activeTab = ref<'basic' | 'password'>(route.query.tab === 'password' ? 'password' : 'basic')
+
+/* ---- 密码策略提示 (读取全局配置 sys.password.*, 与后端校验同源) ---- */
+const pwdPolicyMinLen = computed(() => configStore.getNumber('sys.password.min_length', 6))
+const pwdPolicyMaxLen = computed(() => configStore.getNumber('sys.password.max_length', 32))
+const pwdPolicyItems = computed(() => {
+  const items = [`长度 ${pwdPolicyMinLen.value}-${pwdPolicyMaxLen.value} 位`]
+  if (configStore.getBool('sys.password.require_upper')) items.push('大写字母')
+  if (configStore.getBool('sys.password.require_lower')) items.push('小写字母')
+  if (configStore.getBool('sys.password.require_digit')) items.push('数字')
+  if (configStore.getBool('sys.password.require_special')) items.push('特殊字符')
+  return items
+})
 const loading = ref(false)
 const submitting = ref(false)
 const avatarUploading = ref(false)
@@ -48,13 +67,15 @@ interface ProfileForm {
   email: string
   phone: string
 }
-const profile = reactive<ProfileForm & { username: string; roles: string[] }>({
+const profile = reactive<ProfileForm & { username: string; roles: string[]; lastLoginAt: string; lastLoginIp: string }>({
   username: '',
   nickname: '',
   avatar: '',
   email: '',
   phone: '',
   roles: [],
+  lastLoginAt: '',
+  lastLoginIp: '',
 })
 
 interface PasswordForm {
@@ -109,6 +130,8 @@ async function loadProfile() {
     profile.email = u.email || ''
     profile.phone = u.phone || ''
     profile.roles = u.roles || []
+    profile.lastLoginAt = u.lastLoginAt || ''
+    profile.lastLoginIp = u.lastLoginIp || ''
   }
   finally {
     loading.value = false
@@ -159,6 +182,14 @@ async function handleChangePassword() {
     pwdForm.newPassword = ''
     pwdForm.confirmPassword = ''
     pwdFormRef.value.resetFields()
+    // 强制改密场景: 解锁并回到跳转来源页
+    if (userStore.mustChangePwd) {
+      userStore.clearMustChangePwd()
+      const redirect = route.query.redirect as string
+      if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
+        await navigateTo(redirect)
+      }
+    }
   }
   catch (e: any) {
     ElMessage.error(e?.message || '修改失败')
@@ -259,11 +290,29 @@ onMounted(() => {
               <span class="info-key">手机</span>
               <span class="info-val">{{ profile.phone || '-' }}</span>
             </li>
+            <li>
+              <el-icon><Clock /></el-icon>
+              <span class="info-key">上次登录</span>
+              <span class="info-val">{{ profile.lastLoginAt || '首次登录' }}</span>
+            </li>
+            <li v-if="profile.lastLoginAt">
+              <el-icon><Location /></el-icon>
+              <span class="info-key">登录 IP</span>
+              <span class="info-val">{{ profile.lastLoginIp || '-' }}</span>
+            </li>
           </ul>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="24" :md="16" :lg="17" :xl="18">
         <el-card>
+          <el-alert
+            v-if="userStore.mustChangePwd"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="账号密码已被重置或已过期, 请先修改密码后再继续使用"
+            style="margin-bottom:12px"
+          />
           <el-tabs v-model="activeTab">
             <el-tab-pane name="basic">
               <template #label>
@@ -478,5 +527,13 @@ onMounted(() => {
   margin-top: 6px;
   font-size: 12px;
   color: #909399;
+}
+</style>
+
+<style scoped>
+.pwd-policy {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
 }
 </style>

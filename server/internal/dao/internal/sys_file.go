@@ -30,6 +30,8 @@ type SysFileColumns struct {
 	MimeType     string // MIME类型
 	Extension    string // 文件扩展名
 	UserId       string // 上传用户ID
+	CreateId     string // 创建人ID
+	UpdateId     string // 最后修改人ID
 	CreatedAt    string // 创建时间
 	DeletedAt    string // 删除时间(软删)
 }
@@ -45,6 +47,8 @@ var sysFileColumns = SysFileColumns{
 	MimeType:     "mime_type",
 	Extension:    "extension",
 	UserId:       "user_id",
+	CreateId:     "create_id",
+	UpdateId:     "update_id",
 	CreatedAt:    "created_at",
 	DeletedAt:    "deleted_at",
 }

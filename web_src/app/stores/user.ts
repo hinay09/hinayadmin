@@ -7,6 +7,7 @@
  * API 侧不认 cookie 鉴权, 因此不引入 CSRF 面。
  */
 import { defineStore } from 'pinia'
+import { useTagsStore } from './tags'
 
 export interface LoginUser {
   userId: number
@@ -16,6 +17,9 @@ export interface LoginUser {
   email?: string
   phone?: string
   roles: string[]
+  lastLoginAt?: string | null
+  lastLoginIp?: string
+  mustChangePwd?: boolean
 }
 
 export interface MenuNode {
@@ -46,6 +50,7 @@ export const useUserStore = defineStore('user', {
     token: '' as string,
     expireAt: 0 as number,
     userInfo: null as LoginUser | null,
+    mustChangePwd: false as boolean,
     menus: [] as MenuNode[],
     permissions: [] as string[],
     menusLoaded: false,
@@ -107,6 +112,13 @@ export const useUserStore = defineStore('user', {
 
     setUserInfo(u: LoginUser | null) {
       this.userInfo = u
+      this.mustChangePwd = !!u?.mustChangePwd
+    },
+
+    /** 强制改密标志 (改密成功后调用) */
+    clearMustChangePwd() {
+      this.mustChangePwd = false
+      if (this.userInfo) this.userInfo.mustChangePwd = false
     },
 
     setMenus(menus: MenuNode[], permissions: string[]) {
@@ -124,6 +136,9 @@ export const useUserStore = defineStore('user', {
     reset() {
       this.setToken('')
       this.userInfo = null
+      this.mustChangePwd = false
+      // 标签页随会话清空, 避免切换账号残留
+      useTagsStore().$reset()
       this.menus = []
       this.permissions = []
       this.menusLoaded = false

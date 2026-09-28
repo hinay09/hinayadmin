@@ -7,14 +7,17 @@
  * - 点击「全部已读」 / 「查看全部」
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import { Bell } from '@element-plus/icons-vue'
 import { useMessageApi, type MessageItem, type MessageUnreadCount } from '~/composables/useApi'
+import { useUserStore } from '~/stores/user'
 
 const api = useMessageApi()
 const router = useRouter()
+const userStore = useUserStore()
 
-const POLL_INTERVAL = 60_000 // 60s 轮询一次
+const POLL_INTERVAL_ACTIVE = 15_000 // SSE 不可用时的兜底轮询周期
+const POLL_INTERVAL_SSE = 120_000   // SSE 在线时的保底对齐周期(未读数完全由事件驱动)
 
 const unread = ref<MessageUnreadCount>({ total: 0, system: 0, private: 0 })
 const loading = ref(false)
@@ -22,6 +25,104 @@ const activeTab = ref<'system' | 'private'>('system')
 const systemList = ref<MessageItem[]>([])
 const privateList = ref<MessageItem[]>([])
 let timer: ReturnType<typeof setInterval> | null = null
+let ssePollFast = true // SSE 未连上时用短周期轮询兜底
+
+/* ---- SSE 实时事件流 (fetch 流式读取, 支持 Authorization 头) ----
+ * 服务端事件: hello(连接即下发当前未读数) / message(新消息, 弹提示并刷新未读)。
+ * 断线自动退避重连 (5s, 10s, 30s 封顶); 重连期间由兜底轮询保证最终一致。 */
+let sseAbort: AbortController | null = null
+let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let sseBackoff = 5_000
+
+function setPollInterval() {
+  if (timer) clearInterval(timer)
+  timer = setInterval(fetchUnreadCount, ssePollFast ? POLL_INTERVAL_ACTIVE : POLL_INTERVAL_SSE)
+}
+
+function scheduleSseReconnect() {
+  if (sseReconnectTimer) clearTimeout(sseReconnectTimer)
+  sseReconnectTimer = setTimeout(connectSse, sseBackoff)
+  sseBackoff = Math.min(sseBackoff * 2, 30_000)
+}
+
+async function connectSse() {
+  if (!userStore.token || !import.meta.client) return
+  const config = useRuntimeConfig()
+  sseAbort = new AbortController()
+  try {
+    const res = await fetch(`${config.public.apiBase}/message/events`, {
+      headers: { Authorization: `Bearer ${userStore.token}` },
+      signal: sseAbort.signal,
+    })
+    if (!res.ok || !res.body) throw new Error(`sse ${res.status}`)
+
+    sseBackoff = 5_000
+    if (ssePollFast) {
+      // SSE 通道建立: 未读数改由事件驱动, 轮询降为长周期保底
+      ssePollFast = false
+      setPollInterval()
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      // SSE 帧以空行分隔
+      let idx
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx)
+        buf = buf.slice(idx + 2)
+        handleSseFrame(frame)
+      }
+    }
+  }
+  catch {
+    // 连接断开/失败: 切回短周期轮询并退避重连
+    if (!ssePollFast) {
+      ssePollFast = true
+      setPollInterval()
+    }
+    scheduleSseReconnect()
+  }
+}
+
+function handleSseFrame(frame: string) {
+  let event = 'message'
+  let data = ''
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) data += line.slice(5).trim()
+  }
+  if (!data) return // 心跳注释帧等
+  if (event === 'hello') {
+    try {
+      const cnt = JSON.parse(data)
+      unread.value = {
+        total: Number(cnt?.total || 0),
+        system: Number(cnt?.system || 0),
+        private: Number(cnt?.private || 0),
+      }
+    }
+    catch {}
+    return
+  }
+  if (event === 'message') {
+    try {
+      const ev = JSON.parse(data)
+      ElNotification({
+        title: '新消息',
+        message: ev?.title || '您有一条新的消息',
+        type: ev?.level === 3 ? 'error' : ev?.level === 2 ? 'warning' : 'info',
+        duration: 5000,
+      })
+    }
+    catch {}
+    fetchUnreadCount()
+  }
+}
 
 const badge = computed(() => (unread.value.total > 99 ? '99+' : unread.value.total || ''))
 
@@ -110,10 +211,13 @@ const levelText = (l: number) => (l === 3 ? '紧急' : l === 2 ? '重要' : '普
 
 onMounted(() => {
   fetchUnreadCount()
-  timer = setInterval(fetchUnreadCount, POLL_INTERVAL)
+  setPollInterval()
+  connectSse()
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  sseAbort?.abort()
+  if (sseReconnectTimer) clearTimeout(sseReconnectTimer)
 })
 </script>
 

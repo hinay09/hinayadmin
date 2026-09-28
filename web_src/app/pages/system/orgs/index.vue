@@ -8,6 +8,7 @@ import { Plus, Edit, Delete, Refresh, OfficeBuilding, CirclePlus } from '@elemen
 import { useOrgApi } from '~/composables/useApi'
 
 definePageMeta({ title: '组织机构管理' })
+defineOptions({ name: 'system-orgs' })
 
 const orgApi = useOrgApi()
 const loading = ref(false)

@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 
 	v1 "hinay.cn/admin/api/system/v1"
+	"hinay.cn/admin/internal/model"
 )
 
 type (
@@ -28,6 +29,14 @@ type (
 	IAuditLog interface {
 		// List 分页列表。
 		List(ctx context.Context, req *v1.AuditLogListReq) (res *v1.AuditLogListRes, err error)
+	}
+	ILoginLog interface {
+		// Record 异步写一条登录日志。
+		Record(ctx context.Context, entry model.LoginLogEntry)
+		// List 分页列表。
+		List(ctx context.Context, req *v1.LoginLogListReq) (res *v1.LoginLogListRes, err error)
+		// Delete 按 ID 删除登录日志。
+		Delete(ctx context.Context, req *v1.LoginLogDeleteReq) (res *v1.LoginLogDeleteRes, err error)
 	}
 	IConfig interface {
 		// List 分页列表。
@@ -139,6 +148,12 @@ type (
 		Delete(ctx context.Context, req *v1.UserDeleteReq) (res *v1.UserDeleteRes, err error)
 		// ResetPwd 重置密码。
 		ResetPwd(ctx context.Context, req *v1.UserResetPwdReq) (res *v1.UserResetPwdRes, err error)
+		// Export 用户列表导出 (xlsx 附件下载)。
+		Export(ctx context.Context, req *v1.UserExportReq) (res *v1.UserExportRes, err error)
+		// ImportTemplate 用户导入模板下载。
+		ImportTemplate(ctx context.Context, req *v1.UserImportTemplateReq) (res *v1.UserImportTemplateRes, err error)
+		// Import 用户导入 (xlsx)。
+		Import(ctx context.Context, req *v1.UserImportReq) (res *v1.UserImportRes, err error)
 	}
 )
 
@@ -149,6 +164,7 @@ var (
 	localDict     IDict
 	localDictType IDictType
 	localFile     IFile
+	localLoginLog ILoginLog
 	localMenu     IMenu
 	localOrg      IOrg
 	localRole     IRole
@@ -175,6 +191,17 @@ func AuditLog() IAuditLog {
 
 func RegisterAuditLog(i IAuditLog) {
 	localAuditLog = i
+}
+
+func LoginLog() ILoginLog {
+	if localLoginLog == nil {
+		panic("implement not found for interface ILoginLog, forgot register?")
+	}
+	return localLoginLog
+}
+
+func RegisterLoginLog(i ILoginLog) {
+	localLoginLog = i
 }
 
 func Config() IConfig {

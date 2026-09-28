@@ -124,6 +124,16 @@ type MessageReadAllRes struct {
 	Affected int64 `json:"affected"`
 }
 
+// MessageEventsReq 消息事件流 (SSE)。
+// 认证走 Authorization 头 (前端用 fetch 流式读取, 而非原生 EventSource);
+// 服务端事件: hello(连接建立, 含当前未读数) / message(新消息) / 心跳注释帧。
+type MessageEventsReq struct {
+	g.Meta `path:"/message/events" tags:"Message" method:"get" summary:"消息事件流(SSE)"`
+}
+
+// MessageEventsRes 事件流响应 (内容由控制器直接写入响应流)。
+type MessageEventsRes struct{}
+
 // MessageUnreadCountReq 未读总数。
 type MessageUnreadCountReq struct {
 	g.Meta `path:"/message/unread-count" tags:"Message" method:"get" summary:"未读消息数量"`

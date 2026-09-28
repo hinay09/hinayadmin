@@ -21,6 +21,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo(safeRedirect(to.query.redirect as string))
   }
 
+  // 强制改密: 密码被管理员创建/重置/导入, 或已过有效期 -> 锁定在个人中心改密页,
+  // 放行 /profile 本身, 其余页面一律带回跳参数重定向。
+  if (userStore.mustChangePwd && to.path !== '/profile') {
+    return navigateTo({ path: '/profile', query: { tab: 'password', redirect: to.fullPath } })
+  }
+
   // 已登录但未拉取菜单 -> 拉取
   if (!userStore.menusLoaded && import.meta.client) {
     try {

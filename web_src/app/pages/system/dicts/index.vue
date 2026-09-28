@@ -10,6 +10,7 @@ import { Search, Plus, Edit, Delete, Setting, Top, Bottom } from '@element-plus/
 import { useDictTypeApi, useDictApi } from '~/composables/useApi'
 
 definePageMeta({ title: '字典管理' })
+defineOptions({ name: 'system-dicts' })
 
 const typeApi = useDictTypeApi()
 const itemApi = useDictApi()

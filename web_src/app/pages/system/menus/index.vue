@@ -9,6 +9,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { useMenuApi } from '~/composables/useApi'
 
 definePageMeta({ title: '菜单管理' })
+defineOptions({ name: 'system-menus' })
 
 const menuApi = useMenuApi()
 const loading = ref(false)

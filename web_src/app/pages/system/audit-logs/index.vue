@@ -4,6 +4,7 @@ import { Search, Refresh, View, Document as DocumentIcon } from '@element-plus/i
 import { useAuditLogApi } from '~/composables/useApi'
 
 definePageMeta({ title: '操作日志' })
+defineOptions({ name: 'system-audit-logs' })
 
 const api = useAuditLogApi()
 const loading = ref(false)

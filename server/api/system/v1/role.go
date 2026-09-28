@@ -39,16 +39,19 @@ type RoleDetailReq struct {
 type RoleDetailRes struct {
 	Role    any      `json:"role"`
 	MenuIds []uint64 `json:"menuIds"`
+	OrgIds  []uint64 `json:"orgIds" dc:"自定义数据范围的组织ID列表 (dataScope=2 时有值)"`
 }
 
 // RoleCreateReq 新增。
 type RoleCreateReq struct {
-	g.Meta `path:"/system/roles" tags:"SystemRole" method:"post" summary:"新增角色"`
-	Name   string `json:"name"   v:"required|length:2,32"`
-	Code   string `json:"code"   v:"required|length:2,32"`
-	Sort   int    `json:"sort"`
-	Status int    `json:"status" d:"1"`
-	Remark string `json:"remark"`
+	g.Meta    `path:"/system/roles" tags:"SystemRole" method:"post" summary:"新增角色"`
+	Name      string   `json:"name"   v:"required|length:2,32"`
+	Code      string   `json:"code"   v:"required|length:2,32"`
+	Sort      int      `json:"sort"`
+	Status    int      `json:"status" d:"1"`
+	Remark    string   `json:"remark"`
+	DataScope int      `json:"dataScope" d:"1" v:"in:1,2,3,4,5" dc:"数据范围:1=全部,2=自定义,3=本部门,4=本部门及以下,5=仅本人"`
+	OrgIds    []uint64 `json:"orgIds" dc:"自定义数据范围的组织ID列表 (dataScope=2 时生效)"`
 }
 
 // RoleCreateRes 新增响应。
@@ -58,12 +61,14 @@ type RoleCreateRes struct {
 
 // RoleUpdateReq 修改。
 type RoleUpdateReq struct {
-	g.Meta `path:"/system/roles/{id}" tags:"SystemRole" method:"put" summary:"修改角色"`
-	Id     uint64 `json:"id" in:"path" v:"required"`
-	Name   string `json:"name"   v:"required|length:2,32"`
-	Sort   int    `json:"sort"`
-	Status int    `json:"status"`
-	Remark string `json:"remark"`
+	g.Meta    `path:"/system/roles/{id}" tags:"SystemRole" method:"put" summary:"修改角色"`
+	Id        uint64   `json:"id" in:"path" v:"required"`
+	Name      string   `json:"name"   v:"required|length:2,32"`
+	Sort      int      `json:"sort"`
+	Status    int      `json:"status"`
+	Remark    string   `json:"remark"`
+	DataScope int      `json:"dataScope" d:"1" v:"in:1,2,3,4,5" dc:"数据范围"`
+	OrgIds    []uint64 `json:"orgIds" dc:"自定义数据范围的组织ID列表 (dataScope=2 时生效)"`
 }
 
 // RoleUpdateRes 修改响应。

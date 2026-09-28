@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 
@@ -33,7 +34,8 @@ func (s *sRole) List(ctx context.Context, req *v1.RoleListReq) (res *v1.RoleList
 	q := dao.SysRole.Ctx(ctx).Where("deleted_at IS NULL")
 	if req.Keyword != "" {
 		kw := "%" + strings.TrimSpace(req.Keyword) + "%"
-		q = q.WhereOr("name LIKE ?", kw).WhereOr("code LIKE ?", kw)
+		// 括号分组: 避免关键词 OR 条件逃逸出 deleted_at 过滤 (WhereOr 顶层分组陷阱)
+		q = q.Where("(name LIKE ? OR code LIKE ?)", kw, kw)
 	}
 	if req.Status != nil {
 		q = q.Where("status", *req.Status)
@@ -62,13 +64,23 @@ func (s *sRole) All(ctx context.Context, _ *v1.RoleAllReq) (res *v1.RoleAllRes, 
 	return &v1.RoleAllRes{List: list}, nil
 }
 
-// Detail 详情 + 已绑定菜单 ID 列表（从 Casbin 获取）。
+// Detail 详情 + 已绑定菜单 ID 列表（从 Casbin 获取）+ 自定义数据范围组织 ID 列表。
 func (s *sRole) Detail(ctx context.Context, req *v1.RoleDetailReq) (res *v1.RoleDetailRes, err error) {
 	r, ids, err := s.detailInternal(ctx, req.Id)
 	if err != nil {
 		return nil, err
 	}
-	return &v1.RoleDetailRes{Role: r, MenuIds: ids}, nil
+	orgIds := make([]uint64, 0)
+	if r.DataScope == consts.DataScopeCustom {
+		mappings, merr := dao.SysRoleOrg.Ctx(ctx).Fields("org_id").Where("role_id", r.Id).All()
+		if merr != nil {
+			return nil, xerror.Wrap(xerror.CodeBusinessError, merr)
+		}
+		for _, m := range mappings {
+			orgIds = append(orgIds, m["org_id"].Uint64())
+		}
+	}
+	return &v1.RoleDetailRes{Role: r, MenuIds: ids, OrgIds: orgIds}, nil
 }
 
 // detailInternal 内部 helper：返回角色实体与菜单 ID 列表。
@@ -97,26 +109,80 @@ func (s *sRole) Create(ctx context.Context, req *v1.RoleCreateReq) (res *v1.Role
 	if req.Status == 0 {
 		req.Status = consts.StatusEnabled
 	}
+	if req.DataScope == 0 {
+		req.DataScope = consts.DataScopeAll
+	}
 	id, err := dao.SysRole.Ctx(ctx).Data(g.Map{
 		"name": req.Name, "code": req.Code, "sort": req.Sort,
-		"status": req.Status, "remark": req.Remark,
+		"status": req.Status, "remark": req.Remark, "data_scope": req.DataScope,
 	}).InsertAndGetId()
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if err = s.replaceRoleOrgs(ctx, uint64(id), req.DataScope, req.OrgIds); err != nil {
+		return nil, err
 	}
 	return &v1.RoleCreateRes{Id: uint64(id)}, nil
 }
 
 // Update 修改。
 func (s *sRole) Update(ctx context.Context, req *v1.RoleUpdateReq) (res *v1.RoleUpdateRes, err error) {
+	if req.DataScope == 0 {
+		req.DataScope = consts.DataScopeAll
+	}
 	if _, err = dao.SysRole.Ctx(ctx).Where("id", req.Id).Where("deleted_at IS NULL").
 		Data(g.Map{
 			"name": req.Name, "sort": req.Sort,
-			"status": req.Status, "remark": req.Remark,
+			"status": req.Status, "remark": req.Remark, "data_scope": req.DataScope,
 		}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
+	if err = s.replaceRoleOrgs(ctx, req.Id, req.DataScope, req.OrgIds); err != nil {
+		return nil, err
+	}
 	return &v1.RoleUpdateRes{}, nil
+}
+
+// replaceRoleOrgs 重写角色的自定义数据范围组织绑定 (dataScope=自定义 时生效)。
+func (s *sRole) replaceRoleOrgs(ctx context.Context, roleId uint64, dataScope int, orgIds []uint64) error {
+	if dataScope != consts.DataScopeCustom {
+		// 非自定义范围: 清掉残留绑定
+		if _, err := dao.SysRoleOrg.Ctx(ctx).Where("role_id", roleId).Delete(); err != nil {
+			return xerror.Wrap(xerror.CodeBusinessError, err)
+		}
+		return nil
+	}
+	err := dao.SysRoleOrg.Ctx(ctx).Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := dao.SysRoleOrg.Ctx(ctx).Where("role_id", roleId).Delete(); err != nil {
+			return err
+		}
+		if len(orgIds) == 0 {
+			return nil
+		}
+		rows := make([]g.Map, 0, len(orgIds))
+		seen := make(map[uint64]struct{}, len(orgIds))
+		for _, oid := range orgIds {
+			if oid == 0 {
+				continue
+			}
+			if _, dup := seen[oid]; dup {
+				continue
+			}
+			seen[oid] = struct{}{}
+			rows = append(rows, g.Map{"role_id": roleId, "org_id": oid})
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		if _, err := dao.SysRoleOrg.Ctx(ctx).Data(rows).Insert(); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	return nil
 }
 
 // Delete 删除 (软删 + 清理 Casbin 策略)。

@@ -26,6 +26,8 @@ type SysApiColumns struct {
 	Method      string // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   string // 分组名称
 	Description string // 接口描述
+	CreateId    string //
+	UpdateId    string //
 	CreatedAt   string //
 	UpdatedAt   string //
 	DeletedAt   string // 删除时间(软删)
@@ -38,6 +40,8 @@ var sysApiColumns = SysApiColumns{
 	Method:      "method",
 	GroupName:   "group_name",
 	Description: "description",
+	CreateId:    "create_id",
+	UpdateId:    "update_id",
 	CreatedAt:   "created_at",
 	UpdatedAt:   "updated_at",
 	DeletedAt:   "deleted_at",

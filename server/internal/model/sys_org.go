@@ -13,6 +13,8 @@ type SysOrg struct {
 	Sort      int         `json:"sort"      orm:"sort"`
 	Status    int         `json:"status"    orm:"status"`
 	Remark    string      `json:"remark"    orm:"remark"`
+	CreateId  uint64      `json:"createId" orm:"create_id"`
+	UpdateId  uint64      `json:"updateId" orm:"update_id"`
 	CreatedAt *gtime.Time `json:"createdAt" orm:"created_at"`
 	UpdatedAt *gtime.Time `json:"updatedAt" orm:"updated_at"`
 }

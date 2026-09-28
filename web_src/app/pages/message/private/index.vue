@@ -10,6 +10,7 @@ import { useMessageApi, useUserApi, type MessageItem } from '~/composables/useAp
 import { useUserStore } from '~/stores/user'
 
 definePageMeta({ title: '私信通知' })
+defineOptions({ name: 'message-private' })
 
 const api = useMessageApi()
 const userApi = useUserApi()

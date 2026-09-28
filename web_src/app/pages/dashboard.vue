@@ -24,6 +24,7 @@ import { useUserStore } from '~/stores/user'
 import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '仪表盘' })
+defineOptions({ name: 'dashboard' })
 
 const userStore = useUserStore()
 const { userInfo } = storeToRefs(userStore)

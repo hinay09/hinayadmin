@@ -9,6 +9,8 @@ import (
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/golang-jwt/jwt/v5"
+
+	"hinay.cn/admin/internal/consts"
 )
 
 // Claims 自定义 JWT 载荷。
@@ -106,4 +108,18 @@ func Parse(ctx context.Context, tokenStr string) (*Claims, error) {
 		return nil, gerror.New("invalid token")
 	}
 	return claims, nil
+}
+
+// ExpireSec 读取 token 有效期配置(秒), 缺省 24h。
+func ExpireSec(ctx context.Context) int64 {
+	if v, err := g.Cfg().Get(ctx, "jwt.expireSec"); err == nil && v.Int64() > 0 {
+		return v.Int64()
+	}
+	return 86400
+}
+
+// Blacklist 将 token 原子写入黑名单, TTL 覆盖 token 剩余生命周期。
+// 登出与强制下线共用, 保证被踢/登出的 token 立即失效。
+func Blacklist(ctx context.Context, token string) error {
+	return g.Redis().GroupString().SetEX(ctx, consts.JWTBlacklistPrefix+token, 1, ExpireSec(ctx))
 }

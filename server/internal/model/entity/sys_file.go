@@ -19,6 +19,8 @@ type SysFile struct {
 	MimeType     string      `json:"mimeType"     orm:"mime_type"     description:"MIME类型"`   // MIME类型
 	Extension    string      `json:"extension"    orm:"extension"     description:"文件扩展名"`    // 文件扩展名
 	UserId       uint64      `json:"userId"       orm:"user_id"       description:"上传用户ID"`   // 上传用户ID
+	CreateId     uint64      `json:"createId"   orm:"create_id"   description:"创建人ID"`        // 创建人ID
+	UpdateId     uint64      `json:"updateId"   orm:"update_id"   description:"最后修改人ID"`      // 最后修改人ID
 	CreatedAt    *gtime.Time `json:"createdAt"    orm:"created_at"    description:"创建时间"`     // 创建时间
 	DeletedAt    *gtime.Time `json:"deletedAt"    orm:"deleted_at"    description:"删除时间(软删)"` // 删除时间(软删)
 }

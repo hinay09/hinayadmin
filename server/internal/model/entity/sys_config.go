@@ -18,6 +18,8 @@ type SysConfig struct {
 	Remark      string      `json:"remark"      orm:"remark"       description:"备注"`                         // 备注
 	Status      int         `json:"status"      orm:"status"       description:"状态:1=启用,0=禁用"`               // 状态:1=启用,0=禁用
 	Sort        int         `json:"sort"        orm:"sort"         description:"排序"`                         // 排序
+	CreateId    uint64      `json:"createId"   orm:"create_id"   description:"创建人ID"`                        // 创建人ID
+	UpdateId    uint64      `json:"updateId"   orm:"update_id"   description:"最后修改人ID"`                      // 最后修改人ID
 	CreatedAt   *gtime.Time `json:"createdAt"   orm:"created_at"   description:"创建时间"`                       // 创建时间
 	UpdatedAt   *gtime.Time `json:"updatedAt"   orm:"updated_at"   description:"更新时间"`                       // 更新时间
 	DeletedAt   *gtime.Time `json:"deletedAt"   orm:"deleted_at"   description:"删除时间(软删)"`                   // 删除时间(软删)

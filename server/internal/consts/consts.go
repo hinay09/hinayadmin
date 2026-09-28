@@ -37,6 +37,16 @@ const (
 	PubKeyLimitPrefix = "hinay:rsa:limit:"
 )
 
+// 在线会话 (Redis)
+const (
+	// OnlineSessionKey 在线会话 HASH Key, field=会话ID(token摘要), value=会话详情 JSON。
+	OnlineSessionKey = "hinay:online:sessions"
+	// OnlineTouchPrefix 心跳节流 Key 前缀, 命中 NX 才真正刷新会话活跃时间。
+	OnlineTouchPrefix = "hinay:online:touch:"
+	// OnlineTouchIntervalSec 会话活跃时间刷新节流间隔(秒)。
+	OnlineTouchIntervalSec = 60
+)
+
 // 登录防暴力破解配置。
 const (
 	// LoginFailMax 统计窗口内允许的最大失败次数, 超过后锁定。
@@ -57,6 +67,27 @@ const (
 const (
 	StatusEnabled  = 1 // 启用
 	StatusDisabled = 0 // 禁用
+)
+
+// 登录日志结果
+const (
+	LoginLogStatusSuccess = 1 // 登录成功
+	LoginLogStatusFail    = 0 // 登录失败
+)
+
+// 任务执行日志结果
+const (
+	JobLogStatusSuccess = 1 // 执行成功
+	JobLogStatusFail    = 0 // 执行失败
+)
+
+// 数据范围 (sys_role.data_scope, 组织架构数据权限)
+const (
+	DataScopeAll     = 1 // 全部数据
+	DataScopeCustom  = 2 // 自定义组织 (sys_role_org)
+	DataScopeDept    = 3 // 本部门
+	DataScopeDeptSub = 4 // 本部门及以下
+	DataScopeSelf    = 5 // 仅本人
 )
 
 // 菜单类型
