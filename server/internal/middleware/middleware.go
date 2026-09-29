@@ -22,6 +22,7 @@ import (
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/jwtx"
 	"hinay.cn/admin/utility/xerror"
 )
@@ -194,7 +195,10 @@ func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode
 		// 账号已删除/禁用: token 视为失效
 		return true, xerror.CodeUnauthorized
 	}
-	if row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime()) {
+	// 演示模式放行强制改密拦截: 改密接口已被 demox.Guard 禁止,
+	// 若仍按 428 锁定到改密页, 用户将被困在永远无法完成的改密流程 (前后端死锁)。
+	if !demox.Enabled(ctx) &&
+		(row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime())) {
 		return true, xerror.CodePwdMustChange
 	}
 	return false, nil
