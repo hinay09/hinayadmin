@@ -70,5 +70,6 @@ isAdmin := contextx.IsAdmin(ctx)  // "admin" role check via Casbin
 - `server/manifest/config/config.yaml` contains real DB credentials and JWT secret (defaults: mysql `root`, secret `hinay-admin-please-change-me`). Don't commit credential changes inadvertently; `config.docker.yaml` is the container variant.
 - `/upload` static files are served **outside** the auth middleware group — public by design.
 - `make gen-crud` parses DDL from `manifest/sql/init.sql` (no DB connection needed) and auto-wires `logic.go`, `cmd.go`, `useApi/index.ts`; web-based codegen (`gencode.enable`, default off) can zip-download or write into the source tree (refused inside containers).
+- 仓库自带 `goframe-v2` 技能（`.agents/skills/goframe-v2`，GoFrame v2 官方文档与示例的本地镜像），改后端时可查阅。
 - SQL upgrades live in `server/manifest/sql/upgrade/`; init schema in `server/manifest/sql/init.sql`.
 - Comments and docs are in Chinese; commit messages follow the existing Chinese `主题: 描述` style.
