@@ -16,6 +16,7 @@ package ormfill
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/gogf/gf/contrib/drivers/mysql/v2"
 	"github.com/gogf/gf/v2/database/gdb"
@@ -70,7 +71,7 @@ func (d *Driver) New(core *gdb.Core, node *gdb.ConfigNode) (gdb.DB, error) {
 
 // DoInsert INSERT 回调: 为白名单表补 create_id / update_id。
 func (d *Driver) DoInsert(ctx context.Context, link gdb.Link, table string, list gdb.List, option gdb.DoInsertOption) (result sql.Result, err error) {
-	if _, ok := fillTables[table]; ok {
+	if _, ok := fillTables[normalizeTable(table)]; ok {
 		if uid := loginUserId(ctx); uid > 0 {
 			for _, record := range list {
 				record[columnCreateId] = uid
@@ -83,7 +84,7 @@ func (d *Driver) DoInsert(ctx context.Context, link gdb.Link, table string, list
 
 // DoUpdate UPDATE 回调: 为白名单表补 update_id (data 为字符串更新语句时跳过)。
 func (d *Driver) DoUpdate(ctx context.Context, link gdb.Link, table string, data any, condition string, args ...any) (result sql.Result, err error) {
-	if _, ok := fillTables[table]; ok {
+	if _, ok := fillTables[normalizeTable(table)]; ok {
 		if uid := loginUserId(ctx); uid > 0 {
 			if m, ok := data.(map[string]any); ok {
 				m[columnUpdateId] = uid
@@ -91,6 +92,21 @@ func (d *Driver) DoUpdate(ctx context.Context, link gdb.Link, table string, data
 		}
 	}
 	return d.Driver.DoUpdate(ctx, link, table, data, condition, args...)
+}
+
+// normalizeTable 还原驱动层收到的表名为裸表名。
+// Model 创建时表名已经过 QuotePrefixTableName 处理 (gdb_model.go:130),
+// 到达驱动层时形如 "`sys_config`" 或 "`schema`.`sys_config`"; 带 " AS " 别名时取别名前的主表。
+// 白名单登记的是裸表名, 不做这步还原会永久 miss。
+func normalizeTable(table string) string {
+	t := strings.ReplaceAll(table, "`", "")
+	if i := strings.Index(strings.ToUpper(t), " AS "); i >= 0 {
+		t = t[:i]
+	}
+	if i := strings.LastIndex(t, "."); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
 }
 
 // loginUserId 从请求上下文提取当前登录用户 ID (与 Auth 中间件的
