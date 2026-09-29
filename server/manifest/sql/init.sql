@@ -242,6 +242,8 @@ INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`
   -- 个人中心: visible=0 不在侧边栏展示 (仅从顶部头像下拉进入), 但仍在菜单管理表中可见可维护
   (40, 0, '个人中心', 2, '/profile',        'profile',                 'User',     'profile:view',     2, 0, 1),
   (1,  0, '系统管理', 1, '/system',         'Layout',                  'Setting',  'system',          10, 1, 1),
+  (2,  0, '系统监控', 1, '/monitor',        'Layout',                  'Monitor',  'monitor',         20, 1, 1),
+  (3,  0, '系统工具', 1, '/tool',           'Layout',                  'Tools',    'tool',            25, 1, 1),
   (10, 1, '用户管理', 2, '/system/users',   'system/users/index',      'User',     'system:user:list', 11, 1, 1),
   (11, 1, '角色管理', 2, '/system/roles',   'system/roles/index',      'UserFilled','system:role:list', 12, 1, 1),
   (12, 1, '菜单管理', 2, '/system/menus',   'system/menus/index',      'Menu',     'system:menu:list', 13, 1, 1),
@@ -332,6 +334,8 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', 'admin', 'menu:30',  'access', '', '', ''),
   ('p', 'admin', 'menu:40',  'access', '', '', ''),
   ('p', 'admin', 'menu:1',   'access', '', '', ''),
+  ('p', 'admin', 'menu:2',   'access', '', '', ''),
+  ('p', 'admin', 'menu:3',   'access', '', '', ''),
   ('p', 'admin', 'menu:10',  'access', '', '', ''),
   ('p', 'admin', 'menu:11',  'access', '', '', ''),
   ('p', 'admin', 'menu:12',  'access', '', '', ''),
@@ -478,7 +482,8 @@ CREATE TABLE `sys_file` (
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (14, 1, '字典管理', 2, '/system/dicts', 'system/dicts/index', 'List', 'system:dict:list', 15, 1, 1),
   (15, 1, '文件管理', 2, '/system/files', 'system/files/index', 'FolderOpened', 'system:file:list', 16, 1, 1),
-  (16, 0, '操作日志', 2, '/system/audit-logs', 'system/audit-logs/index', 'Timer', 'system:audit-log:list', 99, 1, 1);
+  -- 操作日志挂在系统监控目录下 (id=2)
+  (16, 2, '操作日志', 2, '/system/audit-logs', 'system/audit-logs/index', 'Timer', 'system:audit-log:list', 4, 1, 1);
 
 -- 按钮权限
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -626,9 +631,9 @@ CREATE TABLE `sys_login_log` (
   KEY `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志';
 
--- 菜单: 登录日志 (顶级, 与操作日志并列)
+-- 菜单: 登录日志 (挂在系统监控目录下, id=2)
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (18, 0, '登录日志', 2, '/system/login-logs', 'system/login-logs/index', 'Key', 'system:login-log:list', 100, 1, 1);
+  (18, 2, '登录日志', 2, '/system/login-logs', 'system/login-logs/index', 'Key', 'system:login-log:list', 3, 1, 1);
 
 -- 按钮权限
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -649,9 +654,9 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- ============================================================
 -- 会话数据存 Redis (hinay:online:sessions), 无需建表。
 
--- 菜单: 在线用户 (顶级, 与操作日志/登录日志并列)
+-- 菜单: 在线用户 (挂在系统监控目录下, id=2; 图标改 View 避免与目录图标重复)
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (19, 0, '在线用户', 2, '/system/online', 'system/online/index', 'Monitor', 'system:online:list', 101, 1, 1);
+  (19, 2, '在线用户', 2, '/system/online', 'system/online/index', 'View', 'system:online:list', 1, 1, 1);
 
 -- 按钮权限
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -704,9 +709,9 @@ CREATE TABLE `sys_job_log` (
   KEY `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务执行日志';
 
--- 菜单: 定时任务 (顶级, 与操作日志/登录日志/在线用户并列)
+-- 菜单: 定时任务 (挂在系统监控目录下, id=2)
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (20, 0, '定时任务', 2, '/system/jobs', 'system/jobs/index', 'AlarmClock', 'system:job:list', 102, 1, 1);
+  (20, 2, '定时任务', 2, '/system/jobs', 'system/jobs/index', 'AlarmClock', 'system:job:list', 2, 1, 1);
 
 -- 按钮权限
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -761,9 +766,9 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `
 -- ============================================================
 -- 网页版代码生成 (gencode)
 -- ============================================================
--- 菜单: 代码生成 (顶级)
+-- 菜单: 代码生成 (挂在系统工具目录下, id=3)
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (21, 0, '代码生成', 2, '/system/gencode', 'system/gencode/index', 'MagicStick', 'system:gencode:list', 103, 1, 1);
+  (21, 3, '代码生成', 2, '/system/gencode', 'system/gencode/index', 'MagicStick', 'system:gencode:list', 1, 1, 1);
 
 -- 按钮权限
 INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
