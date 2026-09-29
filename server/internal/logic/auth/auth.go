@@ -21,6 +21,7 @@ import (
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/jwtx"
 	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/password"
@@ -176,8 +177,8 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		UserAgent: ua,
 	})
 
-	// 强制改密判定: 管理员创建/重置/导入设置的标志, 或密码已过有效期
-	mustChange := u.MustChangePwd == 1 || pwdpolicy.Expired(ctx, u.PwdUpdatedAt)
+	// 强制改密判定 (演示环境恒不强制)
+	mustChange := mustChangePwdFlag(ctx, u)
 
 	return &v1.LoginRes{
 		Token:    token,
@@ -193,6 +194,15 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 			MustChangePwd: mustChange,
 		},
 	}, nil
+}
+
+// mustChangePwdFlag 强制改密判定: 管理员创建/重置/导入设置的标志, 或密码已过有效期。
+// 演示环境下恒为 false —— 改密入口已全局禁止, 强制引导会把用户锁死在必然失败的改密页。
+func mustChangePwdFlag(ctx context.Context, u *model.SysUser) bool {
+	if demox.Enabled(ctx) {
+		return false
+	}
+	return u.MustChangePwd == 1 || pwdpolicy.Expired(ctx, u.PwdUpdatedAt)
 }
 
 // dummyBcryptHash 任意随机明文的合法 bcrypt 哈希, 仅用于用户不存在时制造等时比较。
@@ -301,7 +311,7 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 		Roles:         roles,
 		LastLoginAt:   u.LastLoginAt,
 		LastLoginIp:   u.LastLoginIp,
-		MustChangePwd: u.MustChangePwd == 1 || pwdpolicy.Expired(ctx, u.PwdUpdatedAt),
+		MustChangePwd: mustChangePwdFlag(ctx, u),
 	}, nil
 }
 
@@ -344,7 +354,11 @@ func (s *sAuth) UpdateProfile(ctx context.Context, req *v1.UpdateProfileReq) (re
 }
 
 // ChangePassword 修改当前用户密码 (原密码校验 + bcrypt 重新生成)。
+// 演示环境 (demo.enable=true) 下全局禁止。
 func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (res *v1.ChangePasswordRes, err error) {
+	if gerr := demox.Guard(ctx); gerr != nil {
+		return nil, gerr
+	}
 	cur := contextx.LoginUser(ctx)
 	if cur == nil {
 		return nil, xerror.New(xerror.CodeUnauthorized)

@@ -212,6 +212,7 @@ cp .env.example .env
 MYSQL_ROOT_PASSWORD=<强密码>                    # MySQL root 密码
 MYSQL_DATABASE=hinay_admin                      # 数据库名
 JWT_SECRET=<openssl rand -hex 32 生成>           # JWT 密钥, 必填且至少 32 位随机字符
+DEMO_MODE=false                                 # 演示模式: true 时全局禁止修改/重置密码
 ```
 
 ### 2. 构建并启动
@@ -236,6 +237,10 @@ docker compose up -d --build
 | Redis | localhost:6379 | 缓存 |
 
 默认账号: `admin` / `123456` — 首次登录会被强制要求修改密码 (密码策略内置保护, 见「密码策略」)
+
+> 公开演示部署可在 `.env` 中设置 `DEMO_MODE=true` 开启演示模式: 全局禁止修改/重置密码
+> (个人中心改密与用户管理重置密码均返回 403), 同时屏蔽登录后的强制改密引导,
+> 内置 `admin` 账号可一直以默认密码登录演示。
 
 ### 4. 常用命令
 

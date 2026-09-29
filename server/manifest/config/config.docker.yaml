@@ -46,6 +46,11 @@ ratelimit:
 gencode:
   enable: false
 
+# 演示环境开关 (由环境变量 DEMO_MODE 注入, entrypoint.sh 启动时替换, 默认 false):
+# true 时全局禁止修改/重置密码, 并屏蔽登录后的强制改密引导
+demo:
+  enable: "${DEMO_MODE}"
+
 # JWT 配置 (secret 由环境变量 JWT_SECRET 注入, 未设置时启动脚本占位符保留, 服务拒绝启动)
 jwt:
   secret:     "${JWT_SECRET}"

@@ -20,6 +20,7 @@ import (
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/excelx"
 	"hinay.cn/admin/utility/password"
 	"hinay.cn/admin/utility/response"
@@ -261,7 +262,11 @@ func (s *sUser) Delete(ctx context.Context, req *v1.UserDeleteReq) (res *v1.User
 }
 
 // ResetPwd 重置密码。
+// 演示环境 (demo.enable=true) 下全局禁止。
 func (s *sUser) ResetPwd(ctx context.Context, req *v1.UserResetPwdReq) (res *v1.UserResetPwdRes, err error) {
+	if gerr := demox.Guard(ctx); gerr != nil {
+		return nil, gerr
+	}
 	// 重置的密码须满足密码策略, 且该用户下次登录强制改密
 	if perr := pwdpolicy.Validate(ctx, req.Password); perr != nil {
 		return nil, perr

@@ -23,6 +23,10 @@ if [ -f "$CONFIG_FILE" ]; then
 
     # 替换 JWT 密钥占位符
     sed -i "s|\${JWT_SECRET}|${JWT_SECRET}|g" "$CONFIG_FILE"
+
+    # 替换演示模式开关占位符 (可选, 默认 false: 全局禁止修改/重置密码)
+    DEMO_MODE="${DEMO_MODE:-false}"
+    sed -i "s|\${DEMO_MODE}|${DEMO_MODE}|g" "$CONFIG_FILE"
 fi
 
 exec /app/main

@@ -39,6 +39,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET (openssl rand -hex 32)}
+      # 演示模式: true 时全局禁止修改/重置密码 (演示环境部署时在 .env 中开启)
+      DEMO_MODE: ${DEMO_MODE:-false}
       GF_GCFG_FILE: config.docker.yaml
     depends_on:
       mysql:
