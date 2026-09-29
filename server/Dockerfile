@@ -1,7 +1,11 @@
 # ---- 构建阶段 ----
 FROM golang:1.26-alpine AS builder
 
-RUN apk add --no-cache git gcc musl-dev
+# 国内加速: apk 换阿里云源, go mod 走七牛代理
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache git gcc musl-dev
+
+ENV GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /build
 
@@ -14,7 +18,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/main main.go
 # ---- 运行阶段 ----
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 

@@ -18,3 +18,4 @@ temp.yaml
 bin
 **/config/config.yaml
 hack/config.yaml
+/v1.0.0/
