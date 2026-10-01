@@ -20,6 +20,8 @@ export interface LoginUser {
   lastLoginAt?: string | null
   lastLoginIp?: string
   mustChangePwd?: boolean
+  /** TOTP 两步验证是否已开启 */
+  twoFaEnabled?: boolean
 }
 
 export interface MenuNode {

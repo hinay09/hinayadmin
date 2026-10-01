@@ -10,11 +10,14 @@ require (
 	github.com/gogf/gf/contrib/nosql/redis/v2 v2.10.2
 	github.com/gogf/gf/v2 v2.10.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
+	github.com/pquerna/otp v1.5.0
+	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/crypto v0.53.0
 )
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/casbin/govaluate v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
@@ -40,7 +43,6 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
-	github.com/xuri/excelize/v2 v2.11.0 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect

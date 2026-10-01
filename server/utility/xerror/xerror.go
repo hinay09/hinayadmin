@@ -25,6 +25,10 @@ var (
 	CodeRoleCodeExists = gcode.New(50010, "角色编码已存在", nil)
 	// CodeRsaKeyInvalid 登录加密密钥缺失/过期/解密失败, 前端应重新获取公钥后重试。
 	CodeRsaKeyInvalid = gcode.New(50005, "登录加密已失效, 请重试", nil)
+	// CodeTotpInvalid 两步验证动态码错误或已使用(重放)。
+	CodeTotpInvalid = gcode.New(50020, "动态验证码错误或已失效", nil)
+	// CodeTotpTicketInvalid 两步验证登录票据缺失/过期/失败次数超限, 前端应回到密码登录重试。
+	CodeTotpTicketInvalid = gcode.New(50021, "两步验证会话已过期, 请重新登录", nil)
 )
 
 // New 构造业务错误。

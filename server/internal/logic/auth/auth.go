@@ -3,6 +3,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -154,6 +156,96 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	// 登录成功, 清除失败计数
 	_, _ = g.Redis().GroupGeneric().Del(ctx, failKey)
 
+	// 两步验证: 密码通过后不直接签发 token, 而是签发一次性票据,
+	// 前端转入动态码输入步骤, 由 TotpLogin 完成第二步。
+	if service.TwoFactor().Enabled(ctx, u.Id) {
+		ticket, terr := newTotpTicket()
+		if terr != nil {
+			return nil, xerror.Wrap(xerror.CodeBusinessError, terr, "签发两步验证票据失败")
+		}
+		if serr := g.Redis().GroupString().SetEX(ctx, consts.TotpTicketPrefix+ticket, u.Id, consts.TotpTicketTTLSec); serr != nil {
+			return nil, xerror.Wrap(xerror.CodeBusinessError, serr, "保存两步验证票据失败")
+		}
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess,
+			Message: "密码通过, 等待两步验证", Ip: ip, UserAgent: ua,
+		})
+		return &v1.LoginRes{Need2fa: true, Ticket: ticket}, nil
+	}
+
+	return s.completeLogin(ctx, u, ip, ua, false)
+}
+
+// newTotpTicket 生成不可预测的两步验证票据 (256bit 随机数的 hex)。
+func newTotpTicket() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// TotpLogin 两步验证登录第二步: 携带第一步签发的票据与 TOTP 动态码换取 token。
+// 票据 TTL 见 consts.TotpTicketTTLSec; 单票据动态码失败超过 consts.TotpTicketFailMax 次
+// 即作废票据 (需重新走密码登录), 防止对 6 位码空间在线爆破。
+func (s *sAuth) TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.TotpLoginRes, err error) {
+	ip, ua := clientIp(ctx), requestUserAgent(ctx)
+	ticketKey := consts.TotpTicketPrefix + req.Ticket
+	failKey := consts.TotpTicketFailPrefix + req.Ticket
+
+	uidVar, gerr := g.Redis().GroupString().Get(ctx, ticketKey)
+	if gerr != nil || uidVar == nil || uidVar.IsNil() || uidVar.Int64() <= 0 {
+		return nil, xerror.New(xerror.CodeTotpTicketInvalid)
+	}
+	userId := uidVar.Uint64()
+
+	// 失败计数 (与票据同生命周期): 动态码错误达到上限即作废票据, 防在线爆破 6 位码空间
+	if n, _ := g.Redis().GroupString().Get(ctx, failKey); n != nil && !n.IsNil() && n.Int64() >= consts.TotpTicketFailMax {
+		_, _ = g.Redis().GroupGeneric().Del(ctx, ticketKey, failKey)
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			UserId: userId, Status: consts.LoginLogStatusFail,
+			Message: "两步验证失败次数过多", Ip: ip, UserAgent: ua,
+		})
+		return nil, xerror.New(xerror.CodeTotpTicketInvalid, "动态码错误次数过多, 请重新登录")
+	}
+
+	// 动态码校验 (含防重放, 见 logic/twofactor)
+	if verr := service.TwoFactor().VerifyLogin(ctx, userId, req.Code); verr != nil {
+		// 仅失败计入 (成功不占额度)
+		if n, ferr := g.Redis().GroupString().Incr(ctx, failKey); ferr == nil && n == 1 {
+			_, _ = g.Redis().GroupGeneric().Expire(ctx, failKey, consts.TotpTicketTTLSec)
+		}
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			UserId: userId, Status: consts.LoginLogStatusFail,
+			Message: "两步验证码错误", Ip: ip, UserAgent: ua,
+		})
+		return nil, verr
+	}
+
+	// 二次确认用户仍有效: 票据签发到使用之间账号可能被禁用/删除
+	var u *model.SysUser
+	if err = dao.SysUser.Ctx(ctx).
+		Where("id", userId).
+		Where("status", consts.StatusEnabled).
+		Where("deleted_at IS NULL").
+		Ctx(ctx).Scan(&u); err != nil || u == nil {
+		_, _ = g.Redis().GroupGeneric().Del(ctx, ticketKey, failKey)
+		return nil, xerror.New(xerror.CodeUserDisabled)
+	}
+
+	// 票据一次性: 换取 token 成功即销毁
+	_, _ = g.Redis().GroupGeneric().Del(ctx, ticketKey, failKey)
+
+	login, lerr := s.completeLogin(ctx, u, ip, ua, true)
+	if lerr != nil {
+		return nil, lerr
+	}
+	return &v1.TotpLoginRes{Token: login.Token, ExpireAt: login.ExpireAt, UserInfo: login.UserInfo}, nil
+}
+
+// completeLogin 登录收尾: 签发 token / 记录登录信息与日志 / 注册在线会话。
+// 密码登录与两步验证登录共用; twoFaOn 标记本次登录是否经过两步验证。
+func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua string, twoFaOn bool) (*v1.LoginRes, error) {
 	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "签发token失败")
@@ -165,8 +257,12 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		"last_login_at": gtime.Now(),
 		"last_login_ip": ip,
 	}).Update()
+	msg := ""
+	if twoFaOn {
+		msg = "登录成功(两步验证)"
+	}
 	service.LoginLog().Record(ctx, model.LoginLogEntry{
-		UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess, Ip: ip, UserAgent: ua,
+		UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess, Message: msg, Ip: ip, UserAgent: ua,
 	})
 	// 注册在线会话 (尽力而为)
 	service.Online().Register(ctx, token, model.OnlineSession{
@@ -192,6 +288,7 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 			LastLoginAt:   u.LastLoginAt,
 			LastLoginIp:   u.LastLoginIp,
 			MustChangePwd: mustChange,
+			TwoFaEnabled:  twoFaOn,
 		},
 	}, nil
 }
@@ -312,6 +409,7 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 		LastLoginAt:   u.LastLoginAt,
 		LastLoginIp:   u.LastLoginIp,
 		MustChangePwd: mustChangePwdFlag(ctx, u),
+		TwoFaEnabled:  service.TwoFactor().Enabled(ctx, u.Id),
 	}, nil
 }
 

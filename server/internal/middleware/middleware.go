@@ -208,6 +208,7 @@ func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode
 var publicPaths = map[string]struct{}{
 	"/api/v1/auth/login":      {},
 	"/api/v1/auth/public-key": {},
+	"/api/v1/auth/login/totp": {},
 }
 
 // authWhitelist 基础会话类接口白名单。
@@ -223,6 +224,10 @@ var authWhitelist = map[string]struct{}{
 	"/api/v1/auth/password": {},
 	"/api/v1/auth/refresh":  {},
 	"/api/v1/auth/avatar":   {},
+	// 两步验证自助管理: 仅操作"当前登录用户自身"的绑定, 登录即可访问
+	"/api/v1/auth/totp/setup":   {},
+	"/api/v1/auth/totp/enable":  {},
+	"/api/v1/auth/totp/disable": {},
 	// 全局配置读取(仅启用项): 前端布局(站点名/Logo/页脚版权)对任何已登录用户展示,
 	// 若走逐角色 Casbin 授权, 未配置该 API 策略的普通用户会在进布局时 403。
 	// 放入白名单 = 登录即可读; 匿名访问仍被 Auth 中间件拦截。
@@ -369,6 +374,12 @@ func OperationLog(r *ghttp.Request) {
 			resource, action = "auth", "logout"
 		case "/api/v1/auth/refresh":
 			resource, action = "auth", "refresh"
+		case "/api/v1/auth/login/totp":
+			resource, action = "auth", "login_totp"
+		case "/api/v1/auth/totp/enable":
+			resource, action = "auth", "totp_enable"
+		case "/api/v1/auth/totp/disable":
+			resource, action = "auth", "totp_disable"
 		}
 
 		// multipart: detail 用上传逻辑暂存的文件摘要 (无摘要时给占位说明, 记录本身不缺)

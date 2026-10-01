@@ -21,6 +21,10 @@ type (
 		// 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
 		// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 		Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
+		// TotpLogin 两步验证登录第二步: 携带第一步签发的票据与 TOTP 动态码换取 token。
+		// 票据 TTL 见 consts.TotpTicketTTLSec; 单票据动态码失败超过 consts.TotpTicketFailMax 次
+		// 即作废票据 (需重新走密码登录), 防止对 6 位码空间在线爆破。
+		TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.TotpLoginRes, err error)
 		// Refresh 使用当前有效 token 续签新 token, 旧 token 加入黑名单。
 		Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.RefreshRes, err error)
 		// Logout 写入 Redis 黑名单。
@@ -32,6 +36,7 @@ type (
 		// UpdateProfile 修改当前用户基础信息 (昵称/头像/邮箱/手机)。
 		UpdateProfile(ctx context.Context, req *v1.UpdateProfileReq) (res *v1.UpdateProfileRes, err error)
 		// ChangePassword 修改当前用户密码 (原密码校验 + bcrypt 重新生成)。
+		// 演示环境 (demo.enable=true) 下全局禁止。
 		ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (res *v1.ChangePasswordRes, err error)
 		// UploadAvatar 上传并更新当前用户头像。
 		UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res *v1.UploadAvatarRes, err error)

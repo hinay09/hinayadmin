@@ -14,4 +14,5 @@ type LoginUser struct {
 	LastLoginAt   *gtime.Time `json:"lastLoginAt"`
 	LastLoginIp   string      `json:"lastLoginIp"`
 	MustChangePwd bool        `json:"mustChangePwd"`
+	TwoFaEnabled  bool        `json:"twoFaEnabled"`
 }

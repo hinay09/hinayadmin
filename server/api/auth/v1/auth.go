@@ -30,11 +30,60 @@ type LoginReq struct {
 }
 
 // LoginRes 登录响应。
+// 两步验证为用户可选项: 未开启的用户直接返回 token, 行为与无此功能时完全一致,
+// need2fa/ticket 为附加字段 (恒为 false/""), 对旧客户端向后兼容。
+// 用户已开启两步验证时, 第一步仅返回 need2fa=true 与一次性 ticket,
+// token/userInfo 为空, 前端应转入动态码输入步骤并调用 /auth/login/totp。
 type LoginRes struct {
+	Need2fa  bool             `json:"need2fa"  dc:"是否需要两步验证"`
+	Ticket   string           `json:"ticket"   dc:"两步验证登录票据(need2fa=true 时返回)"`
 	Token    string           `json:"token"    dc:"JWT token"`
 	ExpireAt int64            `json:"expireAt" dc:"过期时间戳(秒)"`
 	UserInfo *model.LoginUser `json:"userInfo" dc:"用户信息"`
 }
+
+// TotpLoginReq 两步验证登录第二步: 携带第一步返回的票据与 TOTP 动态码换取 token。
+type TotpLoginReq struct {
+	g.Meta `path:"/auth/login/totp" tags:"Auth" method:"post" summary:"两步验证登录"`
+	Ticket string `v:"required#缺少两步验证票据" json:"ticket" dc:"密码登录第一步返回的票据"`
+	Code   string `v:"required#请输入动态验证码"   json:"code"   dc:"6位 TOTP 动态验证码"`
+}
+
+// TotpLoginRes 两步验证登录响应, 结构与普通登录一致。
+type TotpLoginRes struct {
+	Token    string           `json:"token"    dc:"JWT token"`
+	ExpireAt int64            `json:"expireAt" dc:"过期时间戳(秒)"`
+	UserInfo *model.LoginUser `json:"userInfo" dc:"用户信息"`
+}
+
+// TotpSetupReq 生成/重置当前用户的 TOTP 绑定密钥 (未验证状态, 需再调 enable 完成绑定)。
+type TotpSetupReq struct {
+	g.Meta `path:"/auth/totp/setup" tags:"Auth" method:"get" summary:"生成两步验证密钥"`
+}
+
+// TotpSetupRes 绑定密钥响应。
+type TotpSetupRes struct {
+	Secret  string `json:"secret"  dc:"Base32 密钥(手动输入绑定用)"`
+	Otpauth string `json:"otpauth" dc:"otpauth:// URI, 前端渲染二维码供验证器 App 扫码"`
+}
+
+// TotpEnableReq 确认绑定: 校验动态码, 通过后两步验证正式生效。
+type TotpEnableReq struct {
+	g.Meta `path:"/auth/totp/enable" tags:"Auth" method:"put" summary:"绑定两步验证"`
+	Code   string `v:"required#请输入动态验证码" json:"code" dc:"6位 TOTP 动态验证码"`
+}
+
+// TotpEnableRes 绑定响应。
+type TotpEnableRes struct{}
+
+// TotpDisableReq 解绑两步验证, 须提供当前有效的动态码防止误操作/恶意解绑。
+type TotpDisableReq struct {
+	g.Meta `path:"/auth/totp/disable" tags:"Auth" method:"put" summary:"解绑两步验证"`
+	Code   string `v:"required#请输入动态验证码" json:"code" dc:"6位 TOTP 动态验证码"`
+}
+
+// TotpDisableRes 解绑响应。
+type TotpDisableRes struct{}
 
 // RefreshReq 刷新 Token 请求 (要求当前 token 有效)。
 type RefreshReq struct {

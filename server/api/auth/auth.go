@@ -13,6 +13,10 @@ import (
 type IAuthV1 interface {
 	PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error)
 	Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
+	TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.TotpLoginRes, err error)
+	TotpSetup(ctx context.Context, req *v1.TotpSetupReq) (res *v1.TotpSetupRes, err error)
+	TotpEnable(ctx context.Context, req *v1.TotpEnableReq) (res *v1.TotpEnableRes, err error)
+	TotpDisable(ctx context.Context, req *v1.TotpDisableReq) (res *v1.TotpDisableRes, err error)
 	Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.RefreshRes, err error)
 	Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRes, err error)
 	UserInfo(ctx context.Context, req *v1.UserInfoReq) (res *v1.UserInfoRes, err error)

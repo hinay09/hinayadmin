@@ -66,6 +66,18 @@ const (
 	PubKeyMaxPerMin = 20
 )
 
+// TOTP 两步验证配置。
+const (
+	// TotpTicketPrefix Redis 中两步验证登录票据 Key 前缀 (值=用户ID)。
+	TotpTicketPrefix = "hinay:totp:ticket:"
+	// TotpTicketFailPrefix Redis 中两步验证票据失败计数 Key 前缀。
+	TotpTicketFailPrefix = "hinay:totp:fail:"
+	// TotpTicketTTLSec 票据存活时间(秒): 密码通过到提交动态码的时间窗。
+	TotpTicketTTLSec = 300
+	// TotpTicketFailMax 单票据允许的动态码最大失败次数, 超出后票据作废需重新走密码登录。
+	TotpTicketFailMax = 5
+)
+
 // 通用状态
 const (
 	StatusEnabled  = 1 // 启用

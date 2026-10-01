@@ -2,11 +2,12 @@
 /**
  * 个人中心
  * - 左侧: 个人信息卡片(头像/昵称/账号/角色/邮箱/手机)
- * - 右侧: tabs - "基础资料" + "修改密码"
- * 数据接口: GET/PUT /auth/profile, PUT /auth/password
+ * - 右侧: tabs - "基础资料" + "修改密码" + "安全设置"
+ * 数据接口: GET/PUT /auth/profile, PUT /auth/password, /auth/totp/*
  */
 import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import QRCode from 'qrcode'
 import {
   User,
   Message,
@@ -44,7 +45,7 @@ const userStore = useUserStore()
 const route = useRoute()
 const configStore = useConfigStore()
 // 路由携带 ?tab=password 时直接定位改密页 (强制改密场景由路由守卫跳入)
-const activeTab = ref<'basic' | 'password'>(route.query.tab === 'password' ? 'password' : 'basic')
+const activeTab = ref<'basic' | 'password' | 'security'>(route.query.tab === 'password' ? 'password' : 'basic')
 
 /* ---- 密码策略提示 (读取全局配置 sys.password.*, 与后端校验同源) ---- */
 const pwdPolicyMinLen = computed(() => configStore.getNumber('sys.password.min_length', 6))
@@ -92,6 +93,112 @@ const pwdForm = reactive<PasswordForm>({
 const profileFormRef = ref<FormInstance>()
 const pwdFormRef = ref<FormInstance>()
 
+/* ---- 安全设置: TOTP 两步验证 ---- */
+const twoFaEnabled = ref(false)
+const bindDialog = ref(false)
+const disableDialog = ref(false)
+const totpSubmitting = ref(false)
+const setupLoading = ref(false)
+// 绑定二维码数据 (setup 接口返回)
+const setupInfo = reactive({ secret: '', otpauth: '', qrDataUrl: '' })
+const bindCode = ref('')
+const disableCode = ref('')
+
+const codeRule = [
+  { required: true, message: '请输入动态验证码', trigger: 'blur' },
+  { pattern: /^\d{6}$/, message: '动态验证码为 6 位数字', trigger: 'blur' },
+]
+
+/** 开启流程第一步: 拉取绑定密钥并渲染二维码 */
+async function handleStartBind() {
+  bindDialog.value = true
+  setupLoading.value = true
+  try {
+    const res = await api.totpSetup()
+    setupInfo.secret = res.secret
+    setupInfo.otpauth = res.otpauth
+    setupInfo.qrDataUrl = await QRCode.toDataURL(res.otpauth, { width: 220, margin: 1 })
+  }
+  catch {
+    // 错误提示由 useRequest 统一弹出 (如演示模式禁止绑定), 直接关闭空弹窗
+    bindDialog.value = false
+  }
+  finally {
+    setupLoading.value = false
+  }
+}
+
+/** 开启流程第二步: 动态码确认绑定 */
+async function handleConfirmBind() {
+  if (!/^\d{6}$/.test(bindCode.value)) {
+    ElMessage.warning('请输入 6 位动态验证码')
+    return
+  }
+  totpSubmitting.value = true
+  try {
+    await api.totpEnable(bindCode.value)
+    ElMessage.success('两步验证已开启, 下次登录将要求输入动态码')
+    twoFaEnabled.value = true
+    bindDialog.value = false
+    syncTwoFaStore(true)
+  }
+  catch {}
+  finally {
+    totpSubmitting.value = false
+  }
+}
+
+/** 解绑: 须提供当前有效动态码 */
+async function handleConfirmDisable() {
+  if (!/^\d{6}$/.test(disableCode.value)) {
+    ElMessage.warning('请输入 6 位动态验证码')
+    return
+  }
+  totpSubmitting.value = true
+  try {
+    await api.totpDisable(disableCode.value)
+    ElMessage.success('两步验证已关闭')
+    twoFaEnabled.value = false
+    disableDialog.value = false
+    syncTwoFaStore(false)
+  }
+  catch {}
+  finally {
+    totpSubmitting.value = false
+  }
+}
+
+/** 关闭弹窗时清空已输入的动态码与密钥展示 */
+function resetBindDialog() {
+  bindCode.value = ''
+  setupInfo.secret = ''
+  setupInfo.otpauth = ''
+  setupInfo.qrDataUrl = ''
+}
+
+function resetDisableDialog() {
+  disableCode.value = ''
+}
+
+/** 复制绑定密钥到剪贴板 (无法扫码时手动输入) */
+async function handleCopySecret() {
+  if (!setupInfo.secret) return
+  try {
+    await navigator.clipboard.writeText(setupInfo.secret)
+    ElMessage.success('密钥已复制')
+  }
+  catch {
+    ElMessage.warning('复制失败, 请手动选择复制')
+  }
+}
+
+/** 同步 store 中 userInfo 的两步验证状态 */
+function syncTwoFaStore(on: boolean) {
+  if (userStore.userInfo) {
+    userStore.setUserInfo({ ...userStore.userInfo, twoFaEnabled: on })
+  }
+}
+
 const profileRules: FormRules = {
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
@@ -132,6 +239,7 @@ async function loadProfile() {
     profile.roles = u.roles || []
     profile.lastLoginAt = u.lastLoginAt || ''
     profile.lastLoginIp = u.lastLoginIp || ''
+    twoFaEnabled.value = !!u.twoFaEnabled
   }
   finally {
     loading.value = false
@@ -413,10 +521,128 @@ onMounted(() => {
                 </el-form-item>
               </el-form>
             </el-tab-pane>
+            <el-tab-pane name="security">
+              <template #label>
+                <span class="tab-label"><el-icon><Lock /></el-icon> 安全设置</span>
+              </template>
+              <div class="security-pane">
+                <div class="security-item">
+                  <div class="security-info">
+                    <div class="security-title">
+                      两步验证 (TOTP)
+                      <el-tag :type="twoFaEnabled ? 'success' : 'info'" size="small">
+                        {{ twoFaEnabled ? '已开启' : '未开启' }}
+                      </el-tag>
+                    </div>
+                    <div class="security-desc">
+                      开启后登录需在密码之外输入验证器 App (如 Google Authenticator /
+                      Microsoft Authenticator / 1Password) 生成的 6 位动态码,
+                      即使密码泄露也无法单独登录。
+                    </div>
+                  </div>
+                  <el-button
+                    v-if="!twoFaEnabled"
+                    type="primary"
+                    :icon="Lock"
+                    @click="handleStartBind"
+                  >开启两步验证</el-button>
+                  <el-button
+                    v-else
+                    type="danger"
+                    plain
+                    :icon="Lock"
+                    @click="disableDialog = true"
+                  >解绑两步验证</el-button>
+                </div>
+              </div>
+            </el-tab-pane>
           </el-tabs>
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 开启两步验证: 扫码 + 动态码确认 -->
+    <el-dialog
+      v-model="bindDialog"
+      title="开启两步验证"
+      width="440px"
+      :close-on-click-modal="false"
+      @closed="resetBindDialog"
+    >
+      <div v-loading="setupLoading">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="用验证器 App 扫描下方二维码; 无法扫码时可手动输入密钥"
+          style="margin-bottom:16px"
+        />
+        <div class="qr-wrap">
+          <img v-if="setupInfo.qrDataUrl" :src="setupInfo.qrDataUrl" alt="TOTP 绑定二维码" class="qr-img">
+        </div>
+        <div v-if="setupInfo.secret" class="secret-row">
+          <span class="secret-text">{{ setupInfo.secret }}</span>
+          <el-button size="small" text type="primary" @click="handleCopySecret">复制密钥</el-button>
+        </div>
+        <el-form @submit.prevent>
+          <el-form-item label="输入 App 中的 6 位动态码完成绑定" prop="code" :rules="codeRule">
+            <el-input
+              v-model="bindCode"
+              size="large"
+              maxlength="6"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              placeholder="6 位动态验证码"
+              class="totp-code-input"
+              @keyup.enter="handleConfirmBind"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="bindDialog = false">取消</el-button>
+        <el-button type="primary" :loading="totpSubmitting" @click="handleConfirmBind">
+          确认绑定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 解绑两步验证 -->
+    <el-dialog
+      v-model="disableDialog"
+      title="解绑两步验证"
+      width="420px"
+      :close-on-click-modal="false"
+      @closed="resetDisableDialog"
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="解绑后登录将不再要求动态码, 账号安全等级下降"
+        style="margin-bottom:16px"
+      />
+      <el-form @submit.prevent>
+        <el-form-item label="输入当前动态码以确认解绑" prop="code" :rules="codeRule">
+          <el-input
+            v-model="disableCode"
+            size="large"
+            maxlength="6"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="6 位动态验证码"
+            class="totp-code-input"
+            @keyup.enter="handleConfirmDisable"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="disableDialog = false">取消</el-button>
+        <el-button type="danger" :loading="totpSubmitting" @click="handleConfirmDisable">
+          确认解绑
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -535,5 +761,62 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.6;
+}
+.security-pane {
+  max-width: 640px;
+}
+.security-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+}
+.security-info {
+  flex: 1;
+}
+.security-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+.security-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
+}
+.qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.qr-img {
+  width: 220px;
+  height: 220px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.secret-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.secret-text {
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #303133;
+  user-select: all;
+}
+.totp-code-input :deep(.el-input__inner) {
+  letter-spacing: 8px;
+  font-size: 20px;
+  text-align: center;
 }
 </style>
