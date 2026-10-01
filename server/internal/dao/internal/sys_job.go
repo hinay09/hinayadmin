@@ -13,23 +13,23 @@ import (
 
 // SysJobDao is the data access object for the table sys_job.
 type SysJobDao struct {
-	table    string        // table is the underlying table name of the DAO.
-	group    string        // group is the database configuration group name of the current DAO.
-	columns  SysJobColumns // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler
+	table    string             // table is the underlying table name of the DAO.
+	group    string             // group is the database configuration group name of the current DAO.
+	columns  SysJobColumns      // columns contains all the column names of Table for convenient usage.
+	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
 // SysJobColumns defines and stores column names for the table sys_job.
 type SysJobColumns struct {
 	Id        string // 任务ID
 	Name      string // 任务名称
-	Handler   string // 处理器名称
+	Handler   string // 处理器名称(需已注册)
 	CronExpr  string // cron表达式(6位: 秒 分 时 日 月 周)
-	Params    string // 任务参数(JSON)
+	Params    string // 任务参数(JSON, 可空)
 	Status    string // 状态:1=启动,0=暂停
 	Remark    string // 备注
-	CreateId  string // 创建人ID
-	UpdateId  string // 最后修改人ID
+	CreateId  string // 创建人ID(ORM自动填充)
+	UpdateId  string // 最后修改人ID(ORM自动填充)
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
 	DeletedAt string // 删除时间(软删)
@@ -91,6 +91,11 @@ func (dao *SysJobDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *SysJobDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

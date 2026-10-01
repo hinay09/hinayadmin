@@ -15,7 +15,7 @@ type SysRoleOrg struct {
 	Id        any         // ID
 	RoleId    any         // 角色ID
 	OrgId     any         // 组织ID
-	CreateId  any         // 创建人ID
-	UpdateId  any         // 最后修改人ID
+	CreateId  any         // 创建人ID(ORM自动填充)
+	UpdateId  any         // 最后修改人ID(ORM自动填充)
 	CreatedAt *gtime.Time // 创建时间
 }

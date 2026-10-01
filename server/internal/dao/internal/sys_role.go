@@ -28,8 +28,8 @@ type SysRoleColumns struct {
 	Status    string // 状态:1=启用,0=禁用
 	Remark    string // 备注
 	DataScope string // 数据范围:1=全部,2=自定义,3=本部门,4=本部门及以下,5=仅本人
-	CreateId  string // 创建人ID
-	UpdateId  string // 最后修改人ID
+	CreateId  string // 创建人ID(ORM自动填充)
+	UpdateId  string // 最后修改人ID(ORM自动填充)
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
 	DeletedAt string // 删除时间(软删)

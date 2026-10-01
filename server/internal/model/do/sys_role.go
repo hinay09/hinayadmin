@@ -18,8 +18,9 @@ type SysRole struct {
 	Sort      any         // 排序
 	Status    any         // 状态:1=启用,0=禁用
 	Remark    any         // 备注
-	CreateId  any         // 创建人ID
-	UpdateId  any         // 最后修改人ID
+	DataScope any         // 数据范围:1=全部,2=自定义,3=本部门,4=本部门及以下,5=仅本人
+	CreateId  any         // 创建人ID(ORM自动填充)
+	UpdateId  any         // 最后修改人ID(ORM自动填充)
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
 	DeletedAt *gtime.Time // 删除时间(软删)

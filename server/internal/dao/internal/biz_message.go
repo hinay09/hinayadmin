@@ -30,8 +30,8 @@ type BizMessageColumns struct {
 	TargetScope string // 系统通知范围:1=all,2=role,3=user;私信=0
 	ReceiverId  string // 私信接收者ID
 	Status      string // 状态:1=已发布,0=草稿
-	CreateId    string // 创建人ID
-	UpdateId    string // 最后修改人ID
+	CreateId    string // 创建人ID(ORM自动填充)
+	UpdateId    string // 最后修改人ID(ORM自动填充)
 	CreatedAt   string // 创建时间
 	UpdatedAt   string // 更新时间
 	DeletedAt   string // 删除时间(软删)

@@ -30,14 +30,6 @@ type (
 		// List 分页列表。
 		List(ctx context.Context, req *v1.AuditLogListReq) (res *v1.AuditLogListRes, err error)
 	}
-	ILoginLog interface {
-		// Record 异步写一条登录日志。
-		Record(ctx context.Context, entry model.LoginLogEntry)
-		// List 分页列表。
-		List(ctx context.Context, req *v1.LoginLogListReq) (res *v1.LoginLogListRes, err error)
-		// Delete 按 ID 删除登录日志。
-		Delete(ctx context.Context, req *v1.LoginLogDeleteReq) (res *v1.LoginLogDeleteRes, err error)
-	}
 	IConfig interface {
 		// List 分页列表。
 		List(ctx context.Context, req *v1.ConfigListReq) (res *v1.ConfigListRes, err error)
@@ -85,6 +77,14 @@ type (
 		// Delete 删除文件（软删记录）。
 		Delete(ctx context.Context, req *v1.FileDeleteReq) (res *v1.FileDeleteRes, err error)
 	}
+	ILoginLog interface {
+		// Record 异步写一条登录日志 (登录/登出等链路调用, 失败仅记日志不阻断主流程)。
+		Record(ctx context.Context, entry model.LoginLogEntry)
+		// List 分页列表。
+		List(ctx context.Context, req *v1.LoginLogListReq) (res *v1.LoginLogListRes, err error)
+		// Delete 按 ID 删除登录日志。
+		Delete(ctx context.Context, req *v1.LoginLogDeleteReq) (res *v1.LoginLogDeleteRes, err error)
+	}
 	IMenu interface {
 		// List 扁平列表。
 		List(ctx context.Context, req *v1.MenuListReq) (res *v1.MenuListRes, err error)
@@ -118,7 +118,7 @@ type (
 		List(ctx context.Context, req *v1.RoleListReq) (res *v1.RoleListRes, err error)
 		// All 全量。
 		All(ctx context.Context, _ *v1.RoleAllReq) (res *v1.RoleAllRes, err error)
-		// Detail 详情 + 已绑定菜单 ID 列表（从 Casbin 获取）。
+		// Detail 详情 + 已绑定菜单 ID 列表（从 Casbin 获取）+ 自定义数据范围组织 ID 列表。
 		Detail(ctx context.Context, req *v1.RoleDetailReq) (res *v1.RoleDetailRes, err error)
 		// Create 新增。
 		Create(ctx context.Context, req *v1.RoleCreateReq) (res *v1.RoleCreateRes, err error)
@@ -147,12 +147,14 @@ type (
 		// Delete 软删除 + 清理 Casbin g 策略。
 		Delete(ctx context.Context, req *v1.UserDeleteReq) (res *v1.UserDeleteRes, err error)
 		// ResetPwd 重置密码。
+		// 演示环境 (demo.enable=true) 下全局禁止。
 		ResetPwd(ctx context.Context, req *v1.UserResetPwdReq) (res *v1.UserResetPwdRes, err error)
-		// Export 用户列表导出 (xlsx 附件下载)。
+		// Export 用户列表导出 (通用导出示例)。
+		// 过滤条件与列表一致且叠加数据权限, 不分页; 内容直接写入响应流下载。
 		Export(ctx context.Context, req *v1.UserExportReq) (res *v1.UserExportRes, err error)
-		// ImportTemplate 用户导入模板下载。
+		// ImportTemplate 用户导入模板下载 (与 Import 的解析表头严格一致)。
 		ImportTemplate(ctx context.Context, req *v1.UserImportTemplateReq) (res *v1.UserImportTemplateRes, err error)
-		// Import 用户导入 (xlsx)。
+		// Import 用户导入 (通用导入示例): 逐行校验, 行级错误不中断整体导入。
 		Import(ctx context.Context, req *v1.UserImportReq) (res *v1.UserImportRes, err error)
 	}
 )
@@ -191,17 +193,6 @@ func AuditLog() IAuditLog {
 
 func RegisterAuditLog(i IAuditLog) {
 	localAuditLog = i
-}
-
-func LoginLog() ILoginLog {
-	if localLoginLog == nil {
-		panic("implement not found for interface ILoginLog, forgot register?")
-	}
-	return localLoginLog
-}
-
-func RegisterLoginLog(i ILoginLog) {
-	localLoginLog = i
 }
 
 func Config() IConfig {
@@ -246,6 +237,17 @@ func File() IFile {
 
 func RegisterFile(i IFile) {
 	localFile = i
+}
+
+func LoginLog() ILoginLog {
+	if localLoginLog == nil {
+		panic("implement not found for interface ILoginLog, forgot register?")
+	}
+	return localLoginLog
+}
+
+func RegisterLoginLog(i ILoginLog) {
+	localLoginLog = i
 }
 
 func Menu() IMenu {

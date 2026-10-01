@@ -26,8 +26,8 @@ type SysDictTypeColumns struct {
 	TypeName  string // 字典类型名称
 	Status    string // 状态:1=启用,0=禁用
 	Remark    string // 备注
-	CreateId  string // 创建人ID
-	UpdateId  string // 最后修改人ID
+	CreateId  string // 创建人ID(ORM自动填充)
+	UpdateId  string // 最后修改人ID(ORM自动填充)
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
 	DeletedAt string // 删除时间(软删)

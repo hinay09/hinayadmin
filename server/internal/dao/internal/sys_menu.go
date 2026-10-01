@@ -32,8 +32,8 @@ type SysMenuColumns struct {
 	Sort       string // 排序
 	Visible    string // 是否显示:1=是,0=否
 	Status     string // 状态:1=启用,0=禁用
-	CreateId   string // 创建人ID
-	UpdateId   string // 最后修改人ID
+	CreateId   string // 创建人ID(ORM自动填充)
+	UpdateId   string // 最后修改人ID(ORM自动填充)
 	CreatedAt  string // 创建时间
 	UpdatedAt  string // 更新时间
 	DeletedAt  string // 删除时间(软删)

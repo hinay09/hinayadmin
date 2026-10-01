@@ -21,5 +21,6 @@ type IMessageV1 interface {
 	MessageInboxDelete(ctx context.Context, req *v1.MessageInboxDeleteReq) (res *v1.MessageInboxDeleteRes, err error)
 	MessageRead(ctx context.Context, req *v1.MessageReadReq) (res *v1.MessageReadRes, err error)
 	MessageReadAll(ctx context.Context, req *v1.MessageReadAllReq) (res *v1.MessageReadAllRes, err error)
+	MessageEvents(ctx context.Context, req *v1.MessageEventsReq) (res *v1.MessageEventsRes, err error)
 	MessageUnreadCount(ctx context.Context, req *v1.MessageUnreadCountReq) (res *v1.MessageUnreadCountRes, err error)
 }

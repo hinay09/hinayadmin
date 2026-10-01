@@ -26,8 +26,8 @@ type SysApiColumns struct {
 	Method      string // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   string // 分组名称
 	Description string // 接口描述
-	CreateId    string //
-	UpdateId    string //
+	CreateId    string // 创建人ID(ORM自动填充)
+	UpdateId    string // 最后修改人ID(ORM自动填充)
 	CreatedAt   string //
 	UpdatedAt   string //
 	DeletedAt   string // 删除时间(软删)

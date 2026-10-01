@@ -20,8 +20,8 @@ type SysConfig struct {
 	Remark      any         // 备注
 	Status      any         // 状态:1=启用,0=禁用
 	Sort        any         // 排序
-	CreateId    any         // 创建人ID
-	UpdateId    any         // 最后修改人ID
+	CreateId    any         // 创建人ID(ORM自动填充)
+	UpdateId    any         // 最后修改人ID(ORM自动填充)
 	CreatedAt   *gtime.Time // 创建时间
 	UpdatedAt   *gtime.Time // 更新时间
 	DeletedAt   *gtime.Time // 删除时间(软删)

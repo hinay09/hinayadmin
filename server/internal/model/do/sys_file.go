@@ -21,8 +21,8 @@ type SysFile struct {
 	MimeType     any         // MIME类型
 	Extension    any         // 文件扩展名
 	UserId       any         // 上传用户ID
-	CreateId     any         // 创建人ID
-	UpdateId     any         // 最后修改人ID
+	CreateId     any         // 创建人ID(ORM自动填充)
+	UpdateId     any         // 最后修改人ID(ORM自动填充)
 	CreatedAt    *gtime.Time // 创建时间
 	DeletedAt    *gtime.Time // 删除时间(软删)
 }

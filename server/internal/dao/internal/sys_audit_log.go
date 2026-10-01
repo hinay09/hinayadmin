@@ -24,10 +24,17 @@ type SysAuditLogColumns struct {
 	Id         string // ID
 	UserId     string // 用户ID
 	Username   string // 用户名
-	Action     string // 操作类型(create/update/delete/upload/...)
+	Action     string // 操作类型(create/update/delete/upload/login/...)
 	Resource   string // 操作资源(如user/role/menu/dict/file)
 	ResourceId string // 资源标识
-	Detail     string // 详情(JSON格式)
+	Method     string // HTTP方法
+	Path       string // 请求路径
+	StatusCode string // HTTP状态码
+	Code       string // 业务码(0=成功)
+	Message    string // 业务消息/失败原因
+	DurationMs string // 耗时(毫秒)
+	RequestId  string // 请求ID(链路追踪)
+	Detail     string // 详情(脱敏后的请求体)
 	Ip         string // IP地址
 	UserAgent  string // User-Agent
 	CreatedAt  string // 创建时间
@@ -41,6 +48,13 @@ var sysAuditLogColumns = SysAuditLogColumns{
 	Action:     "action",
 	Resource:   "resource",
 	ResourceId: "resource_id",
+	Method:     "method",
+	Path:       "path",
+	StatusCode: "status_code",
+	Code:       "code",
+	Message:    "message",
+	DurationMs: "duration_ms",
+	RequestId:  "request_id",
 	Detail:     "detail",
 	Ip:         "ip",
 	UserAgent:  "user_agent",

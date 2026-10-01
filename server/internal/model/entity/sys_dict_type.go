@@ -10,14 +10,14 @@ import (
 
 // SysDictType is the golang structure for table sys_dict_type.
 type SysDictType struct {
-	Id        uint64      `json:"id"        orm:"id"         description:"ID"`           // ID
-	TypeCode  string      `json:"typeCode"  orm:"type_code"  description:"字典类型编码(唯一)"`   // 字典类型编码(唯一)
-	TypeName  string      `json:"typeName"  orm:"type_name"  description:"字典类型名称"`       // 字典类型名称
-	Status    int         `json:"status"    orm:"status"     description:"状态:1=启用,0=禁用"` // 状态:1=启用,0=禁用
-	Remark    string      `json:"remark"    orm:"remark"     description:"备注"`           // 备注
-	CreateId  uint64      `json:"createId"   orm:"create_id"   description:"创建人ID"`      // 创建人ID
-	UpdateId  uint64      `json:"updateId"   orm:"update_id"   description:"最后修改人ID"`    // 最后修改人ID
-	CreatedAt *gtime.Time `json:"createdAt" orm:"created_at" description:"创建时间"`         // 创建时间
-	UpdatedAt *gtime.Time `json:"updatedAt" orm:"updated_at" description:"更新时间"`         // 更新时间
-	DeletedAt *gtime.Time `json:"deletedAt" orm:"deleted_at" description:"删除时间(软删)"`     // 删除时间(软删)
+	Id        uint64      `json:"id"        orm:"id"         description:"ID"`               // ID
+	TypeCode  string      `json:"typeCode"  orm:"type_code"  description:"字典类型编码(唯一)"`       // 字典类型编码(唯一)
+	TypeName  string      `json:"typeName"  orm:"type_name"  description:"字典类型名称"`           // 字典类型名称
+	Status    int         `json:"status"    orm:"status"     description:"状态:1=启用,0=禁用"`     // 状态:1=启用,0=禁用
+	Remark    string      `json:"remark"    orm:"remark"     description:"备注"`               // 备注
+	CreateId  uint64      `json:"createId"  orm:"create_id"  description:"创建人ID(ORM自动填充)"`   // 创建人ID(ORM自动填充)
+	UpdateId  uint64      `json:"updateId"  orm:"update_id"  description:"最后修改人ID(ORM自动填充)"` // 最后修改人ID(ORM自动填充)
+	CreatedAt *gtime.Time `json:"createdAt" orm:"created_at" description:"创建时间"`             // 创建时间
+	UpdatedAt *gtime.Time `json:"updatedAt" orm:"updated_at" description:"更新时间"`             // 更新时间
+	DeletedAt *gtime.Time `json:"deletedAt" orm:"deleted_at" description:"删除时间(软删)"`         // 删除时间(软删)
 }

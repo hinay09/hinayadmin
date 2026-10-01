@@ -13,10 +13,10 @@ import (
 
 // SysRoleOrgDao is the data access object for the table sys_role_org.
 type SysRoleOrgDao struct {
-	table    string            // table is the underlying table name of the DAO.
-	group    string            // group is the database configuration group name of the current DAO.
-	columns  SysRoleOrgColumns // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler
+	table    string             // table is the underlying table name of the DAO.
+	group    string             // group is the database configuration group name of the current DAO.
+	columns  SysRoleOrgColumns  // columns contains all the column names of Table for convenient usage.
+	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
 // SysRoleOrgColumns defines and stores column names for the table sys_role_org.
@@ -24,8 +24,8 @@ type SysRoleOrgColumns struct {
 	Id        string // ID
 	RoleId    string // 角色ID
 	OrgId     string // 组织ID
-	CreateId  string // 创建人ID
-	UpdateId  string // 最后修改人ID
+	CreateId  string // 创建人ID(ORM自动填充)
+	UpdateId  string // 最后修改人ID(ORM自动填充)
 	CreatedAt string // 创建时间
 }
 
@@ -79,6 +79,11 @@ func (dao *SysRoleOrgDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *SysRoleOrgDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

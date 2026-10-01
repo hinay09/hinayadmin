@@ -17,6 +17,6 @@ type SysJobLog struct {
 	Params     string      `json:"params"     orm:"params"      description:"任务参数(JSON)"`           // 任务参数(JSON)
 	Status     int         `json:"status"     orm:"status"      description:"结果:1=成功,0=失败"`         // 结果:1=成功,0=失败
 	Output     string      `json:"output"     orm:"output"      description:"执行输出/失败原因"`            // 执行输出/失败原因
-	DurationMs int64       `json:"durationMs" orm:"duration_ms" description:"耗时(毫秒)"`               // 耗时(毫秒)
+	DurationMs int         `json:"durationMs" orm:"duration_ms" description:"耗时(毫秒)"`               // 耗时(毫秒)
 	CreatedAt  *gtime.Time `json:"createdAt"  orm:"created_at"  description:"创建时间"`                 // 创建时间
 }

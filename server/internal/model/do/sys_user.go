@@ -11,22 +11,24 @@ import (
 
 // SysUser is the golang structure of table sys_user for DAO operations like Where/Data.
 type SysUser struct {
-	g.Meta      `orm:"table:sys_user, do:true"`
-	Id          any         // 用户ID
-	Username    any         // 登录账号
-	Password    any         // bcrypt 加密密码
-	Nickname    any         // 昵称
-	Avatar      any         // 头像URL
-	Email       any         // 邮箱
-	Phone       any         // 手机号
-	OrgId       any         // 所属组织ID
-	Status      any         // 状态:1=启用,0=禁用
-	Remark      any         // 备注
-	LastLoginAt *gtime.Time // 最近登录时间
-	LastLoginIp any         // 最近登录IP
-	CreateId    any         // 创建人ID
-	UpdateId    any         // 最后修改人ID
-	CreatedAt   *gtime.Time // 创建时间
-	UpdatedAt   *gtime.Time // 更新时间
-	DeletedAt   *gtime.Time // 删除时间(软删)
+	g.Meta        `orm:"table:sys_user, do:true"`
+	Id            any         // 用户ID
+	Username      any         // 登录账号
+	Password      any         // bcrypt 加密密码
+	Nickname      any         // 昵称
+	Avatar        any         // 头像URL
+	Email         any         // 邮箱
+	Phone         any         // 手机号
+	OrgId         any         // 所属组织ID
+	Status        any         // 状态:1=启用,0=禁用
+	Remark        any         // 备注
+	LastLoginAt   *gtime.Time // 最近登录时间
+	LastLoginIp   any         // 最近登录IP
+	PwdUpdatedAt  *gtime.Time // 密码最后修改时间(有效期计算)
+	MustChangePwd any         // 强制改密:1=下次登录须改密
+	CreateId      any         // 创建人ID(ORM自动填充)
+	UpdateId      any         // 最后修改人ID(ORM自动填充)
+	CreatedAt     *gtime.Time // 创建时间
+	UpdatedAt     *gtime.Time // 更新时间
+	DeletedAt     *gtime.Time // 删除时间(软删)
 }

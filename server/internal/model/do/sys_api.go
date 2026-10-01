@@ -17,8 +17,8 @@ type SysApi struct {
 	Method      any         // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   any         // 分组名称
 	Description any         // 接口描述
-	CreateId    any         // 创建人ID
-	UpdateId    any         // 最后修改人ID
+	CreateId    any         // 创建人ID(ORM自动填充)
+	UpdateId    any         // 最后修改人ID(ORM自动填充)
 	CreatedAt   *gtime.Time //
 	UpdatedAt   *gtime.Time //
 	DeletedAt   *gtime.Time // 删除时间(软删)

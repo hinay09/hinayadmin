@@ -61,10 +61,10 @@ type GencodeColumnItem struct {
 // GencodePreviewReq 预览生成文件。
 type GencodePreviewReq struct {
 	g.Meta  `path:"/system/gencode/preview" tags:"SystemGencode" method:"post" summary:"预览生成代码"`
-	Table   string              `json:"table" v:"required#缺少表名"`
-	Mod     string              `json:"mod" dc:"模块名 (默认表名去前缀)"`
-	Title   string              `json:"title" dc:"中文标题"`
-	Columns []GencodeColumnIn   `json:"columns" dc:"列勾选覆盖 (为空用默认)"`
+	Table   string            `json:"table" v:"required#缺少表名"`
+	Mod     string            `json:"mod" dc:"模块名 (默认表名去前缀)"`
+	Title   string            `json:"title" dc:"中文标题"`
+	Columns []GencodeColumnIn `json:"columns" dc:"列勾选覆盖 (为空用默认)"`
 }
 
 // GencodePreviewRes 预览响应。
