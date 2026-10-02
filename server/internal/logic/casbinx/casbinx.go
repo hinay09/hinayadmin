@@ -189,9 +189,13 @@ func GetUserRoles(ctx context.Context, userId uint64) ([]uint64, error) {
 func SetUserRoles(ctx context.Context, userId uint64, roleIds []uint64) error {
 	uid := strconv.FormatUint(userId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v0=?", uid); err != nil {
+		if _, err := dao.CasbinRule.Ctx(ctx).
+			Where("ptype", "g").
+			Where("v0", uid).
+			Delete(); err != nil {
 			return err
 		}
+		rows := make([]g.Map, 0, len(roleIds))
 		seen := make(map[uint64]struct{}, len(roleIds))
 		for _, rid := range roleIds {
 			if rid == 0 {
@@ -202,7 +206,10 @@ func SetUserRoles(ctx context.Context, userId uint64, roleIds []uint64) error {
 				continue
 			}
 			seen[rid] = struct{}{}
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1) VALUES('g',?,?)", uid, strconv.FormatUint(rid, 10)); err != nil {
+			rows = append(rows, g.Map{"ptype": "g", "v0": uid, "v1": strconv.FormatUint(rid, 10)})
+		}
+		if len(rows) > 0 {
+			if _, err := dao.CasbinRule.Ctx(ctx).Data(rows).Insert(); err != nil {
 				return err
 			}
 		}
@@ -222,7 +229,7 @@ func GetRoleMenus(ctx context.Context, roleId uint64) ([]int64, error) {
 	res, err := dao.CasbinRule.Ctx(ctx).
 		Where("ptype", "p").
 		Where("v0", strconv.FormatUint(roleId, 10)).
-		Where("v1 LIKE ?", "menu:%").
+		WhereLike("v1", "menu:%").
 		Fields("v1").
 		Ctx(ctx).All()
 	if err != nil {
@@ -245,13 +252,20 @@ func SetRoleMenus(ctx context.Context, roleId uint64, menuIds []int64) error {
 	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 删除该角色所有 menu: 前缀的 p 策略
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 LIKE 'menu:%'", rid); err != nil {
+		if _, err := dao.CasbinRule.Ctx(ctx).
+			Where("ptype", "p").
+			Where("v0", rid).
+			WhereLike("v1", "menu:%").
+			Delete(); err != nil {
 			return err
 		}
 		// 批量插入新的菜单策略
+		rows := make([]g.Map, 0, len(menuIds))
 		for _, mid := range menuIds {
-			obj := fmt.Sprintf("menu:%d", mid)
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", rid, obj, "*"); err != nil {
+			rows = append(rows, g.Map{"ptype": "p", "v0": rid, "v1": fmt.Sprintf("menu:%d", mid), "v2": "*"})
+		}
+		if len(rows) > 0 {
+			if _, err := dao.CasbinRule.Ctx(ctx).Data(rows).Insert(); err != nil {
 				return err
 			}
 		}
@@ -271,7 +285,7 @@ func GetRoleApis(ctx context.Context, roleId uint64) ([]ApiPolicy, error) {
 	res, err := dao.CasbinRule.Ctx(ctx).
 		Where("ptype", "p").
 		Where("v0", strconv.FormatUint(roleId, 10)).
-		Where("v1 NOT LIKE ?", "menu:%").
+		WhereNotLike("v1", "menu:%").
 		Fields("v1,v2").
 		Ctx(ctx).All()
 	if err != nil {
@@ -293,15 +307,23 @@ func SetRoleApis(ctx context.Context, roleId uint64, apis []ApiPolicy) error {
 	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 删除该角色所有非 menu: 前缀的 p 策略
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 NOT LIKE 'menu:%'", rid); err != nil {
+		if _, err := dao.CasbinRule.Ctx(ctx).
+			Where("ptype", "p").
+			Where("v0", rid).
+			WhereNotLike("v1", "menu:%").
+			Delete(); err != nil {
 			return err
 		}
 		// 批量插入新的 API 策略
+		rows := make([]g.Map, 0, len(apis))
 		for _, a := range apis {
 			if a.Path == "" || a.Method == "" {
 				continue
 			}
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", rid, a.Path, a.Method); err != nil {
+			rows = append(rows, g.Map{"ptype": "p", "v0": rid, "v1": a.Path, "v2": a.Method})
+		}
+		if len(rows) > 0 {
+			if _, err := dao.CasbinRule.Ctx(ctx).Data(rows).Insert(); err != nil {
 				return err
 			}
 		}
@@ -321,11 +343,17 @@ func RemoveRolePolicies(ctx context.Context, roleId uint64) error {
 	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 删除 p 策略中 sub=角色ID 的记录
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=?", rid); err != nil {
+		if _, err := dao.CasbinRule.Ctx(ctx).
+			Where("ptype", "p").
+			Where("v0", rid).
+			Delete(); err != nil {
 			return err
 		}
 		// 删除 g 策略中该角色作为角色的记录 (v1=角色ID)
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v1=?", rid); err != nil {
+		if _, err := dao.CasbinRule.Ctx(ctx).
+			Where("ptype", "g").
+			Where("v1", rid).
+			Delete(); err != nil {
 			return err
 		}
 		return nil
