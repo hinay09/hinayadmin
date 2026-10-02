@@ -49,12 +49,12 @@ func (s *sDataScope) OrgScope(ctx context.Context) (*model.OrgScope, error) {
 		return scope, nil
 	}
 
-	// 角色列表
-	roles, err := casbinx.GetUserRoles(ctx, cur.Username)
+	// 角色ID列表 (g 行按用户ID关联)
+	roleIds, err := casbinx.GetUserRoles(ctx, cur.UserId)
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	if len(roles) == 0 {
+	if len(roleIds) == 0 {
 		// 无角色: 按仅本人处理 (基础会话可用, 但看不到任何他人数据)
 		scope.Self = true
 		return scope, nil
@@ -63,8 +63,8 @@ func (s *sDataScope) OrgScope(ctx context.Context) (*model.OrgScope, error) {
 	// 角色的数据范围配置
 	var rows []*model.SysRole
 	if err = dao.SysRole.Ctx(ctx).
-		Fields("id, code, data_scope").
-		WhereIn("code", roles).
+		Fields("id, data_scope").
+		WhereIn("id", roleIds).
 		Where("deleted_at IS NULL").
 		Where("status", consts.StatusEnabled).
 		Scan(&rows); err != nil {

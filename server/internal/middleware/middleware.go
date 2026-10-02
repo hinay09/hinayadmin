@@ -243,8 +243,8 @@ func isAuthWhitelisted(path string) bool {
 	return ok
 }
 
-// Casbin 基于用户 + 路径 + 方法做策略校验。
-// 新 model 使用 g(r.sub, p.sub) 自动解析角色, sub 直接传 username。
+// Casbin 基于用户ID + 路径 + 方法做策略校验。
+// g 策略以 用户ID/角色ID 关联, sub 传用户ID, 用户名/角色code 变更不影响匹配。
 func Casbin(r *ghttp.Request) {
 	// 公开接口: 登录直接放行。
 	if _, ok := publicPaths[r.URL.Path]; ok {
@@ -269,7 +269,7 @@ func Casbin(r *ghttp.Request) {
 		r.Middleware.Next()
 		return
 	}
-	ok, err := casbinx.Enforce(ctx, user.Username, path, method)
+	ok, err := casbinx.Enforce(ctx, user.UserId, path, method)
 	if err != nil {
 		g.Log().Errorf(ctx, "casbin enforce error: %v", err)
 	}

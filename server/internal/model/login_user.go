@@ -11,6 +11,8 @@ type LoginUser struct {
 	Email         string      `json:"email"`
 	Phone         string      `json:"phone"`
 	Roles         []string    `json:"roles"`
+	RoleNames     []string    `json:"roleNames"`
+	IsAdmin       bool        `json:"isAdmin"`
 	LastLoginAt   *gtime.Time `json:"lastLoginAt"`
 	LastLoginIp   string      `json:"lastLoginIp"`
 	MustChangePwd bool        `json:"mustChangePwd"`

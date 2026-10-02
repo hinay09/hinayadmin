@@ -145,16 +145,16 @@ CREATE TABLE `sys_api` (
 
 -- ------------------------------------------------------------
 -- Casbin 策略表 (兼容标准 casbin gorm-adapter 字段布局)
--- 字段语义:
---   ptype = p  (策略)        : v0=sub(role), v1=obj(path), v2=act(method), v3~v5 预留
---   ptype = g  (角色继承/分组): v0=user/sub, v1=role,        v2=domain (可选)
+-- 字段语义 (关联键均为ID, 与用户名/角色code解耦, 改名不影响权限):
+--   ptype = p  (策略)        : v0=sub(角色ID), v1=obj(path 或 menu:<菜单ID>), v2=act(method), v3~v5 预留
+--   ptype = g  (角色继承/分组): v0=用户ID, v1=角色ID,        v2=domain (可选)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `casbin_rule`;
 CREATE TABLE `casbin_rule` (
   `id`    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT             COMMENT '主键',
   `ptype` VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '策略类型: p / g / g2 ...',
-  `v0`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:sub(role) | g:user',
-  `v1`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:obj(path) | g:role',
+  `v0`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:sub(角色ID) | g:用户ID',
+  `v1`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:obj(path/menu:菜单ID) | g:角色ID',
   `v2`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:act(method) | g:domain',
   `v3`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '预留字段',
   `v4`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '预留字段',
@@ -326,61 +326,61 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/message/:id/read',       'PUT',    '消息通知', '标记为已读');
 
 -- Casbin: 角色继承(g) + 策略(p)
--- g: 用户-角色映射, p: 角色-资源-操作 策略
+-- g: 用户ID-角色ID 映射, p: 角色ID-资源-操作 策略 (关联键均为ID)
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  -- g 策略: 用户 admin 属于 admin 角色
-  ('g', 'admin', 'admin', '', '', '', ''),
+  -- g 策略: 用户1(admin) 属于角色1(admin, 内置超管)
+  ('g', '1', '1', '', '', '', ''),
   -- p 策略: admin 角色菜单权限(所有菜单含按钮)
-  ('p', 'admin', 'menu:30',  'access', '', '', ''),
-  ('p', 'admin', 'menu:40',  'access', '', '', ''),
-  ('p', 'admin', 'menu:1',   'access', '', '', ''),
-  ('p', 'admin', 'menu:2',   'access', '', '', ''),
-  ('p', 'admin', 'menu:3',   'access', '', '', ''),
-  ('p', 'admin', 'menu:10',  'access', '', '', ''),
-  ('p', 'admin', 'menu:11',  'access', '', '', ''),
-  ('p', 'admin', 'menu:12',  'access', '', '', ''),
-  ('p', 'admin', 'menu:13',  'access', '', '', ''),
-  ('p', 'admin', 'menu:101', 'access', '', '', ''),
-  ('p', 'admin', 'menu:102', 'access', '', '', ''),
-  ('p', 'admin', 'menu:103', 'access', '', '', ''),
-  ('p', 'admin', 'menu:111', 'access', '', '', ''),
-  ('p', 'admin', 'menu:112', 'access', '', '', ''),
-  ('p', 'admin', 'menu:113', 'access', '', '', ''),
-  ('p', 'admin', 'menu:114', 'access', '', '', ''),
-  ('p', 'admin', 'menu:121', 'access', '', '', ''),
-  ('p', 'admin', 'menu:122', 'access', '', '', ''),
-  ('p', 'admin', 'menu:123', 'access', '', '', ''),
-  ('p', 'admin', 'menu:131', 'access', '', '', ''),
-  ('p', 'admin', 'menu:132', 'access', '', '', ''),
-  ('p', 'admin', 'menu:133', 'access', '', '', ''),
+  ('p', '1', 'menu:30',  'access', '', '', ''),
+  ('p', '1', 'menu:40',  'access', '', '', ''),
+  ('p', '1', 'menu:1',   'access', '', '', ''),
+  ('p', '1', 'menu:2',   'access', '', '', ''),
+  ('p', '1', 'menu:3',   'access', '', '', ''),
+  ('p', '1', 'menu:10',  'access', '', '', ''),
+  ('p', '1', 'menu:11',  'access', '', '', ''),
+  ('p', '1', 'menu:12',  'access', '', '', ''),
+  ('p', '1', 'menu:13',  'access', '', '', ''),
+  ('p', '1', 'menu:101', 'access', '', '', ''),
+  ('p', '1', 'menu:102', 'access', '', '', ''),
+  ('p', '1', 'menu:103', 'access', '', '', ''),
+  ('p', '1', 'menu:111', 'access', '', '', ''),
+  ('p', '1', 'menu:112', 'access', '', '', ''),
+  ('p', '1', 'menu:113', 'access', '', '', ''),
+  ('p', '1', 'menu:114', 'access', '', '', ''),
+  ('p', '1', 'menu:121', 'access', '', '', ''),
+  ('p', '1', 'menu:122', 'access', '', '', ''),
+  ('p', '1', 'menu:123', 'access', '', '', ''),
+  ('p', '1', 'menu:131', 'access', '', '', ''),
+  ('p', '1', 'menu:132', 'access', '', '', ''),
+  ('p', '1', 'menu:133', 'access', '', '', ''),
   -- p 策略: admin 角色API权限(放行所有)
-  ('p', 'admin', '/api/v1/*', '*', '', '', ''),
+  ('p', '1', '/api/v1/*', '*', '', '', ''),
   -- p 策略: admin 消息中心菜单权限
-  ('p', 'admin', 'menu:50',  'access', '', '', ''),
-  ('p', 'admin', 'menu:51',  'access', '', '', ''),
-  ('p', 'admin', 'menu:52',  'access', '', '', ''),
-  ('p', 'admin', 'menu:511', 'access', '', '', ''),
-  ('p', 'admin', 'menu:512', 'access', '', '', ''),
-  ('p', 'admin', 'menu:521', 'access', '', '', ''),
-  ('p', 'admin', 'menu:522', 'access', '', '', ''),
+  ('p', '1', 'menu:50',  'access', '', '', ''),
+  ('p', '1', 'menu:51',  'access', '', '', ''),
+  ('p', '1', 'menu:52',  'access', '', '', ''),
+  ('p', '1', 'menu:511', 'access', '', '', ''),
+  ('p', '1', 'menu:512', 'access', '', '', ''),
+  ('p', '1', 'menu:521', 'access', '', '', ''),
+  ('p', '1', 'menu:522', 'access', '', '', ''),
   -- p 策略: common 角色菜单权限(仪表盘 + 个人中心 + 消息中心)
-  ('p', 'common', 'menu:30', 'access', '', '', ''),
-  ('p', 'common', 'menu:40', 'access', '', '', ''),
-  ('p', 'common', 'menu:50', 'access', '', '', ''),
-  ('p', 'common', 'menu:52', 'access', '', '', ''),
-  ('p', 'common', 'menu:521', 'access', '', '', ''),
-  ('p', 'common', 'menu:522', 'access', '', '', ''),
+  ('p', '2', 'menu:30', 'access', '', '', ''),
+  ('p', '2', 'menu:40', 'access', '', '', ''),
+  ('p', '2', 'menu:50', 'access', '', '', ''),
+  ('p', '2', 'menu:52', 'access', '', '', ''),
+  ('p', '2', 'menu:521', 'access', '', '', ''),
+  ('p', '2', 'menu:522', 'access', '', '', ''),
   -- p 策略: common 角色API权限
-  ('p', 'common', '/api/v1/auth/*', '*', '', '', ''),
+  ('p', '2', '/api/v1/auth/*', '*', '', '', ''),
   -- p 策略: common 消息通知 (收件箱 + 标记已读 + 发送私信 + 个人删除)
-  ('p', 'common', '/api/v1/message/inbox',         'GET',    '', '', ''),
-  ('p', 'common', '/api/v1/message/inbox/*',       'GET',    '', '', ''),
-  ('p', 'common', '/api/v1/message/inbox/*',       'DELETE', '', '', ''),
-  ('p', 'common', '/api/v1/message/unread-count',  'GET',    '', '', ''),
-  ('p', 'common', '/api/v1/message/read-all',      'PUT',    '', '', ''),
-  ('p', 'common', '/api/v1/message/*/read',        'PUT',    '', '', ''),
-  ('p', 'common', '/api/v1/system/users',             'GET',    '', '', ''),
-  ('p', 'common', '/api/v1/message/private',       'POST',   '', '', '');
+  ('p', '2', '/api/v1/message/inbox',         'GET',    '', '', ''),
+  ('p', '2', '/api/v1/message/inbox/*',       'GET',    '', '', ''),
+  ('p', '2', '/api/v1/message/inbox/*',       'DELETE', '', '', ''),
+  ('p', '2', '/api/v1/message/unread-count',  'GET',    '', '', ''),
+  ('p', '2', '/api/v1/message/read-all',      'PUT',    '', '', ''),
+  ('p', '2', '/api/v1/message/*/read',        'PUT',    '', '', ''),
+  ('p', '2', '/api/v1/system/users',             'GET',    '', '', ''),
+  ('p', '2', '/api/v1/message/private',       'POST',   '', '', '');
 
 -- ------------------------------------------------------------
 -- 操作日志: 由中间件自动写入, 记录 POST/PUT/DELETE 操作(含成功/失败/未授权)
@@ -517,14 +517,14 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: admin 角色新菜单权限
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:14', 'access', '', '', ''),
-  ('p', 'admin', 'menu:15', 'access', '', '', ''),
-  ('p', 'admin', 'menu:16', 'access', '', '', ''),
-  ('p', 'admin', 'menu:141', 'access', '', '', ''),
-  ('p', 'admin', 'menu:142', 'access', '', '', ''),
-  ('p', 'admin', 'menu:143', 'access', '', '', ''),
-  ('p', 'admin', 'menu:151', 'access', '', '', ''),
-  ('p', 'admin', 'menu:152', 'access', '', '', '');
+  ('p', '1', 'menu:14', 'access', '', '', ''),
+  ('p', '1', 'menu:15', 'access', '', '', ''),
+  ('p', '1', 'menu:16', 'access', '', '', ''),
+  ('p', '1', 'menu:141', 'access', '', '', ''),
+  ('p', '1', 'menu:142', 'access', '', '', ''),
+  ('p', '1', 'menu:143', 'access', '', '', ''),
+  ('p', '1', 'menu:151', 'access', '', '', ''),
+  ('p', '1', 'menu:152', 'access', '', '', '');
 
 -- ============================================================
 -- 全局配置
@@ -576,10 +576,10 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin 权限
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:17',  'access', '', '', ''),
-  ('p', 'admin', 'menu:171', 'access', '', '', ''),
-  ('p', 'admin', 'menu:172', 'access', '', '', ''),
-  ('p', 'admin', 'menu:173', 'access', '', '', '');
+  ('p', '1', 'menu:17',  'access', '', '', ''),
+  ('p', '1', 'menu:171', 'access', '', '', ''),
+  ('p', '1', 'menu:172', 'access', '', '', ''),
+  ('p', '1', 'menu:173', 'access', '', '', '');
 
 -- ============================================================
 -- 组织机构管理
@@ -606,10 +606,10 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin 权限
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:60',  'access', '', '', ''),
-  ('p', 'admin', 'menu:601', 'access', '', '', ''),
-  ('p', 'admin', 'menu:602', 'access', '', '', ''),
-  ('p', 'admin', 'menu:603', 'access', '', '', '');
+  ('p', '1', 'menu:60',  'access', '', '', ''),
+  ('p', '1', 'menu:601', 'access', '', '', ''),
+  ('p', '1', 'menu:602', 'access', '', '', ''),
+  ('p', '1', 'menu:603', 'access', '', '', '');
 
 -- ============================================================
 -- 登录日志
@@ -646,8 +646,8 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: admin 角色
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:18',  'access', '', '', ''),
-  ('p', 'admin', 'menu:181', 'access', '', '', '');
+  ('p', '1', 'menu:18',  'access', '', '', ''),
+  ('p', '1', 'menu:181', 'access', '', '', '');
 
 -- ============================================================
 -- 在线用户
@@ -669,8 +669,8 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: admin 角色
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:19',  'access', '', '', ''),
-  ('p', 'admin', 'menu:191', 'access', '', '', '');
+  ('p', '1', 'menu:19',  'access', '', '', ''),
+  ('p', '1', 'menu:191', 'access', '', '', '');
 
 -- ============================================================
 -- 定时任务
@@ -735,13 +735,13 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: admin 角色
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:20',  'access', '', '', ''),
-  ('p', 'admin', 'menu:201', 'access', '', '', ''),
-  ('p', 'admin', 'menu:202', 'access', '', '', ''),
-  ('p', 'admin', 'menu:203', 'access', '', '', ''),
-  ('p', 'admin', 'menu:204', 'access', '', '', ''),
-  ('p', 'admin', 'menu:205', 'access', '', '', ''),
-  ('p', 'admin', 'menu:206', 'access', '', '', '');
+  ('p', '1', 'menu:20',  'access', '', '', ''),
+  ('p', '1', 'menu:201', 'access', '', '', ''),
+  ('p', '1', 'menu:202', 'access', '', '', ''),
+  ('p', '1', 'menu:203', 'access', '', '', ''),
+  ('p', '1', 'menu:204', 'access', '', '', ''),
+  ('p', '1', 'menu:205', 'access', '', '', ''),
+  ('p', '1', 'menu:206', 'access', '', '', '');
 
 -- ============================================================
 -- Excel 导入导出 (用户模块示例)
@@ -786,10 +786,10 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: admin 角色
 INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', 'admin', 'menu:21',  'access', '', '', ''),
-  ('p', 'admin', 'menu:211', 'access', '', '', ''),
-  ('p', 'admin', 'menu:212', 'access', '', '', ''),
-  ('p', 'admin', 'menu:213', 'access', '', '', '');
+  ('p', '1', 'menu:21',  'access', '', '', ''),
+  ('p', '1', 'menu:211', 'access', '', '', ''),
+  ('p', '1', 'menu:212', 'access', '', '', ''),
+  ('p', '1', 'menu:213', 'access', '', '', '');
 
 -- ============================================================
 -- TOTP 两步验证 (2FA)

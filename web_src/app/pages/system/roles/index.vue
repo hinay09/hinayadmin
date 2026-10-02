@@ -56,8 +56,8 @@ const orgTreeData = ref<any[]>([])
 const orgTreeLoading = ref(false)
 // 打开抽屉时待回显的自定义组织 ID (el-tree 挂载后在 @opened 中设置勾选)
 const pendingOrgIds = ref<number[]>([])
-// 内置 admin 角色不受数据范围约束, 下拉禁用
-const scopeDisabled = computed(() => isEdit.value && form.code === 'admin')
+// 内置超管角色 (id=1) 不受数据范围约束, 下拉禁用; 判定按ID, 与角色code解耦
+const scopeDisabled = computed(() => isEdit.value && form.id === 1)
 
 async function loadOrgTree() {
   if (orgTreeData.value.length) return

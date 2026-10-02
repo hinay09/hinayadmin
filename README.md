@@ -328,7 +328,8 @@ casbin:
     m = g(r.sub, p.sub) && keyMatch2(r.obj, p.obj) && (r.act == p.act || p.act == "*")
 ```
 
-> Casbin 模型使用 `g(r.sub, p.sub)`, 因此 `sub` 直接传 `username`, 由 g 策略自动解析其角色。
+> Casbin 模型使用 `g(r.sub, p.sub)`, 因此 `sub` 直接传 `用户ID`, 由 g 策略自动解析其角色。
+> g/p 关联键均为 ID (十进制字符串), 与用户名/角色 code 解耦, 改名不影响权限。
 
 ## 接口规范
 
@@ -385,11 +386,11 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 ```
 
 - **Auth**: 解析 JWT, 校验 Redis 黑名单, 写入 LoginUser 到 ctx; 命中 `publicPaths` (如 `/auth/login`) 直接放行。
-- **Casbin**: 校验 `(username, path, method)`; 超管 (`admin` 角色) 全放行; 命中 `authWhitelist` (如 `/auth/menus`、`/auth/userInfo`、`/auth/profile`、`/auth/password`、`/auth/logout`) 已登录即可访问, 不进入策略检查。
-- **双维度授权**:
-  - 菜单维度: `p, <roleCode>, menu:<menuId>, *`  → 控制可见菜单与按钮权限码
-  - API 维度: `p, <roleCode>, <apiPath>, <method>` → 控制实际 HTTP 接口
-  - 用户-角色: `g, <username>, <roleCode>` → 在 g 策略中维护
+- **Casbin**: 校验 `(用户ID, path, method)`; 超管 (内置角色 id=1) 全放行; 命中 `authWhitelist` (如 `/auth/menus`、`/auth/userInfo`、`/auth/profile`、`/auth/password`、`/auth/logout`) 已登录即可访问, 不进入策略检查。
+- **双维度授权** (关联键均为 ID, 角色 code 仅为展示标识, 存量库执行 `upgrade/0012_casbin_id_subject.sql` 迁移):
+  - 菜单维度: `p, <角色ID>, menu:<menuId>, *`  → 控制可见菜单与按钮权限码
+  - API 维度: `p, <角色ID>, <apiPath>, <method>` → 控制实际 HTTP 接口
+  - 用户-角色: `g, <用户ID>, <角色ID>` → 在 g 策略中维护
 - **前端**:
   - 登录后调用 `/auth/menus` 拉取 `{ menus, permissions }`
   - 路由按 `menus` 动态注入, 按钮用 `<el-button v-permission="'system:user:create'">`
@@ -468,7 +469,7 @@ q, err = service.DataScope().Apply(ctx, q, "org_id", "created_by")
 ```
 
 - `orgColumn` 传业务表的组织字段, `selfColumn` 传"仅本人"的比对字段 (如 `created_by`); 两个列名只允许来自代码, 不允许来自外部输入。
-- 多角色取并集, 任一角色为"全部"则整体放行; 内置 `admin` 角色恒为全部 (与 Casbin 全局放行一致)。
+- 多角色取并集, 任一角色为"全部"则整体放行; 内置超管角色 (id=1) 恒为全部 (与 Casbin 全局放行一致)。
 - 用户管理 (`/system/users`) 已内置接入, 可直接验证效果。
 
 ## 常用命令

@@ -17,6 +17,10 @@ export interface LoginUser {
   email?: string
   phone?: string
   roles: string[]
+  /** 角色显示名 (与 roles 一一对应, 后端从 sys_role.name 解析) */
+  roleNames?: string[]
+  /** 是否超管 (后端按内置角色ID判定, 与角色code解耦) */
+  isAdmin?: boolean
   lastLoginAt?: string | null
   lastLoginIp?: string
   mustChangePwd?: boolean
@@ -61,7 +65,8 @@ export const useUserStore = defineStore('user', {
   getters: {
     isLogin: (s) => !!s.token,
     roles: (s) => s.userInfo?.roles ?? [],
-    isAdmin: (s) => (s.userInfo?.roles ?? []).includes('admin'),
+    // 后端 userInfo.isAdmin 按内置角色ID判定, 前端不再依赖角色code字符串
+    isAdmin: (s) => s.userInfo?.isAdmin ?? false,
   },
 
   actions: {
@@ -131,7 +136,7 @@ export const useUserStore = defineStore('user', {
 
     hasPermission(code: string): boolean {
       if (!code) return true
-      if (this.roles.includes('admin')) return true
+      if (this.isAdmin) return true
       return this.permissions.includes(code)
     },
 

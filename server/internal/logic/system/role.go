@@ -93,7 +93,7 @@ func (s *sRole) detailInternal(ctx context.Context, id uint64) (*model.SysRole, 
 		return nil, nil, xerror.New(xerror.CodeNotFound)
 	}
 	menuIds := make([]uint64, 0)
-	mids, _ := casbinx.GetRoleMenus(ctx, r.Code)
+	mids, _ := casbinx.GetRoleMenus(ctx, r.Id)
 	for _, mid := range mids {
 		menuIds = append(menuIds, uint64(mid))
 	}
@@ -190,22 +190,21 @@ func (s *sRole) Delete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.Role
 	if req.Id == 1 {
 		return nil, xerror.New(xerror.CodeBusinessError, "内置超级管理员角色不可删除")
 	}
-	// 先查角色 code
-	var code string
-	if err = dao.SysRole.Ctx(ctx).Where("id", req.Id).Fields("code").Scan(&code); err != nil || code == "" {
+	cnt, cerr := dao.SysRole.Ctx(ctx).Where("id", req.Id).Where("deleted_at IS NULL").Count()
+	if cerr != nil || cnt == 0 {
 		return nil, xerror.New(xerror.CodeNotFound, "角色不存在")
 	}
 	if _, err = dao.SysRole.Ctx(ctx).Data(g.Map{"deleted_at": gtime.Now()}).Where("id", req.Id).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	// 清理 Casbin 中该角色的所有策略（p 策略 + g 策略中引用该角色的）
-	_ = casbinx.RemoveRolePolicies(ctx, code)
+	// 清理 Casbin 中该角色的所有策略（p 策略 + g 策略中引用该角色的, 均按角色ID）
+	_ = casbinx.RemoveRolePolicies(ctx, req.Id)
 	return &v1.RoleDeleteRes{}, nil
 }
 
 // isBuiltInAdmin 内置超级管理员角色判定: 该角色在校验层始终全量放行, 权限配置不生效。
-func isBuiltInAdmin(code string) bool {
-	return code == consts.RoleAdmin
+func isBuiltInAdmin(id uint64) bool {
+	return id == consts.RoleAdminId
 }
 
 // AssignMenus 角色绑定菜单, 通过 Casbin 策略管理。
@@ -214,7 +213,7 @@ func (s *sRole) AssignMenus(ctx context.Context, req *v1.RoleAssignMenusReq) (re
 	if err = dao.SysRole.Ctx(ctx).Where("id", req.Id).Scan(&role); err != nil || role == nil {
 		return nil, xerror.New(xerror.CodeNotFound, "角色不存在")
 	}
-	if isBuiltInAdmin(role.Code) {
+	if isBuiltInAdmin(role.Id) {
 		return nil, xerror.New(xerror.CodeBusinessError, "内置超级管理员默认拥有全部权限, 无需也无法配置")
 	}
 	// 转换 menuIds 为 int64 切片
@@ -225,7 +224,7 @@ func (s *sRole) AssignMenus(ctx context.Context, req *v1.RoleAssignMenusReq) (re
 		}
 		ids = append(ids, int64(mid))
 	}
-	if err = casbinx.SetRoleMenus(ctx, role.Code, ids); err != nil {
+	if err = casbinx.SetRoleMenus(ctx, role.Id, ids); err != nil {
 		return nil, err
 	}
 	return &v1.RoleAssignMenusRes{}, nil
@@ -271,7 +270,7 @@ func (s *sRole) AssignApis(ctx context.Context, req *v1.RoleAssignApisReq) (res 
 	if err = dao.SysRole.Ctx(ctx).Where("id", req.Id).Where("deleted_at IS NULL").Scan(&role); err != nil || role == nil {
 		return nil, xerror.New(xerror.CodeNotFound, "角色不存在")
 	}
-	if isBuiltInAdmin(role.Code) {
+	if isBuiltInAdmin(role.Id) {
 		return nil, xerror.New(xerror.CodeBusinessError, "内置超级管理员默认拥有全部权限, 无需也无法配置")
 	}
 	apis := make([]casbinx.ApiPolicy, 0, len(req.Apis))
@@ -284,7 +283,7 @@ func (s *sRole) AssignApis(ctx context.Context, req *v1.RoleAssignApisReq) (res 
 			Method: strings.ToUpper(strings.TrimSpace(a.Method)),
 		})
 	}
-	if err = casbinx.SetRoleApis(ctx, role.Code, apis); err != nil {
+	if err = casbinx.SetRoleApis(ctx, role.Id, apis); err != nil {
 		return nil, err
 	}
 	return &v1.RoleAssignApisRes{}, nil
@@ -296,7 +295,7 @@ func (s *sRole) GetApis(ctx context.Context, req *v1.RoleGetApisReq) (res *v1.Ro
 	if err = dao.SysRole.Ctx(ctx).Where("id", req.Id).Where("deleted_at IS NULL").Scan(&role); err != nil || role == nil {
 		return nil, xerror.New(xerror.CodeNotFound, "角色不存在")
 	}
-	apis, err := casbinx.GetRoleApis(ctx, role.Code)
+	apis, err := casbinx.GetRoleApis(ctx, role.Id)
 	if err != nil {
 		return nil, err
 	}

@@ -30,6 +30,7 @@ type UserVO struct {
 	OrgName   string      `json:"orgName"`
 	Status    int         `json:"status"`
 	Remark    string      `json:"remark"`
+	RoleIds   []uint64    `json:"roleIds"`
 	Roles     []string    `json:"roles"`
 	CreatedAt *gtime.Time `json:"createdAt"`
 }

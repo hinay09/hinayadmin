@@ -173,9 +173,8 @@ async function openEdit(row: any) {
     orgId: detail.orgId || null,
     status: detail.status,
     remark: detail.remark,
-    roleIds: roleOptions.value
-      .filter((r: any) => detail.roles?.includes(r.code))
-      .map((r: any) => r.id),
+    // 后端详情直接返回角色ID列表, 不再按 code 匹配换算 (与角色code解耦)
+    roleIds: [...(detail.roleIds ?? [])],
   })
   drawerVisible.value = true
 }

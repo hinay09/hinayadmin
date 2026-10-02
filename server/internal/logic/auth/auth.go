@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -250,7 +251,8 @@ func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua stri
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "签发token失败")
 	}
-	roles, _ := casbinx.GetUserRoles(ctx, u.Username)
+	roleIds, _ := casbinx.GetUserRoles(ctx, u.Id)
+	roleCodes, roleNames, isAdmin := resolveRoleInfo(ctx, roleIds)
 
 	// 最近登录信息落库 (u 内存中仍是本次之前的值, 响应里展示的是"上次登录")
 	_, _ = dao.SysUser.Ctx(ctx).Where("id", u.Id).Data(g.Map{
@@ -284,7 +286,9 @@ func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua stri
 			Username:      u.Username,
 			Nickname:      u.Nickname,
 			Avatar:        u.Avatar,
-			Roles:         roles,
+			Roles:         roleCodes,
+			RoleNames:     roleNames,
+			IsAdmin:       isAdmin,
 			LastLoginAt:   u.LastLoginAt,
 			LastLoginIp:   u.LastLoginIp,
 			MustChangePwd: mustChange,
@@ -397,7 +401,8 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 	if err != nil || u == nil {
 		return nil, xerror.New(xerror.CodeUserNotFound)
 	}
-	roles, _ := casbinx.GetUserRoles(ctx, u.Username)
+	roleIds, _ := casbinx.GetUserRoles(ctx, u.Id)
+	roleCodes, roleNames, isAdmin := resolveRoleInfo(ctx, roleIds)
 	return &model.LoginUser{
 		UserId:        u.Id,
 		Username:      u.Username,
@@ -405,12 +410,45 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 		Avatar:        u.Avatar,
 		Email:         u.Email,
 		Phone:         u.Phone,
-		Roles:         roles,
+		Roles:         roleCodes,
+		RoleNames:     roleNames,
+		IsAdmin:       isAdmin,
 		LastLoginAt:   u.LastLoginAt,
 		LastLoginIp:   u.LastLoginIp,
 		MustChangePwd: mustChangePwdFlag(ctx, u),
 		TwoFaEnabled:  service.TwoFactor().Enabled(ctx, u.Id),
 	}, nil
+}
+
+// resolveRoleInfo 将 Casbin 角色ID解析为角色code/名称列表与超管标记。
+// 角色code仅为展示标识; 超管判定按内置角色ID, 与角色code解耦。
+// 角色已删除的条目跳过, 查询失败时退化为仅超管标记。
+func resolveRoleInfo(ctx context.Context, roleIds []uint64) (codes, names []string, isAdmin bool) {
+	isAdmin = slices.Contains(roleIds, consts.RoleAdminId)
+	codes = make([]string, 0, len(roleIds))
+	names = make([]string, 0, len(roleIds))
+	if len(roleIds) == 0 {
+		return codes, names, isAdmin
+	}
+	var rows []*model.SysRole
+	if err := dao.SysRole.Ctx(ctx).
+		WhereIn("id", roleIds).
+		Where("deleted_at IS NULL").
+		Fields("id, code, name").
+		Scan(&rows); err != nil {
+		return codes, names, isAdmin
+	}
+	byId := make(map[uint64]*model.SysRole, len(rows))
+	for _, r := range rows {
+		byId[r.Id] = r
+	}
+	for _, id := range roleIds {
+		if r := byId[id]; r != nil {
+			codes = append(codes, r.Code)
+			names = append(names, r.Name)
+		}
+	}
+	return codes, names, isAdmin
 }
 
 // UserInfo 当前登录用户信息。
@@ -596,14 +634,14 @@ func (s *sAuth) MenuTree(ctx context.Context, req *v1.MenuTreeReq) (res *v1.Menu
 			menuIds = append(menuIds, v.Uint64())
 		}
 	} else {
-		// 非超管: 通过 Casbin 获取角色 -> 获取菜单ID
-		roles, rerr := casbinx.GetUserRoles(ctx, cur.Username)
+		// 非超管: 通过 Casbin 获取角色 -> 获取菜单ID (g/p 均按角色ID关联)
+		roleIds, rerr := casbinx.GetUserRoles(ctx, cur.UserId)
 		if rerr != nil {
 			return nil, xerror.Wrap(xerror.CodeBusinessError, rerr, "获取用户角色失败")
 		}
 		seen := make(map[int64]struct{})
-		for _, roleCode := range roles {
-			ids, _ := casbinx.GetRoleMenus(ctx, roleCode)
+		for _, roleId := range roleIds {
+			ids, _ := casbinx.GetRoleMenus(ctx, roleId)
 			for _, id := range ids {
 				if _, ok := seen[id]; !ok {
 					seen[id] = struct{}{}

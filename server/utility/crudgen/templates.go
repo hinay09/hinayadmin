@@ -661,10 +661,10 @@ INSERT INTO sys_api (path, method, group_name, description) VALUES
   ('/api/v1/{{.Mod}}/:id', 'PUT',    '{{.Title}}', '修改{{.Title}}'),
   ('/api/v1/{{.Mod}}/:id', 'DELETE', '{{.Title}}', '删除{{.Title}}');
 
--- Casbin: admin 角色
+-- Casbin: admin 角色 (内置超管角色 id=1, p 行 v0 为角色ID)
 INSERT INTO casbin_rule (ptype, v0, v1, v2, v3, v4, v5) VALUES
-  ('p', 'admin', 'menu:{{.MenuId}}', 'access', '', '', ''),
-  ('p', 'admin', 'menu:{{.ButtonBase}}', 'access', '', '', ''),
-  ('p', 'admin', 'menu:{{add1 .ButtonBase}}', 'access', '', '', ''),
-  ('p', 'admin', 'menu:{{add1 (add1 .ButtonBase)}}', 'access', '', '', '');
+  ('p', '1', 'menu:{{.MenuId}}', 'access', '', '', ''),
+  ('p', '1', 'menu:{{.ButtonBase}}', 'access', '', '', ''),
+  ('p', '1', 'menu:{{add1 .ButtonBase}}', 'access', '', '', ''),
+  ('p', '1', 'menu:{{add1 (add1 .ButtonBase)}}', 'access', '', '', '');
 `

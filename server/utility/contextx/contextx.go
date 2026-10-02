@@ -86,17 +86,17 @@ func MustLoginUser(ctx context.Context) *model.LoginUser {
 	return &model.LoginUser{}
 }
 
-// GetUserRoles 从 Casbin 获取当前登录用户的角色列表（请求级缓存）。
+// GetUserRoles 从 Casbin 获取当前登录用户的角色ID列表（g 行按用户ID关联）。
 // 首次调用时查询 Casbin, 后续同请求内复用结果。
-func GetUserRoles(ctx context.Context) ([]string, error) {
+func GetUserRoles(ctx context.Context) ([]uint64, error) {
 	u := LoginUser(ctx)
 	if u == nil {
 		return nil, nil
 	}
-	return casbinx.GetUserRoles(ctx, u.Username)
+	return casbinx.GetUserRoles(ctx, u.UserId)
 }
 
-// IsAdmin 判断当前用户是否为超管（含 admin 角色）。
+// IsAdmin 判断当前用户是否为超管（拥有内置超管角色, id=1）。
 func IsAdmin(ctx context.Context) bool {
 	u := LoginUser(ctx)
 	if u == nil {
@@ -106,7 +106,7 @@ func IsAdmin(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return slices.Contains(roles, consts.RoleAdmin)
+	return slices.Contains(roles, consts.RoleAdminId)
 }
 
 // SetAuditUpload 上传逻辑暂存文件摘要到请求上下文, 供 OperationLog 审计记录。

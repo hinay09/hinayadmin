@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,10 +67,31 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 
-	// 从 Casbin 加载角色
+	// 从 Casbin 加载角色 (g 行按用户ID关联; code 仅为展示标识)
+	userRoleIds := make(map[uint64][]uint64, len(rows))
+	roleIdSet := make(map[uint64]struct{})
+	for _, u := range rows {
+		ids, _ := casbinx.GetUserRoles(ctx, u.Id)
+		userRoleIds[u.Id] = ids
+		for _, rid := range ids {
+			roleIdSet[rid] = struct{}{}
+		}
+	}
+	distinctIds := make([]uint64, 0, len(roleIdSet))
+	for rid := range roleIdSet {
+		distinctIds = append(distinctIds, rid)
+	}
+	roleCodeMap := loadRoleCodeMap(ctx, distinctIds)
+
 	list := make([]*v1.UserVO, 0, len(rows))
 	for _, u := range rows {
-		roles, _ := casbinx.GetUserRoles(ctx, u.Username)
+		ids := userRoleIds[u.Id]
+		codes := make([]string, 0, len(ids))
+		for _, rid := range ids {
+			if c, ok := roleCodeMap[rid]; ok {
+				codes = append(codes, c)
+			}
+		}
 		orgName := getOrgName(ctx, u.OrgId)
 		list = append(list, &v1.UserVO{
 			Id:        u.Id,
@@ -82,7 +104,8 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 			OrgName:   orgName,
 			Status:    u.Status,
 			Remark:    u.Remark,
-			Roles:     roles,
+			RoleIds:   ids,
+			Roles:     codes,
 			CreatedAt: u.CreatedAt,
 		})
 	}
@@ -100,7 +123,14 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 	if u == nil {
 		return nil, xerror.New(xerror.CodeUserNotFound)
 	}
-	roles, _ := casbinx.GetUserRoles(ctx, u.Username)
+	roleIds, _ := casbinx.GetUserRoles(ctx, u.Id)
+	roleCodeMap := loadRoleCodeMap(ctx, roleIds)
+	codes := make([]string, 0, len(roleIds))
+	for _, rid := range roleIds {
+		if c := roleCodeMap[rid]; c != "" {
+			codes = append(codes, c)
+		}
+	}
 	orgName := getOrgName(ctx, u.OrgId)
 	return &v1.UserDetailRes{UserVO: &v1.UserVO{
 		Id:        u.Id,
@@ -113,7 +143,8 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 		OrgName:   orgName,
 		Status:    u.Status,
 		Remark:    u.Remark,
-		Roles:     roles,
+		RoleIds:   roleIds,
+		Roles:     codes,
 		CreatedAt: u.CreatedAt,
 	}}, nil
 }
@@ -150,24 +181,24 @@ func (s *sUser) Create(ctx context.Context, req *v1.UserCreateReq) (res *v1.User
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	// 分配角色: RoleIds -> 查询角色 code -> casbinx.SetUserRoles
+	// 分配角色: g 策略直接以 用户ID/角色ID 关联。
 	// 任一环节失败都需要回滚已创建的用户行, 避免出现"用户已建但无角色"的脏数据。
 	if len(req.RoleIds) > 0 {
-		roleCodes, rerr := loadRoleCodesByIds(ctx, req.RoleIds)
+		roleIds, rerr := existingRoleIds(ctx, req.RoleIds)
 		if rerr != nil {
-			g.Log().Errorf(ctx, "UserCreate loadRoleCodesByIds failed, roleIds=%v err=%v", req.RoleIds, rerr)
+			g.Log().Errorf(ctx, "UserCreate existingRoleIds failed, roleIds=%v err=%v", req.RoleIds, rerr)
 			rollbackUser(ctx, id)
 			return nil, xerror.Wrap(xerror.CodeBusinessError, rerr)
 		}
-		if len(roleCodes) != len(req.RoleIds) {
-			g.Log().Warningf(ctx, "UserCreate role mismatch, roleIds=%v codes=%v", req.RoleIds, roleCodes)
+		if len(roleIds) != len(req.RoleIds) {
+			g.Log().Warningf(ctx, "UserCreate role mismatch, roleIds=%v exists=%v", req.RoleIds, roleIds)
 		}
-		if len(roleCodes) == 0 {
+		if len(roleIds) == 0 {
 			rollbackUser(ctx, id)
 			return nil, xerror.New(xerror.CodeBusinessError, "指定的角色不存在或已被删除")
 		}
-		if serr := casbinx.SetUserRoles(ctx, req.Username, roleCodes); serr != nil {
-			g.Log().Errorf(ctx, "UserCreate SetUserRoles failed, username=%s codes=%v err=%v", req.Username, roleCodes, serr)
+		if serr := casbinx.SetUserRoles(ctx, uint64(id), roleIds); serr != nil {
+			g.Log().Errorf(ctx, "UserCreate SetUserRoles failed, userId=%d roleIds=%v err=%v", id, roleIds, serr)
 			rollbackUser(ctx, id)
 			return nil, xerror.Wrap(xerror.CodeBusinessError, serr)
 		}
@@ -184,26 +215,21 @@ func rollbackUser(ctx context.Context, id int64) {
 
 // Update 修改。
 func (s *sUser) Update(ctx context.Context, req *v1.UserUpdateReq) (res *v1.UserUpdateRes, err error) {
-	// 内置 admin (id=1) 保护: 不允许禁用, 不允许解绑 admin 角色
+	// 角色解析: 过滤掉已删除的角色, 与创建口径一致
+	var roleIds []uint64
+	if req.RoleIds != nil {
+		roleIds, err = existingRoleIds(ctx, req.RoleIds)
+		if err != nil {
+			return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+		}
+	}
+	// 内置 admin (id=1) 保护: 不允许禁用, 不允许解绑超管角色 (内置角色 id=1)
 	if req.Id == 1 {
 		if req.Status != consts.StatusEnabled {
 			return nil, xerror.New(xerror.CodeBusinessError, "内置管理员不可禁用")
 		}
-		if req.RoleIds != nil {
-			roleCodes, lerr := loadRoleCodesByIds(ctx, req.RoleIds)
-			if lerr != nil {
-				return nil, xerror.Wrap(xerror.CodeBusinessError, lerr)
-			}
-			hasAdmin := false
-			for _, c := range roleCodes {
-				if c == consts.RoleAdmin {
-					hasAdmin = true
-					break
-				}
-			}
-			if !hasAdmin {
-				return nil, xerror.New(xerror.CodeBusinessError, "内置管理员不可解绑超管角色")
-			}
+		if req.RoleIds != nil && !slices.Contains(roleIds, consts.RoleAdminId) {
+			return nil, xerror.New(xerror.CodeBusinessError, "内置管理员不可解绑超管角色")
 		}
 	}
 	if _, err = dao.SysUser.Ctx(ctx).
@@ -219,22 +245,8 @@ func (s *sUser) Update(ctx context.Context, req *v1.UserUpdateReq) (res *v1.User
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 	if req.RoleIds != nil {
-		unameVal, verr := dao.SysUser.Ctx(ctx).Where("id", req.Id).Fields("username").Value()
-		if verr != nil {
-			g.Log().Errorf(ctx, "UserUpdate query username failed, id=%d err=%v", req.Id, verr)
-			return nil, xerror.Wrap(xerror.CodeBusinessError, verr)
-		}
-		username := strings.TrimSpace(unameVal.String())
-		if username == "" {
-			return nil, xerror.New(xerror.CodeUserNotFound)
-		}
-		roleCodes, rerr := loadRoleCodesByIds(ctx, req.RoleIds)
-		if rerr != nil {
-			g.Log().Errorf(ctx, "UserUpdate loadRoleCodesByIds failed, roleIds=%v err=%v", req.RoleIds, rerr)
-			return nil, xerror.Wrap(xerror.CodeBusinessError, rerr)
-		}
-		if serr := casbinx.SetUserRoles(ctx, username, roleCodes); serr != nil {
-			g.Log().Errorf(ctx, "UserUpdate SetUserRoles failed, username=%s codes=%v err=%v", username, roleCodes, serr)
+		if serr := casbinx.SetUserRoles(ctx, req.Id, roleIds); serr != nil {
+			g.Log().Errorf(ctx, "UserUpdate SetUserRoles failed, userId=%d roleIds=%v err=%v", req.Id, roleIds, serr)
 			return nil, xerror.Wrap(xerror.CodeBusinessError, serr)
 		}
 	}
@@ -246,18 +258,13 @@ func (s *sUser) Delete(ctx context.Context, req *v1.UserDeleteReq) (res *v1.User
 	if req.Id == 1 {
 		return nil, xerror.New(xerror.CodeBusinessError, "内置管理员不可删除")
 	}
-	// 查出用户 username, 用于清理 Casbin g 策略
-	unameVal, _ := dao.SysUser.Ctx(ctx).Where("id", req.Id).Fields("username").Value()
-	username := strings.TrimSpace(unameVal.String())
 
 	if _, err = dao.SysUser.Ctx(ctx).Where("id", req.Id).
 		Data(g.Map{"deleted_at": gtime.Now()}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	// 清理 Casbin g 策略中该用户的角色映射
-	if username != "" {
-		_ = casbinx.SetUserRoles(ctx, username, nil)
-	}
+	// 清理 Casbin g 策略中该用户的角色映射 (按用户ID)
+	_ = casbinx.SetUserRoles(ctx, req.Id, nil)
 	return &v1.UserDeleteRes{}, nil
 }
 
@@ -286,26 +293,46 @@ func (s *sUser) ResetPwd(ctx context.Context, req *v1.UserResetPwdReq) (res *v1.
 	return &v1.UserResetPwdRes{}, nil
 }
 
-// loadRoleCodesByIds 根据 role ID 列表查询角色 code 列表。
-func loadRoleCodesByIds(ctx context.Context, ids []uint64) ([]string, error) {
+// existingRoleIds 过滤出仍然存在的角色ID (软删角色视为不存在)。
+func existingRoleIds(ctx context.Context, ids []uint64) ([]uint64, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	values, err := dao.SysRole.Ctx(ctx).
 		WhereIn("id", ids).
 		Where("deleted_at IS NULL").
-		Fields("code").
+		Fields("id").
 		Ctx(ctx).Array()
 	if err != nil {
 		return nil, err
 	}
-	codes := make([]string, 0, len(values))
+	out := make([]uint64, 0, len(values))
 	for _, v := range values {
-		if str := strings.TrimSpace(v.String()); str != "" {
-			codes = append(codes, str)
+		if id := v.Uint64(); id > 0 {
+			out = append(out, id)
 		}
 	}
-	return codes, nil
+	return out, nil
+}
+
+// loadRoleCodeMap 批量将角色ID解析为 code 映射 (角色已删除的不出现, 查询失败返回空映射)。
+func loadRoleCodeMap(ctx context.Context, ids []uint64) map[uint64]string {
+	m := make(map[uint64]string, len(ids))
+	if len(ids) == 0 {
+		return m
+	}
+	res, err := dao.SysRole.Ctx(ctx).
+		WhereIn("id", ids).
+		Where("deleted_at IS NULL").
+		Fields("id, code").
+		Ctx(ctx).All()
+	if err != nil {
+		return m
+	}
+	for _, r := range res {
+		m[r["id"].Uint64()] = r["code"].String()
+	}
+	return m
 }
 
 // getOrgName 根据组织ID获取组织名称, 不存在或 orgId=0 时返回空串。

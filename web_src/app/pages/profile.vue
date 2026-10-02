@@ -30,16 +30,10 @@ defineOptions({ name: 'profile' })
 
 const api = useAuthApi()
 
-/**
- * 角色编码 → 中文名映射。
- * 管理员在后台角色管理中新增角色时, 请同步更新此映射。
- */
-const ROLE_NAME_MAP: Record<string, string> = {
-  admin:  '超级管理员',
-  common: '普通用户',
-}
-
-const roleName = (code: string) => ROLE_NAME_MAP[code] || code
+// 角色标签: 优先使用后端返回的角色名称 (与角色code解耦), 缺失时回退展示code
+const roleTags = computed<string[]>(() =>
+  profile.roleNames.length ? profile.roleNames : profile.roles,
+)
 const userStore = useUserStore()
 
 const route = useRoute()
@@ -68,13 +62,14 @@ interface ProfileForm {
   email: string
   phone: string
 }
-const profile = reactive<ProfileForm & { username: string; roles: string[]; lastLoginAt: string; lastLoginIp: string }>({
+const profile = reactive<ProfileForm & { username: string; roles: string[]; roleNames: string[]; lastLoginAt: string; lastLoginIp: string }>({
   username: '',
   nickname: '',
   avatar: '',
   email: '',
   phone: '',
   roles: [],
+  roleNames: [],
   lastLoginAt: '',
   lastLoginIp: '',
 })
@@ -237,6 +232,7 @@ async function loadProfile() {
     profile.email = u.email || ''
     profile.phone = u.phone || ''
     profile.roles = u.roles || []
+    profile.roleNames = u.roleNames || []
     profile.lastLoginAt = u.lastLoginAt || ''
     profile.lastLoginIp = u.lastLoginIp || ''
     twoFaEnabled.value = !!u.twoFaEnabled
@@ -371,14 +367,14 @@ onMounted(() => {
             <div class="info-username">@{{ profile.username }}</div>
             <div class="info-roles">
               <el-tag
-                v-for="r in profile.roles"
+                v-for="r in roleTags"
                 :key="r"
                 :icon="UserFilled"
                 size="small"
                 effect="plain"
                 style="margin-right:4px"
-              >{{ roleName(r) }}</el-tag>
-              <el-tag v-if="!profile.roles.length" type="info" size="small">无角色</el-tag>
+              >{{ r }}</el-tag>
+              <el-tag v-if="!roleTags.length" type="info" size="small">无角色</el-tag>
             </div>
           </div>
           <el-divider />

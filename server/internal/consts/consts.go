@@ -112,7 +112,8 @@ const (
 	MenuTypeButton = 3 // 按钮
 )
 
-// 内置角色
+// 内置角色ID: 超级管理员角色固定为 1 (种子数据/删除保护/权限配置豁免均按此ID判定,
+// 角色code仅为展示标识, 不参与权限匹配)
 const (
-	RoleAdmin = "admin"
+	RoleAdminId uint64 = 1
 )

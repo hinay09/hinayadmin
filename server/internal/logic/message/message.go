@@ -573,34 +573,13 @@ func upsertRead(ctx context.Context, msgId, userId uint64) error {
 	return err
 }
 
-// getUserRoleIds 通过 Casbin g 策略反查当前用户的角色 ID 列表。
+// getUserRoleIds 通过 Casbin g 策略获取当前用户的角色 ID 列表 (g 行 v1 即角色ID)。
 func getUserRoleIds(ctx context.Context) ([]uint64, error) {
 	u := contextx.LoginUser(ctx)
 	if u == nil {
 		return nil, nil
 	}
-	codes, err := casbinx.GetUserRoles(ctx, u.Username)
-	if err != nil {
-		return nil, err
-	}
-	if len(codes) == 0 {
-		return nil, nil
-	}
-	values, err := dao.SysRole.Ctx(ctx).
-		WhereIn("code", codes).
-		Where("deleted_at IS NULL").
-		Fields("id").
-		Ctx(ctx).Array()
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]uint64, 0, len(values))
-	for _, v := range values {
-		if id := v.Uint64(); id > 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
+	return casbinx.GetUserRoles(ctx, u.UserId)
 }
 
 // decorateMessages 给消息列表附加 sender/receiver 名称、定向目标、(可选) 已读状态。

@@ -130,10 +130,12 @@ func loadRuleLines(ctx context.Context, m model.Model) ([]string, error) {
 	return out, nil
 }
 
-// Enforce 校验 sub(username)/obj(path)/act(method) 是否允许。
-// 新 model 使用 g(r.sub, p.sub) 自动解析用户角色归属, 因此 sub 直接传 username。
+// Enforce 校验 sub(userId)/obj(path)/act(method) 是否允许。
+// g 策略以 用户ID/角色ID 关联, 因此 sub 传用户ID(十进制字符串),
+// 用户名/角色code 的变更不影响策略匹配。
 // 当 enforcer 返回 false 时，追加 DB 直查兜底，避免因 Reload 并发窗口导致的误拒。
-func Enforce(ctx context.Context, sub, obj, act string) (bool, error) {
+func Enforce(ctx context.Context, userId uint64, obj, act string) (bool, error) {
+	sub := strconv.FormatUint(userId, 10)
 	e, err := Get(ctx)
 	if err != nil {
 		return false, err
@@ -151,7 +153,7 @@ func Enforce(ctx context.Context, sub, obj, act string) (bool, error) {
 		Where("ptype", "p").
 		Where("v0 IN (SELECT v1 FROM casbin_rule WHERE ptype='g' AND v0=?)", sub).
 		Where("v1", obj).
-		Where("v2 IN (?, ?)", act, "*").
+		WhereIn("v2", []string{act, "*"}).
 		Count()
 	if cerr != nil {
 		g.Log().Warningf(ctx, "casbin db fallback query failed: %v", cerr)
@@ -164,61 +166,43 @@ func Enforce(ctx context.Context, sub, obj, act string) (bool, error) {
 	return false, nil
 }
 
-// GetUserRoles 通过 Casbin g 策略获取用户的所有角色。
-func GetUserRoles(ctx context.Context, username string) ([]string, error) {
+// GetUserRoles 通过 Casbin g 策略获取用户的所有角色ID (g 行 v1 即角色ID)。
+func GetUserRoles(ctx context.Context, userId uint64) ([]uint64, error) {
 	res, err := dao.CasbinRule.Ctx(ctx).
 		Where("ptype", "g").
-		Where("v0", username).
+		Where("v0", strconv.FormatUint(userId, 10)).
 		Fields("v1").
 		Ctx(ctx).All()
 	if err != nil {
 		return nil, err
 	}
-	roles := make([]string, 0, len(res))
+	roles := make([]uint64, 0, len(res))
 	for _, r := range res {
-		if v := strings.TrimSpace(r["v1"].String()); v != "" {
-			roles = append(roles, v)
+		if id, e := strconv.ParseUint(strings.TrimSpace(r["v1"].String()), 10, 64); e == nil && id > 0 {
+			roles = append(roles, id)
 		}
 	}
 	return roles, nil
 }
 
-// AddUserRole 添加用户-角色映射 (g 策略)。
-func AddUserRole(ctx context.Context, username, roleCode string) error {
-	_, err := dao.CasbinRule.Ctx(ctx).Data(g.Map{
-		"ptype": "g",
-		"v0":    username,
-		"v1":    roleCode,
-	}).Insert()
-	if err != nil {
-		return err
-	}
-	_, _ = Reload(ctx)
-	return nil
-}
-
-// RemoveUserRole 移除用户-角色映射 (g 策略)。
-func RemoveUserRole(ctx context.Context, username, roleCode string) error {
-	_, err := dao.CasbinRule.Ctx(ctx).
-		Where("ptype", "g").
-		Where("v0", username).
-		Where("v1", roleCode).
-		Delete()
-	if err != nil {
-		return err
-	}
-	_, _ = Reload(ctx)
-	return nil
-}
-
-// SetUserRoles 设置用户的所有角色（先清除旧的再设置新的）。
-func SetUserRoles(ctx context.Context, username string, roleCodes []string) error {
+// SetUserRoles 设置用户的所有角色（先清除旧的再设置新的, g 行以 用户ID/角色ID 关联）。
+func SetUserRoles(ctx context.Context, userId uint64, roleIds []uint64) error {
+	uid := strconv.FormatUint(userId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v0=?", username); err != nil {
+		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v0=?", uid); err != nil {
 			return err
 		}
-		for _, code := range roleCodes {
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1) VALUES('g',?,?)", username, code); err != nil {
+		seen := make(map[uint64]struct{}, len(roleIds))
+		for _, rid := range roleIds {
+			if rid == 0 {
+				continue
+			}
+			// 去重: 客户端重复提交同一角色会撞唯一键导致整个事务失败
+			if _, dup := seen[rid]; dup {
+				continue
+			}
+			seen[rid] = struct{}{}
+			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1) VALUES('g',?,?)", uid, strconv.FormatUint(rid, 10)); err != nil {
 				return err
 			}
 		}
@@ -234,10 +218,10 @@ func SetUserRoles(ctx context.Context, username string, roleCodes []string) erro
 }
 
 // GetRoleMenus 获取角色关联的菜单ID列表（从 p 策略中 obj 以 "menu:" 开头的提取）。
-func GetRoleMenus(ctx context.Context, roleCode string) ([]int64, error) {
+func GetRoleMenus(ctx context.Context, roleId uint64) ([]int64, error) {
 	res, err := dao.CasbinRule.Ctx(ctx).
 		Where("ptype", "p").
-		Where("v0", roleCode).
+		Where("v0", strconv.FormatUint(roleId, 10)).
 		Where("v1 LIKE ?", "menu:%").
 		Fields("v1").
 		Ctx(ctx).All()
@@ -256,17 +240,18 @@ func GetRoleMenus(ctx context.Context, roleCode string) ([]int64, error) {
 	return ids, nil
 }
 
-// SetRoleMenus 设置角色的菜单权限策略。
-func SetRoleMenus(ctx context.Context, roleCode string, menuIds []int64) error {
+// SetRoleMenus 设置角色的菜单权限策略 (p 行 v0 为角色ID)。
+func SetRoleMenus(ctx context.Context, roleId uint64, menuIds []int64) error {
+	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 删除该角色所有 menu: 前缀的 p 策略
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 LIKE 'menu:%'", roleCode); err != nil {
+		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 LIKE 'menu:%'", rid); err != nil {
 			return err
 		}
 		// 批量插入新的菜单策略
 		for _, mid := range menuIds {
 			obj := fmt.Sprintf("menu:%d", mid)
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", roleCode, obj, "*"); err != nil {
+			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", rid, obj, "*"); err != nil {
 				return err
 			}
 		}
@@ -282,10 +267,10 @@ func SetRoleMenus(ctx context.Context, roleCode string, menuIds []int64) error {
 }
 
 // GetRoleApis 获取角色的 API 策略。
-func GetRoleApis(ctx context.Context, roleCode string) ([]ApiPolicy, error) {
+func GetRoleApis(ctx context.Context, roleId uint64) ([]ApiPolicy, error) {
 	res, err := dao.CasbinRule.Ctx(ctx).
 		Where("ptype", "p").
-		Where("v0", roleCode).
+		Where("v0", strconv.FormatUint(roleId, 10)).
 		Where("v1 NOT LIKE ?", "menu:%").
 		Fields("v1,v2").
 		Ctx(ctx).All()
@@ -303,11 +288,12 @@ func GetRoleApis(ctx context.Context, roleCode string) ([]ApiPolicy, error) {
 	return apis, nil
 }
 
-// SetRoleApis 设置角色的 API 策略。
-func SetRoleApis(ctx context.Context, roleCode string, apis []ApiPolicy) error {
+// SetRoleApis 设置角色的 API 策略 (p 行 v0 为角色ID)。
+func SetRoleApis(ctx context.Context, roleId uint64, apis []ApiPolicy) error {
+	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 删除该角色所有非 menu: 前缀的 p 策略
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 NOT LIKE 'menu:%'", roleCode); err != nil {
+		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=? AND v1 NOT LIKE 'menu:%'", rid); err != nil {
 			return err
 		}
 		// 批量插入新的 API 策略
@@ -315,7 +301,7 @@ func SetRoleApis(ctx context.Context, roleCode string, apis []ApiPolicy) error {
 			if a.Path == "" || a.Method == "" {
 				continue
 			}
-			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", roleCode, a.Path, a.Method); err != nil {
+			if _, err := tx.Exec("INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES('p',?,?,?)", rid, a.Path, a.Method); err != nil {
 				return err
 			}
 		}
@@ -330,15 +316,16 @@ func SetRoleApis(ctx context.Context, roleCode string, apis []ApiPolicy) error {
 	return nil
 }
 
-// RemoveRolePolicies 删除角色的所有策略（p 和 g 中涉及该角色的）。
-func RemoveRolePolicies(ctx context.Context, roleCode string) error {
+// RemoveRolePolicies 删除角色的所有策略（p 和 g 中涉及该角色的, 均按角色ID匹配）。
+func RemoveRolePolicies(ctx context.Context, roleId uint64) error {
+	rid := strconv.FormatUint(roleId, 10)
 	err := dao.CasbinRule.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		// 删除 p 策略中 sub=roleCode 的记录
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=?", roleCode); err != nil {
+		// 删除 p 策略中 sub=角色ID 的记录
+		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='p' AND v0=?", rid); err != nil {
 			return err
 		}
-		// 删除 g 策略中角色作为角色的记录 (v1=roleCode)
-		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v1=?", roleCode); err != nil {
+		// 删除 g 策略中该角色作为角色的记录 (v1=角色ID)
+		if _, err := tx.Exec("DELETE FROM casbin_rule WHERE ptype='g' AND v1=?", rid); err != nil {
 			return err
 		}
 		return nil
