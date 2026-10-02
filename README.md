@@ -391,6 +391,10 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
   - 菜单维度: `p, <角色ID>, menu:<menuId>, *`  → 控制可见菜单与按钮权限码
   - API 维度: `p, <角色ID>, <apiPath>, <method>` → 控制实际 HTTP 接口
   - 用户-角色: `g, <用户ID>, <角色ID>` → 在 g 策略中维护
+- **多角色取并集 (只扩权, 不缩权)**: 用户挂多个角色时, 功能权限按"任一角色授权即放行"合并:
+  - API 维度: casbin model 的 policy_effect 为 `some(where (p.eft == allow))` (OR 语义), 任一角色的 `p` 行命中即通过 (path 用 `keyMatch2` 匹配, act 支持 `*` 通配); 内存未命中时的 DB 兜底查询 (`casbinx.Enforce`) 同为并集语义;
+  - 菜单/权限码: `/auth/menus` (`logic/auth/auth.go` 的 `MenuTree`) 逐角色收集菜单 ID 与按钮权限码, 合并去重后返回;
+  - 因此给用户增加角色只会扩大可见/可调用范围, 永不缩小; 收紧权限只能从角色上移除授权或解除用户-角色绑定。
 - **前端**:
   - 登录后调用 `/auth/menus` 拉取 `{ menus, permissions }`
   - 路由按 `menus` 动态注入, 按钮用 `<el-button v-permission="'system:user:create'">`
@@ -460,17 +464,44 @@ make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
 
 **审计字段 `create_id` / `update_id`** (业务层零感知): 新业务表的 DDL 带上这两列 (`BIGINT UNSIGNED NOT NULL DEFAULT 0`), 并把表名登记进 `internal/logic/ormfill` 的 `fillTables` 白名单即自动生效: INSERT 补 `create_id`+`update_id`, UPDATE 补 `update_id`, 取当前登录用户 (后台写入保持 0)。实现上按 [gdb 接口回调](https://goframe.org/docs/core/gdb-interface-callback) 继承 mysql 驱动重写 `DoInsert`/`DoUpdate` 并以 "mysql" 名覆盖注册, 与 `gf gen dao` 完全解耦。数据权限 (数据范围过滤) 与此独立, 需要的业务查询自行调用 `service.DataScope().Apply(...)`。
 
-**组织数据权限接入** (业务表需带 `org_id` 字段): 在列表查询中, 于其他过滤条件之前调用:
+**组织数据权限接入** (`logic/datascope`, 角色管理里的"数据范围"下拉即此配置):
+
+角色以 `sys_role.data_scope` 声明数据范围, 共五档; 一个用户多个角色的范围**取并集** (与功能权限一致, 只扩权不缩权):
+
+| data_scope | 含义 | 生成的过滤条件 |
+|---|---|---|
+| 1 | 全部数据 | 不加条件 |
+| 2 | 自定义组织 | `org_id IN (sys_role_org 绑定的组织)` |
+| 3 | 本部门 | `org_id IN (用户所在组织)` |
+| 4 | 本部门及以下 | `org_id IN (本组织 + 全部后代, 内存 BFS)` |
+| 5 | 仅本人 | `create_id = 当前用户ID` |
+
+合并规则: 各角色算出的可见组织 ID 归并去重; 任一角色为"全部"则整体放行; "仅本人"与组织范围并存时叠加为 `(create_id = ? OR org_id IN(...))`。仅**启用状态**的角色参与计算; 无角色按"仅本人"; 内置超管角色 (id=1) 恒为全部 (与 Casbin 全局放行一致); 最终范围为空时套恒假条件 `1=0` (fail-close, 宁可查不到也不多看)。
+
+数据权限不是中间件, **不会自动生效**——需要过滤的查询在 logic 层自行调用。接入前提: 业务表带 `org_id` 字段, 且已登记 `create_id` 审计字段 (见上节 ormfill), 然后在查询上叠加一行:
 
 ```go
-q := dao.Xxx.Ctx(ctx)
-// 一行接入: admin/全部→不加条件; 自定义/本部门/及以下→org_id IN(...); 仅本人→created_by=uid; 无范围→恒假
-q, err = service.DataScope().Apply(ctx, q, "org_id", "created_by")
+q := dao.Xxx.Ctx(ctx).Where("deleted_at IS NULL")
+if req.Keyword != "" {
+    q = q.Where("name LIKE ?", "%"+req.Keyword+"%")   // 业务过滤条件照常
+}
+// 一行接入: 返回追加了范围条件的新 q, 后续 Count/分页查询共用同一份 q
+q, derr := service.DataScope().Apply(ctx, q, "org_id", "create_id")
+if derr != nil {
+    return nil, xerror.Wrap(xerror.CodeBusinessError, derr, "数据权限计算失败")
+}
+total, err := q.Ctx(ctx).Count()                      // 总数同样受限
+if err = q.Ctx(ctx).Page(req.Page, req.PageSize).Order("id DESC").Scan(&rows); err != nil {
+    return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询失败")
+}
 ```
 
-- `orgColumn` 传业务表的组织字段, `selfColumn` 传"仅本人"的比对字段 (如 `created_by`); 两个列名只允许来自代码, 不允许来自外部输入。
-- 多角色取并集, 任一角色为"全部"则整体放行; 内置超管角色 (id=1) 恒为全部 (与 Casbin 全局放行一致)。
-- 用户管理 (`/system/users`) 已内置接入, 可直接验证效果。
+要点:
+
+- `Apply(ctx, m, orgColumn, selfColumn)`: `orgColumn` 传业务表的组织字段 (通常 `org_id`); `selfColumn` 传"仅本人"的比对字段——一般业务表传 `create_id` (即数据创建者, ormfill 自动填充), "行即人"的表 (如 `sys_user` 本身) 传 `id`。
+- 两个列名只允许来自代码, 不允许来自外部输入 (会直接拼进 SQL)。
+- 列表/导出/按 ID 取详情等**一切会吐数据的查询**都要套同一过滤, 否则列表里看不到的数据换个 ID 直查仍可读; 内置范例见 `logic/system/user.go` 的 `List` 与 `Export`。
+- 需要拿原始范围自行处理 (如前端展示、跨表手工拼条件) 时用 `service.DataScope().OrgScope(ctx)` 取 `All/Self/OrgIds`。
 
 ## 常用命令
 
