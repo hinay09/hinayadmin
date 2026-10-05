@@ -377,9 +377,17 @@ func (s *sMessage) MarkReadAll(ctx context.Context, in *v1.MessageReadAllReq) (r
 	if err != nil {
 		return nil, err
 	}
-	var ids []uint64
-	if err = q.Fields("m.id").Scan(&ids); err != nil {
+	// 单列 ID 列表必须用 Array 逐值转换:
+	// Scan 扫进 []uint64 得到的是零值元素 (曾导致批量写入 message_id=0, 已读未生效)
+	vars, err := q.Fields("m.id").Array()
+	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	ids := make([]uint64, 0, len(vars))
+	for _, v := range vars {
+		if mid := v.Uint64(); mid > 0 {
+			ids = append(ids, mid)
+		}
 	}
 	if len(ids) == 0 {
 		return &v1.MessageReadAllRes{Affected: 0}, nil
