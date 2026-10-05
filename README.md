@@ -529,4 +529,4 @@ yarn generate       # 静态生成
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)
