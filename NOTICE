@@ -1,0 +1,42 @@
+Hinay Admin
+Copyright 2026 hinay <tanshijiao@outlook.com>
+
+本项目（Hinay Admin，通用后台管理系统脚手架，前后端分离）以 Apache License
+2.0 协议开源，详见仓库根目录的 LICENSE 文件。本文件为 Apache License 2.0
+第 4(d) 条所要求的 NOTICE 文件，内容仅作信息说明之用，不构成对许可协议
+的修改。
+
+本仓库仅包含本项目自有源码，未将下列第三方组件以源码或二进制形式打包
+在内；这些组件在构建时由包管理器（Go Modules / yarn）按各自协议分发，
+完整依赖清单（含间接依赖）见 server/go.mod、server/go.sum 与
+web_src/package.json、web_src/yarn.lock。
+
+本项目在构建与运行中依赖以下第三方开源组件（均为直接依赖）:
+
+后端（Go, server/go.mod）
+  - GoFrame 及其 MySQL 驱动、Redis nosql 组件（github.com/gogf/gf/v2 等）
+      MIT License  Copyright (c) GoFrame
+  - Casbin（github.com/casbin/casbin/v2）
+      Apache License 2.0  Copyright (c) casbin
+  - golang-jwt（github.com/golang-jwt/jwt/v5）
+      MIT License  Copyright (c) 2012 Dave Grijalva
+  - pquerna/otp TOTP/HOTP 库（github.com/pquerna/otp）
+      Apache License 2.0  Copyright (c) pquerna
+  - excelize Excel 读写库（github.com/xuri/excelize/v2）
+      BSD 3-Clause License  Copyright (c) xuri
+  - golang.org/x/crypto
+      BSD 3-Clause License  Copyright 2009 The Go Authors
+
+前端（web_src/package.json）
+  - Nuxt（MIT License）
+  - Vue 3 与 vue-router（MIT License）
+  - Element Plus 及 @element-plus/icons-vue、@element-plus/nuxt（MIT License）
+  - Pinia 与 @pinia/nuxt（MIT License）
+  - ECharts（Apache License 2.0）
+  - vue-echarts（MIT License）
+  - jsencrypt（MIT License）
+  - qrcode（MIT License）
+
+上述组件的名称、版权与许可声明归属于其各自的版权所有者；完整许可证
+原文随各组件分发，可在其源码仓库或本地模块缓存（go/pkg/mod、
+node_modules）中查阅。
