@@ -55,3 +55,9 @@ gen-crud:
 	else \
 		go run ./tools/crudgen -table $(TABLE) -title "$(TITLE)" $(if $(MOD),-mod $(MOD),); \
 	fi
+
+# sys_api 种子 SQL 生成器: 扫描 api/ 的 g.Meta 路由自动生成 INSERT IGNORE (补齐手写 API 的种子)
+# 用法: make gen-api-sql [PKG=flow] [OUT=manifest/sql/upgrade/pXXX_xxx.sql] [CHECK=1]
+.PHONY: gen-api-sql
+gen-api-sql:
+	@go run ./tools/genapi $(if $(PKG),-pkg $(PKG),) $(if $(OUT),-out $(OUT),) $(if $(CHECK),-check,)

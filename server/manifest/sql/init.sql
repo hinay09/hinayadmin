@@ -323,7 +323,18 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/message/read-all',       'PUT',    '消息通知', '全部标记为已读'),
   ('/api/v1/message/:id',            'GET',    '消息通知', '消息详情'),
   ('/api/v1/message/:id',            'DELETE', '消息通知', '管理员删除消息'),
-  ('/api/v1/message/:id/read',       'PUT',    '消息通知', '标记为已读');
+  ('/api/v1/message/:id/read',       'PUT',    '消息通知', '标记为已读'),
+  -- 历史缺漏补种 (tools/genapi -check 扫描发现: TOTP/SSE/头像/全量下拉/重置密码)
+  ('/api/v1/auth/avatar',                'POST', '认证',     '上传头像'),
+  ('/api/v1/auth/login/totp',            'POST', '认证',     '两步验证登录'),
+  ('/api/v1/auth/public-key',            'GET',  '认证',     '获取登录加密公钥'),
+  ('/api/v1/auth/totp/disable',          'PUT',  '认证',     '解绑两步验证'),
+  ('/api/v1/auth/totp/enable',           'PUT',  '认证',     '绑定两步验证'),
+  ('/api/v1/auth/totp/setup',            'GET',  '认证',     '生成两步验证密钥'),
+  ('/api/v1/message/events',             'GET',  '消息通知', '消息事件流(SSE)'),
+  ('/api/v1/system/apis/all',            'GET',  'API管理',  '全量API'),
+  ('/api/v1/system/roles/all',           'GET',  '角色管理', '全量角色'),
+  ('/api/v1/system/users/{id}/password', 'PUT',  '用户管理', '重置密码');
 
 -- Casbin: 角色继承(g) + 策略(p)
 -- g: 用户ID-角色ID 映射, p: 角色ID-资源-操作 策略 (关联键均为ID)

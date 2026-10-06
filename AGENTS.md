@@ -14,6 +14,7 @@ make fmt            # gofmt -s -w .
 make tidy           # go mod tidy
 make initdb         # create DB + run manifest/sql/init.sql (mysql client required)
 make gen-crud TABLE=biz_xxx TITLE="xx管理"   # CRUD codegen (DRY=1 = dry run)
+make gen-api-sql [PKG=message] [OUT=x.sql] # scan api/ g.Meta routes -> sys_api seed SQL (CHECK=1 = lint)
 
 # Frontend (Nuxt 4 + Vue 3 + Element Plus + Pinia, yarn)
 cd web_src

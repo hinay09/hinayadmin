@@ -457,6 +457,18 @@ make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
 
 生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 upgrade SQL 并分配角色权限即可。演示见 `-dry` 输出。
 
+**sys_api 种子 SQL 生成器** (`server/tools/genapi`, 无需连库): CRUD 生成器产出的升级 SQL 自带 sys_api 行, 但**手写** API 契约 (如消息中心/认证的 TOTP 等) 的 `sys_api` INSERT 行此前需手工编写, 路径/方法/描述容易抄漏。本工具扫描 `api/` 目录下所有 `g.Meta` 路由标签, 自动生成幂等的 `INSERT IGNORE` 种子块:
+
+```bash
+cd server
+make gen-api-sql                          # 全量路由 → stdout (按分组排序对齐)
+make gen-api-sql PKG=message              # 只生成 api/message 模块
+make gen-api-sql PKG=message OUT=manifest/sql/upgrade/pXXX_xxx.sql   # 直接写升级脚本
+make gen-api-sql CHECK=1                  # 对照 manifest/sql 种子, 报告尚未入库的路由 (缺则退出码 1, 可当提交前检查)
+```
+
+说明: 分组名默认按 `tags` 映射为中文 (`Message=消息通知` 等, 全表见工具内 `defaultGroupNames`, 可用 `-map New=新模块` 覆盖); 路径参数沿用 `g.Meta` 的 `{id}` 花括号风格, Casbin 匹配器已同时兼容 `:id` 与 `{id}`; `-check` 曾一次性发现 10 条历史漏种 (TOTP/SSE/头像等), 已补入 init.sql 的 sys_api 种子块。
+
 **密码策略**: 全局配置页修改 `sys.password.*` 即时生效——
 - 复杂度: `min_length`/`max_length`/`require_upper`/`require_lower`/`require_digit`/`require_special`, 校验挂在改密/创建用户/重置密码/Excel 导入四处 (`logic/pwdpolicy`);
 - 有效期: `expire_days` (0=永不过期), 过期后登录强制改密;
