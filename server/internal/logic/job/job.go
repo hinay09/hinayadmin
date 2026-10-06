@@ -292,6 +292,7 @@ func validateCronPattern(ctx context.Context, pattern string) error {
 	return nil
 }
 
+// handlerExists 判断任务处理器是否已注册 (读锁保护, 新增/校验任务时用)。
 func (s *sJob) handlerExists(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

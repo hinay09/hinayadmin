@@ -695,6 +695,8 @@ func (s *sAuth) MenuTree(ctx context.Context, req *v1.MenuTreeReq) (res *v1.Menu
 	return &v1.MenuTreeRes{Menus: tree, Permissions: perms}, nil
 }
 
+// buildTree 递归构建用户可见菜单树: 按 parentId 逐层挂接, 排除按钮型节点
+// (按钮不进导航树, 其权限以 permissions 平铺列表下发)。
 func buildTree(list []*model.SysMenu, parentId uint64) []*model.MenuTree {
 	out := make([]*model.MenuTree, 0)
 	for _, m := range list {

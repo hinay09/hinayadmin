@@ -37,6 +37,7 @@ func (s *sOrg) Tree(ctx context.Context, _ *v1.OrgTreeReq) (res *v1.OrgTreeRes, 
 	return &v1.OrgTreeRes{Tree: buildOrgTree(list, 0)}, nil
 }
 
+// buildOrgTree 递归构建组织架构树: 按 parent_id 逐层挂接。
 func buildOrgTree(list []*model.SysOrg, parentId uint64) []*model.OrgTree {
 	out := make([]*model.OrgTree, 0)
 	for _, m := range list {

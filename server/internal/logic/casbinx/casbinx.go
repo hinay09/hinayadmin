@@ -34,6 +34,7 @@ type memAdapter struct {
 	lines []string
 }
 
+// LoadPolicy 启动/重载时把预取的 casbin_rule 行文本灌进 model (逐行走标准解析)。
 func (a *memAdapter) LoadPolicy(m model.Model) error {
 	for _, line := range a.lines {
 		if line = strings.TrimSpace(line); line == "" {
@@ -46,6 +47,7 @@ func (a *memAdapter) LoadPolicy(m model.Model) error {
 	return nil
 }
 
+// 以下四个写方法均为只读空实现: 策略变更走业务侧直接写表 + Reload, 不经过 adapter。
 func (a *memAdapter) SavePolicy(_ model.Model) error                             { return nil }
 func (a *memAdapter) AddPolicy(_, _ string, _ []string) error                    { return nil }
 func (a *memAdapter) RemovePolicy(_, _ string, _ []string) error                 { return nil }

@@ -53,6 +53,7 @@ func (s *sMenu) Tree(ctx context.Context, _ *v1.MenuTreeReq) (res *v1.MenuTreeRe
 	return &v1.MenuTreeRes{Tree: buildMenuTree(list, 0)}, nil
 }
 
+// buildMenuTree 递归构建后台维护用菜单树: 含全部类型 (目录/菜单/按钮), 不按权限过滤。
 func buildMenuTree(list []*model.SysMenu, parentId uint64) []*model.MenuTree {
 	out := make([]*model.MenuTree, 0)
 	for _, m := range list {

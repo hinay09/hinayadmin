@@ -3,6 +3,7 @@
 // casbin.model 的匹配器必须同时支持两种路径参数风格 (两者取或):
 //   - ":id"  冒号风格  —— message 组 sys_api (/api/v1/message/inbox/:id), keyMatch2 支持
 //   - "{id}" 花括号风格 —— flow 组 sys_api (/api/v1/flow/tasks/{id}/approve), keyMatch3 支持
+//
 // 中间件以**实际请求 URL** (如 /api/v1/flow/instances/42) 做 Enforce,
 // 任一风格失效都会导致带参数接口对非 admin 角色全量 403 (p012 测试账号曾踩中)。
 // 本测试内联模型文本, 与 manifest/config/config.yaml 的 casbin.model 必须保持一致。
@@ -38,11 +39,11 @@ func TestMatcherDualPathStyles(t *testing.T) {
 		t.Fatalf("解析模型失败: %v", err)
 	}
 	a := &memAdapter{lines: []string{
-		"p, r1, /api/v1/flow/instances/{id}, GET",       // 花括号风格 (flow 组)
-		"p, r1, /api/v1/flow/tasks/{id}/approve, POST",  // 花括号风格
-		"p, r1, /api/v1/message/inbox/:id, GET",         // 冒号风格 (message 组)
-		"p, r1, /api/v1/auth/*, *",                      // 通配
-		"p, r1, /api/v1/flow/tasks/count, GET",          // 精确
+		"p, r1, /api/v1/flow/instances/{id}, GET",      // 花括号风格 (flow 组)
+		"p, r1, /api/v1/flow/tasks/{id}/approve, POST", // 花括号风格
+		"p, r1, /api/v1/message/inbox/:id, GET",        // 冒号风格 (message 组)
+		"p, r1, /api/v1/auth/*, *",                     // 通配
+		"p, r1, /api/v1/flow/tasks/count, GET",         // 精确
 		"g, u1, r1",
 	}}
 	e, err := casbin.NewEnforcer(m, a)

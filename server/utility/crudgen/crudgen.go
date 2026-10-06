@@ -82,6 +82,7 @@ type GeneratedFile struct {
 // 命名与类型推导
 // ---------------------------------------------------------------------------
 
+// Pascal 下划线命名 → 大驼峰 (如 biz_leave → BizLeave)。
 func Pascal(s string) string {
 	out := ""
 	for _, p := range strings.Split(s, "_") {
@@ -93,6 +94,7 @@ func Pascal(s string) string {
 	return out
 }
 
+// camel 首字母转小写 (大驼峰 → 小驼峰, 其余原样)。
 func camel(s string) string {
 	if s == "" {
 		return s
@@ -106,6 +108,7 @@ func GoTypeOf(sqlType, columnType string) string { return goType(sqlType, column
 // KindOf 列名/类型 -> 表单控件类型 (导出供网页端列信息展示)。
 func KindOf(name, sqlType string) string { return formKind(name, sqlType) }
 
+// goType SQL 类型 → Go 类型 (无符号 BIGINT → uint64, 其余整型归并 int, 时间 → *gtime.Time)。
 func goType(sqlType, columnType string) string {
 	unsigned := strings.Contains(strings.ToUpper(columnType), "UNSIGNED")
 	switch strings.ToUpper(sqlType) {
@@ -125,6 +128,8 @@ func goType(sqlType, columnType string) string {
 	}
 }
 
+// formKind 按列名/类型启发式推导表单控件: 状态列 → 开关, 备注类 → 多行文本,
+// 外键/整型 → 数字输入, 其余默认单行输入。
 func formKind(name, sqlType string) string {
 	switch {
 	case name == "status" || strings.HasSuffix(name, "_status"):
@@ -310,6 +315,7 @@ func (m *Model) applyOverrides(inputs []ColumnInput) {
 	}
 }
 
+// hasOverride 用户列输入中是否存在满足条件的列 (生成前覆盖检查)。
 func hasOverride(inputs []ColumnInput, f func(ColumnInput) bool) bool {
 	for _, in := range inputs {
 		if f(in) {
@@ -319,6 +325,7 @@ func hasOverride(inputs []ColumnInput, f func(ColumnInput) bool) bool {
 	return false
 }
 
+// containsCol 已解析列中是否含指定 Go 字段名 (重名冲突检查)。
 func containsCol(cols []Column, goName string) bool {
 	for _, c := range cols {
 		if c.GoName == goName {
@@ -370,6 +377,7 @@ func ParseSQL(sqlText, table string) ([]ColumnInput, uint64, error) {
 	return nil, 0, fmt.Errorf("SQL 中未找到表 %s 的 CREATE TABLE 语句", table)
 }
 
+// maxMenuId 扫描 SQL 种子中的菜单 INSERT 行, 取已占用最大菜单 ID (新菜单 ID 从其后排)。
 func maxMenuId(sqlText string) uint64 {
 	max := uint64(0)
 	for _, m := range reMenuRow.FindAllStringSubmatch(sqlText, -1) {
