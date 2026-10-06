@@ -77,4 +77,7 @@ casbin:
     e = some(where (p.eft == allow))
 
     [matchers]
-    m = g(r.sub, p.sub) && keyMatch2(r.obj, p.obj) && (r.act == p.act || p.act == "*")
+    # keyMatch2 支持 ":id" 冒号风格 (message 组 sys_api) 与 "*";
+    # keyMatch3 支持 "{id}" 花括号风格 (角色授权 UI 写入) 与 "*";
+    # 两者取或, 保证任一风格的 API 策略都能匹配到实际请求路径 (带参数的真实 URL)。
+    m = g(r.sub, p.sub) && (keyMatch2(r.obj, p.obj) || keyMatch3(r.obj, p.obj)) && (r.act == p.act || p.act == "*")

@@ -3,7 +3,7 @@
  * 消息中心 - 私信通知。
  * 当前版本展示「我收到的私信」, 任何登录用户均可发送私信给其他用户。
  */
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import { Search, Plus, View, Check, Delete, Message } from '@element-plus/icons-vue'
 import { useMessageApi, useUserApi, type MessageItem } from '~/composables/useApi'
@@ -16,6 +16,11 @@ const api = useMessageApi()
 const userApi = useUserApi()
 const userStore = useUserStore()
 const route = useRoute()
+
+/** 收件类型: 默认 2=私信; ?type=1 为系统通知收件视图 (铃铛对普通用户的跳转入口, 全走 inbox 接口) */
+const inboxType = computed(() => (route.query.type === '1' ? 1 : 2))
+const pageTitle = computed(() => (inboxType.value === 1 ? '系统通知' : '私信通知'))
+useHead({ title: pageTitle })
 
 const loading = ref(false)
 const list = ref<MessageItem[]>([])
@@ -59,7 +64,7 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
 async function loadList() {
   loading.value = true
   try {
-    const params: any = { type: 2, page: query.page, pageSize: query.pageSize }
+    const params: any = { type: inboxType.value, page: query.page, pageSize: query.pageSize }
     if (query.keyword) params.keyword = query.keyword
     if (query.isRead !== undefined) params.isRead = query.isRead
     const res: any = await api.inbox(params)
@@ -118,7 +123,10 @@ async function handleMarkReadAll() {
 }
 
 async function handleDelete(row: MessageItem) {
-  await ElMessageBox.confirm(`确认删除来自 ${row.senderName} 的私信?`, '提示', { type: 'warning' })
+  const tip = inboxType.value === 1
+    ? '确认从收件箱移除该系统通知?'
+    : `确认删除来自 ${row.senderName} 的私信?`
+  await ElMessageBox.confirm(tip, '提示', { type: 'warning' })
   await api.inboxRemove(row.id)
   ElMessage.success('已删除')
   loadList()
@@ -143,6 +151,10 @@ onMounted(async () => {
 <template>
   <div class="page">
     <el-card>
+      <template #header>
+        <span style="font-weight:600">{{ pageTitle }}</span>
+        <span v-if="inboxType === 1" style="margin-left:8px;color:#909399;font-size:12px">收到的系统通知 (只读)</span>
+      </template>
       <el-form inline @submit.prevent>
         <el-form-item label="关键词">
           <el-input v-model="query.keyword" placeholder="标题模糊" clearable />
@@ -156,7 +168,7 @@ onMounted(async () => {
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="() => { query.page = 1; loadList() }">查询</el-button>
           <el-button :icon="Check" @click="handleMarkReadAll">全部已读</el-button>
-          <el-button v-permission="'message:private:send'" type="success" :icon="Plus" @click="openCreate">发送私信</el-button>
+          <el-button v-if="inboxType === 2" v-permission="'message:private:send'" type="success" :icon="Plus" @click="openCreate">发送私信</el-button>
         </el-form-item>
       </el-form>
 
@@ -246,7 +258,7 @@ onMounted(async () => {
       <template #header>
         <div style="display:flex;align-items:center;gap:6px;font-weight:600">
           <el-icon><Message /></el-icon>
-          <span>{{ detail?.title || '私信详情' }}</span>
+          <span>{{ detail?.title || pageTitle + '详情' }}</span>
         </div>
       </template>
       <div v-if="detail" class="msg-detail">

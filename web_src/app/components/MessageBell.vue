@@ -185,13 +185,24 @@ async function openItem(item: MessageItem) {
   }
   catch {}
   // 携带 id 跳转到列表页，列表页会监听 query 自动弹出详情抽屉
-  router.push({
-    path: item.type === 1 ? '/message/system' : '/message/private',
-    query: { id: String(item.id) },
-  })
+  router.push(msgRoute(item.type, item.id))
   // 刷新未读数与预览
   fetchUnreadCount()
   fetchPreviewList(item.type === 1 ? 1 : 2)
+}
+
+// 消息落地页: 私信 → 私信通知页; 系统通知 → 管理员进发布管理页,
+// 普通用户进收件视图 /message/private?type=1 (全走已授权的 inbox 接口,
+// 避免误入管理端发布台触发 403)。
+function msgRoute(type: 1 | 2, id?: number) {
+  const q: Record<string, string> = {}
+  if (id) q.id = String(id)
+  let path = '/message/private'
+  if (type === 1) {
+    if (userStore.isAdmin) path = '/message/system'
+    else q.type = '1'
+  }
+  return { path, query: q }
 }
 
 async function markAllRead() {
@@ -201,7 +212,7 @@ async function markAllRead() {
 }
 
 function viewAll() {
-  router.push(activeTab.value === 'system' ? '/message/system' : '/message/private')
+  router.push(msgRoute(activeTab.value === 'system' ? 1 : 2))
 }
 
 function formatTime(t: string) {
