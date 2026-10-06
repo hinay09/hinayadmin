@@ -162,7 +162,8 @@ func Auth(r *ghttp.Request) {
 	// 会话类白名单(authWhitelist)与本中间件同文件, 含改密/用户信息/登出等。
 	if _, public := publicPaths[r.URL.Path]; !public {
 		if _, session := authWhitelist[r.URL.Path]; !session {
-			if block, code := userAccessState(ctx, claims.UserId); block {
+			block, code, nickname := userAccessState(ctx, claims.UserId)
+			if block {
 				if code == xerror.CodeUnauthorized {
 					writeUnauthorized(r)
 				} else {
@@ -170,6 +171,10 @@ func Auth(r *ghttp.Request) {
 				}
 				return
 			}
+			// 回填昵称: JWT 只携带 UserId/Username, 业务侧 (消息发送人/审批人
+			// 显示名等) 取 LoginUser.Nickname 时不再回退登录名;
+			// userAccessState 本就逐请求查 sys_user, 顺带取回零额外开销。
+			user.Nickname = nickname
 		}
 	}
 
@@ -180,28 +185,29 @@ func Auth(r *ghttp.Request) {
 }
 
 // userAccessState 查询用户当前访问状态 (每个业务请求一次主键查询)。
-// 返回: block=是否拦截, code=拦截时使用的业务码
+// 返回: block=是否拦截, code=拦截时使用的业务码, nickname=用户昵称原样带回
+// (昵称修改后无需重发 token 即时生效);
 // (CodeUnauthorized -> 401 踢回登录; CodePwdMustChange -> 428 引导改密)。
-func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode.Code) {
+func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode.Code, nickname string) {
 	row, err := dao.SysUser.Ctx(ctx).
-		Fields("id, status, must_change_pwd, pwd_updated_at, deleted_at").
+		Fields("id, status, must_change_pwd, pwd_updated_at, deleted_at, nickname").
 		Where("id", userId).
 		One()
 	if err != nil {
 		// 查询失败 fail-close: 拒绝而非放行
-		return true, xerror.CodeUnauthorized
+		return true, xerror.CodeUnauthorized, ""
 	}
 	if row.IsEmpty() || !row["deleted_at"].IsNil() || row["status"].Int() != consts.StatusEnabled {
 		// 账号已删除/禁用: token 视为失效
-		return true, xerror.CodeUnauthorized
+		return true, xerror.CodeUnauthorized, ""
 	}
 	// 演示模式放行强制改密拦截: 改密接口已被 demox.Guard 禁止,
 	// 若仍按 428 锁定到改密页, 用户将被困在永远无法完成的改密流程 (前后端死锁)。
 	if !demox.Enabled(ctx) &&
 		(row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime())) {
-		return true, xerror.CodePwdMustChange
+		return true, xerror.CodePwdMustChange, ""
 	}
-	return false, nil
+	return false, nil, row["nickname"].String()
 }
 
 // publicPaths 公开接口白名单: Auth 与 Casbin 中间件均跳过。
