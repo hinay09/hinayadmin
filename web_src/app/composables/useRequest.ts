@@ -14,6 +14,10 @@ export interface ApiResult<T = any> {
 /* -------- token 刷新队列 (模块级单例, 客户端全局共享) -------- */
 let isRefreshing = false
 let pendingQueue: Array<(token: string) => void> = []
+/** 已确认失效的 token (refresh 失败时记录): 同一 token 的后续 401 不再反复
+ *  refresh/弹错 —— 否则消息铃铛等轮询组件在登出后每个周期都会制造一次
+ *  401 → refresh → 401 → "登录已过期" 弹窗的死循环。换新 token 登录后自动解除。 */
+let deadToken: string | null = null
 
 function addPending(cb: (token: string) => void) {
   pendingQueue.push(cb)
@@ -22,6 +26,11 @@ function addPending(cb: (token: string) => void) {
 function retryPending(newToken: string) {
   pendingQueue.forEach(cb => cb(newToken))
   pendingQueue = []
+}
+
+/** 登出流程先行调用: 标记当前 token 即将失效, 并发在途请求的 401 静默处理, 不再弹错。 */
+export function markSessionDead(token: string) {
+  if (token) deadToken = token
 }
 
 async function doRefresh(config: ReturnType<typeof useRuntimeConfig>, userStore: ReturnType<typeof useUserStore>): Promise<string> {
@@ -33,6 +42,7 @@ async function doRefresh(config: ReturnType<typeof useRuntimeConfig>, userStore:
     },
   )
   if (res.code !== 0) throw new Error(res.message || 'refresh failed')
+  deadToken = null // 续签成功即建立新会话, 解除失效闩锁
   userStore.setToken(res.data.token, res.data.expireAt)
   return res.data.token
 }
@@ -81,6 +91,14 @@ export function useRequest() {
 
       // 401 且不是 refresh 接口自身 → 尝试静默续期
       if ((status === 401 || data?.code === 40100) && url !== '/auth/refresh' && !import.meta.server) {
+        // 会话已死(无 token / token 已确认失效 / 登出流程中): 静默回登录页,
+        // 不再 refresh、不再重复弹"登录已过期" —— 切断轮询组件的 401 循环
+        const curToken = userStore.token
+        if (!curToken || curToken === deadToken) {
+          userStore.reset()
+          await navigateTo('/login')
+          throw err
+        }
         if (!isRefreshing) {
           isRefreshing = true
           try {
@@ -99,7 +117,8 @@ export function useRequest() {
             return retryRes as unknown as T
           }
           catch (refreshErr) {
-            // 续期失败: 清空队列并跳转登录
+            // 续期失败: 记录失效 token(后续同 token 的 401 静默), 清空队列并跳转登录
+            deadToken = curToken
             pendingQueue.forEach(cb => cb(''))
             pendingQueue = []
             ElMessage.error('登录已过期, 请重新登录')

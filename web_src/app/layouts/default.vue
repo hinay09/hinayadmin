@@ -19,6 +19,7 @@ import {
 import { useUserStore } from '~/stores/user'
 import { useConfigStore } from '~/stores/config'
 import { useAuthApi } from '~/composables/useApi'
+import { markSessionDead } from '~/composables/useRequest'
 import { filterDisplayMenus } from '~/utils/router'
 import type { MenuNode } from '~/stores/user'
 
@@ -69,6 +70,8 @@ async function handleLogout() {
     return
   }
   try {
+    // 先标记会话失效: 登出瞬间在途请求(铃铛轮询等)的 401 走静默处理, 不再误弹"登录已过期"
+    markSessionDead(userStore.token)
     await api.logout()
   }
   catch {}

@@ -6,7 +6,7 @@
  * - 点击单条 -> 自动已读 + 跳转到对应列表
  * - 点击「全部已读」 / 「查看全部」
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { Bell } from '@element-plus/icons-vue'
 import { useMessageApi, type MessageItem, type MessageUnreadCount } from '~/composables/useApi'
@@ -33,6 +33,27 @@ let ssePollFast = true // SSE 未连上时用短周期轮询兜底
 let sseAbort: AbortController | null = null
 let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let sseBackoff = 5_000
+let disposed = false // 组件已卸载或会话结束: 停止一切轮询/重连, 防止 abort 触发的 catch 复活定时器
+
+/** 停止轮询与 SSE 重连 (组件卸载 / 会话结束时调用)。 */
+function stopAll() {
+  disposed = true
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer)
+    sseReconnectTimer = null
+  }
+  sseAbort?.abort()
+}
+
+// 会话结束(登出/被踢)立即停止: 不再等组件卸载 —— 否则带着失效凭据的轮询
+// 每周期触发一次 401 → refresh → 401 → "登录已过期" 弹窗循环
+watch(() => userStore.token, (t) => {
+  if (!t) stopAll()
+})
 
 function setPollInterval() {
   if (timer) clearInterval(timer)
@@ -46,21 +67,28 @@ function scheduleSseReconnect() {
 }
 
 async function connectSse() {
-  if (!userStore.token || !import.meta.client) return
+  if (disposed || !userStore.token || !import.meta.client) return
   const config = useRuntimeConfig()
+  const tokenUsed = userStore.token
   sseAbort = new AbortController()
   try {
     const res = await fetch(`${config.public.apiBase}/message/events`, {
-      headers: { Authorization: `Bearer ${userStore.token}` },
+      headers: { Authorization: `Bearer ${tokenUsed}` },
       signal: sseAbort.signal,
     })
-    // 429=连接数达上限(服务端每用户/全局配额), 401=会话失效:
-    // 不再重连, 交由轮询兜底 / 路由守卫处理登出。
-    if (res.status === 429 || res.status === 401) {
+    // 429=连接数达上限(服务端每用户/全局配额): 不重连, 降级为轮询兜底
+    if (res.status === 429) {
       if (!ssePollFast) {
         ssePollFast = true
         setPollInterval()
       }
+      return
+    }
+    // 401=会话失效(登出/被踢/token 过期): 停止一切轮询与重连, 交由 useRequest/
+    // 路由守卫回登录页。仅当 token 已被静默续签换新(轮换竞态)时择机重连。
+    if (res.status === 401) {
+      if (userStore.token && userStore.token !== tokenUsed) scheduleSseReconnect()
+      else stopAll()
       return
     }
     if (!res.ok || !res.body) throw new Error(`sse ${res.status}`)
@@ -91,6 +119,8 @@ async function connectSse() {
     throw new Error('sse closed by server')
   }
   catch {
+    // 组件已卸载/会话已结束: 不再重启轮询与重连 (stopAll 的 abort 也会走到这里)
+    if (disposed || !userStore.token) return
     // 连接断开/失败/服务端收流: 切回短周期轮询并退避重连
     if (!ssePollFast) {
       ssePollFast = true
@@ -138,6 +168,7 @@ function handleSseFrame(frame: string) {
 const badge = computed(() => (unread.value.total > 99 ? '99+' : unread.value.total || ''))
 
 async function fetchUnreadCount() {
+  if (!userStore.token) return // 会话已结束: 不再发起鉴权请求
   try {
     const res: any = await api.unreadCount()
     unread.value = {
@@ -237,9 +268,7 @@ onMounted(() => {
   connectSse()
 })
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-  sseAbort?.abort()
-  if (sseReconnectTimer) clearTimeout(sseReconnectTimer)
+  stopAll()
 })
 </script>
 
