@@ -113,14 +113,14 @@ function handleCloseAll() {
 <style scoped>
 .tags-bar {
   background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  padding: 4px 8px;
+  border-bottom: 1px solid #f0f2f5;
+  padding: 5px 12px;
 }
 
 .tags-scroll {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -132,24 +132,27 @@ function handleCloseAll() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 3px;
+  border-radius: 6px;
   font-size: 12px;
   color: var(--el-text-color-regular);
   background: var(--el-fill-color-blank);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  transition: all .15s;
+  transition: all .2s;
 }
 .tag-item:hover {
   color: var(--el-color-primary);
+  border-color: var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9);
 }
 .tag-item.active {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
+  background: linear-gradient(90deg, var(--el-color-primary), #2f7ce0);
+  border-color: transparent;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
 }
 .tag-item.active .tag-dot {
   background: #fff;
@@ -172,7 +175,7 @@ function handleCloseAll() {
   transition: all .15s;
 }
 .tag-close:hover {
-  background: rgba(0, 0, 0, .15);
+  background: rgba(0, 0, 0, .1);
   color: inherit;
 }
 .tag-item.active .tag-close:hover {
@@ -184,10 +187,10 @@ function handleCloseAll() {
   z-index: 3000;
   background: var(--el-bg-color-overlay);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
+  border-radius: 8px;
   box-shadow: var(--el-box-shadow-light);
-  padding: 4px 0;
-  min-width: 120px;
+  padding: 6px 0;
+  min-width: 128px;
 }
 .menu-item {
   padding: 6px 16px;

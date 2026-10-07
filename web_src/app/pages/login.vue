@@ -150,11 +150,18 @@ function backToPassword() {
 
 <template>
   <div class="login-page">
+    <!-- 背景装饰: 网格 + 三团彩色光晕 (纯 CSS, 无依赖) -->
+    <div class="login-orb login-orb-a" aria-hidden="true" />
+    <div class="login-orb login-orb-b" aria-hidden="true" />
+    <div class="login-orb login-orb-c" aria-hidden="true" />
+
     <div class="login-card">
-      <div class="login-title">
-        <img v-if="siteLogo" :src="siteLogo" class="login-logo-img" alt="logo">
-        <el-icon v-else class="login-logo"><Histogram /></el-icon>
-        <span>{{ siteName }}</span>
+      <div class="login-brand">
+        <div class="login-badge">
+          <img v-if="siteLogo" :src="siteLogo" class="login-logo-img" alt="logo">
+          <el-icon v-else :size="24" class="login-logo-icon"><Histogram /></el-icon>
+        </div>
+        <div class="login-title">{{ siteName }}</div>
       </div>
 
       <!-- 第一步: 账号密码 -->
@@ -247,60 +254,174 @@ function backToPassword() {
 .login-page {
   position: relative;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  overflow: hidden;
+  /* 明亮浅蓝渐变底, 光晕负责色彩层次 */
+  background: linear-gradient(180deg, #ecf3fd 0%, #f6f9fe 55%, #f1f5fb 100%);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.login-card {
+/* 细网格装饰: 径向蒙版让边缘淡出 */
+.login-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(64, 120, 200, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(64, 120, 200, 0.07) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%);
+  mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%);
+  pointer-events: none;
+}
+/* 彩色光晕: 径向渐变圆 + 缓慢漂浮 */
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+.login-orb-a {
+  width: 560px;
+  height: 560px;
+  top: -160px;
+  right: -120px;
+  background: radial-gradient(circle, rgba(64, 158, 255, 0.28), transparent 65%);
+  animation: login-orb-float 14s ease-in-out infinite alternate;
+}
+.login-orb-b {
+  width: 640px;
+  height: 640px;
+  bottom: -220px;
+  left: -180px;
+  background: radial-gradient(circle, rgba(56, 182, 230, 0.22), transparent 65%);
+  animation: login-orb-float 18s ease-in-out infinite alternate-reverse;
+}
+.login-orb-c {
   width: 380px;
+  height: 380px;
+  top: 38%;
+  left: 56%;
+  background: radial-gradient(circle, rgba(135, 120, 255, 0.14), transparent 65%);
+  animation: login-orb-float 22s ease-in-out infinite alternate;
+}
+@keyframes login-orb-float {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-40px, 30px, 0); }
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 400px;
+  max-width: calc(100vw - 32px);
   background: #fff;
-  padding: 36px 32px 28px;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  padding: 40px 36px 32px;
+  border-radius: 16px;
+  border: 1px solid #e9f0fa;
+  box-shadow:
+    0 20px 50px rgba(31, 84, 179, 0.1),
+    0 4px 16px rgba(31, 84, 179, 0.06);
+  animation: login-card-in 0.45s ease-out both;
+}
+@keyframes login-card-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 品牌区: 徽标 + 系统名纵向居中 */
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+.login-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #409eff, #2f6fd8);
+  box-shadow: 0 8px 20px rgba(64, 158, 255, 0.35);
+}
+.login-logo-icon {
+  color: #fff;
+}
+.login-logo-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 .login-title {
   font-size: 22px;
   font-weight: 600;
-  color: #303133;
-  text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-.login-logo {
-  font-size: 26px;
-  color: #1890ff;
-}
-.login-logo-img {
-  width: 30px;
-  height: 30px;
-  object-fit: contain;
-  border-radius: 6px;
-}
-.login-copyright {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.75);
+  color: #1f2d3d;
+  letter-spacing: 0.5px;
 }
 .login-sub {
   font-size: 13px;
-  color: #909399;
+  color: #8a94a6;
   text-align: center;
-  margin: 6px 0 24px;
+  margin: 10px 0 28px;
 }
-.login-btn {
+.login-copyright {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #98a3b5;
+}
+
+/* 输入框圆角化 */
+.login-card :deep(.el-input__wrapper) {
+  border-radius: 10px;
+}
+/* 主按钮: 满宽居中 + 渐变 + 悬浮微抬升 (提高选择器优先级以覆盖 el-button--primary) */
+.login-card :deep(.el-button.login-btn) {
   width: 100%;
+  height: 44px;
+  font-size: 15px;
+  letter-spacing: 4px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #409eff, #2f7ce0);
+  box-shadow: 0 8px 20px rgba(64, 158, 255, 0.35);
+  transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
 }
-.login-btn-plain {
+.login-card :deep(.el-button.login-btn:hover:not(.is-disabled):not(.is-loading)) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 24px rgba(64, 158, 255, 0.45);
+}
+.login-card :deep(.el-button.login-btn:active:not(.is-disabled):not(.is-loading)) {
+  transform: translateY(0);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.3);
+}
+/* 次按钮 (返回重新登录): 描边风格 */
+.login-card :deep(.el-button.login-btn-plain) {
   margin-top: 10px;
   margin-left: 0;
+  height: 44px;
+  font-size: 14px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--el-border-color);
+  box-shadow: none;
 }
+.login-card :deep(.el-button.login-btn-plain:hover) {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
 .totp-code-input :deep(input) {
   letter-spacing: 8px;
   font-size: 20px;
@@ -311,5 +432,15 @@ function backToPassword() {
   font-size: 12px;
   color: #909399;
   text-align: center;
+}
+
+/* 无障碍: 用户偏好减少动效时关闭装饰动画 */
+@media (prefers-reduced-motion: reduce) {
+  .login-card,
+  .login-orb-a,
+  .login-orb-b,
+  .login-orb-c {
+    animation: none;
+  }
 }
 </style>

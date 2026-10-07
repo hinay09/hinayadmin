@@ -23,14 +23,17 @@ useHead({ title: headTitle })
 <template>
   <NuxtLayout>
     <!-- KeepAlive 按标签缓存页面 (include 匹配 defineOptions name);
-         key 拼接 refreshSeed, 标签页"刷新"时强制销毁重建 -->
+         key 拼接 refreshSeed, 标签页"刷新"时强制销毁重建;
+         Transition 提供页面切换淡入淡出 (样式见 global.css 的 .page-*) -->
     <NuxtPage v-slot="{ Component, route: pageRoute }">
-      <KeepAlive :include="tagsStore.cachedNames">
-        <component
-          :is="Component"
-          :key="pageRoute.path + '-' + (tagsStore.refreshSeed[pageRoute.path] || 0)"
-        />
-      </KeepAlive>
+      <Transition name="page" mode="out-in">
+        <KeepAlive :include="tagsStore.cachedNames">
+          <component
+            :is="Component"
+            :key="pageRoute.path + '-' + (tagsStore.refreshSeed[pageRoute.path] || 0)"
+          />
+        </KeepAlive>
+      </Transition>
     </NuxtPage>
   </NuxtLayout>
 </template>

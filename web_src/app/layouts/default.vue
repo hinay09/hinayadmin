@@ -102,8 +102,10 @@ function handleFullscreen() {
   <el-container class="app-layout">
     <el-aside :width="collapse ? '64px' : '220px'" class="app-aside">
       <div class="logo">
-        <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
-        <el-icon v-else class="logo-icon"><Histogram /></el-icon>
+        <div class="logo-badge">
+          <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
+          <el-icon v-else :size="17" class="logo-icon"><Histogram /></el-icon>
+        </div>
         <span v-if="!collapse" class="logo-text">{{ siteName }}</span>
       </div>
       <el-menu
@@ -112,9 +114,9 @@ function handleFullscreen() {
         router
         unique-opened
         class="app-menu"
-        background-color="#001529"
-        text-color="#cfd8dc"
-        active-text-color="#409EFF"
+        background-color="#0e1d3a"
+        text-color="#a3b1c6"
+        active-text-color="#ffffff"
       >
         <template v-for="m in menuTree" :key="m.id">
           <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
@@ -141,9 +143,11 @@ function handleFullscreen() {
     <el-container>
       <el-header class="app-header">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="collapse = !collapse">
-            <component :is="collapse ? Expand : Fold" />
-          </el-icon>
+          <el-tooltip :content="collapse ? '展开菜单' : '收起菜单'" placement="bottom">
+            <el-icon class="header-action" @click="collapse = !collapse">
+              <component :is="collapse ? Expand : Fold" />
+            </el-icon>
+          </el-tooltip>
           <el-breadcrumb separator="/" class="app-breadcrumb">
             <el-breadcrumb-item :to="{ path: '/dashboard' }">
               <el-icon class="bc-home"><House /></el-icon>
@@ -165,7 +169,7 @@ function handleFullscreen() {
           <el-divider direction="vertical" />
           <el-dropdown @command="handleDropdown">
             <span class="user-info">
-              <el-avatar :size="30" :src="userInfo?.avatar">
+              <el-avatar :size="30" :src="userInfo?.avatar" class="user-avatar">
                 {{ userInfo?.nickname?.charAt(0) || 'U' }}
               </el-avatar>
               <span class="username">{{ userInfo?.nickname || userInfo?.username }}</span>
@@ -194,64 +198,109 @@ function handleFullscreen() {
   height: 100vh;
 }
 .app-aside {
-  background: #001529;
+  background: #0e1d3a;
   transition: width .2s;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 2px 0 12px rgba(0, 21, 41, 0.1);
 }
 .logo {
   height: 60px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   color: #fff;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  background: linear-gradient(135deg, #1f2d3d, #001529);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  /* 顶部微亮的品牌区, 向下融入侧边栏底色 */
+  background: linear-gradient(180deg, rgba(35, 62, 108, 0.85), rgba(14, 29, 58, 0));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+.logo-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #409eff, #2f6fd8);
+  box-shadow: 0 4px 10px rgba(64, 158, 255, 0.3);
 }
 .logo-icon {
-  font-size: 22px;
-  color: #409eff;
+  color: #fff;
 }
 .logo-img {
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   object-fit: contain;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 .logo-text {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 1px;
   white-space: nowrap;
 }
 .app-menu {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-right: none;
+  padding: 8px 10px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.app-menu.el-menu--collapse {
+  padding: 8px 5px 16px;
+}
+.app-menu::-webkit-scrollbar {
+  width: 5px;
+}
+.app-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 .app-menu:not(.el-menu--collapse) {
   width: 220px;
 }
+/* 菜单项胶囊化: 圆角 + 悬浮高亮 + 激活渐变底 */
+.app-menu :deep(.el-menu-item),
+.app-menu :deep(.el-sub-menu__title) {
+  height: 44px;
+  line-height: 44px;
+  border-radius: 8px;
+  margin: 2px 0;
+  transition: background-color .2s, color .2s;
+}
+.app-menu :deep(.el-menu-item:hover),
+.app-menu :deep(.el-sub-menu__title:hover) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+.app-menu :deep(.el-menu-item.is-active) {
+  background: linear-gradient(90deg, #409eff, #2f7ce0);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35);
+}
 .app-header {
   height: 60px;
   background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: none;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
+  position: relative;
+  z-index: 5;
 }
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-.collapse-btn {
-  font-size: 20px;
-  cursor: pointer;
-  color: #606266;
-  transition: color .2s;
-}
-.collapse-btn:hover {
-  color: #409eff;
+  gap: 8px;
 }
 .app-breadcrumb {
   font-size: 14px;
@@ -278,7 +327,7 @@ function handleFullscreen() {
   font-size: 18px;
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -295,16 +344,23 @@ function handleFullscreen() {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  padding: 0 8px;
+  padding: 0 10px;
   height: 40px;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: background-color .2s;
 }
 .user-info:hover {
   background-color: #f0f2f5;
 }
+.user-avatar {
+  background: linear-gradient(135deg, #409eff, #2f7ce0);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18);
+}
 .username {
   font-size: 14px;
+  font-weight: 500;
   color: #303133;
 }
 .caret {
@@ -312,15 +368,15 @@ function handleFullscreen() {
   color: #909399;
 }
 .app-main {
-  background: #f0f2f5;
+  background: #f5f7fa;
   padding: 16px;
 }
 .app-footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f2f5;
-  border-top: 1px solid #ebeef5;
+  background: #f5f7fa;
+  border-top: 1px solid #eef1f6;
   color: #909399;
   font-size: 12px;
   padding: 0;

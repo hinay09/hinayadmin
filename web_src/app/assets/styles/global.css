@@ -63,3 +63,46 @@ a { color: inherit; text-decoration: none; }
 .el-table th.el-table__cell {
   background-color: #fafbfc;
 }
+
+/* 页面切换过渡 (app.vue Transition name="page") */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity .18s ease, transform .18s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* 全局细滚动条 (深色侧边栏菜单区在布局内自行覆盖为浅色半透明) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c8d0dc;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #aab4c2;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 无障碍: 用户偏好减少动效时关闭页面过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active {
+    transition: none;
+  }
+  .page-enter-from,
+  .page-leave-to {
+    opacity: 1;
+    transform: none;
+  }
+}
