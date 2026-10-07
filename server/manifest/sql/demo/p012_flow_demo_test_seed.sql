@@ -3,8 +3,8 @@
 --
 -- 内容:
 --   1) 5 个流程测试账号 (910001-910005) + 1 个流程测试角色 (910001, code=flow_demo)
---   2) 测试角色的最小授权: 仪表盘/个人中心/消息中心 + 审批中心(发起/审批/撤销)
---      与全部审批任务 API (含加签/减签/转办), 不含流程定义管理
+--   2) 测试角色的最小授权: 仪表盘/个人中心/消息中心 + 审批中心(发起/审批/撤销/撤回)
+--      与全部审批任务 API (含加签/减签/转办/委派/委派处理), 不含流程定义管理
 --   3) 3 条已发布的演示流程定义 (910001-910005 用户为固定审批人):
 --        test_leave      【测试】请假演示      — 或签 + 抄送
 --        test_expense    【测试】报销演示      — 条件分支(金额>1000) + 财务/总监会签
@@ -71,19 +71,22 @@ INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '910001', '/api/v1/message/private',   'POST',   '', '', ''),
   ('p', '910001', '/api/v1/message/events',    'GET',    '', '', ''),
   ('p', '910001', '/api/v1/system/users',      'GET',    '', '', ''),
-  -- p: API —— 审批中心 (发起/列表/详情/撤销/重提/催办)
+  -- p: API —— 审批中心 (发起/列表/详情/撤销/撤回/重提/催办)
   ('p', '910001', '/api/v1/flow/definitions/usable',  'GET',  '', '', ''),
   ('p', '910001', '/api/v1/flow/designer/options',    'GET',  '', '', ''),
   ('p', '910001', '/api/v1/flow/instances',           'GET',  '', '', ''),
   ('p', '910001', '/api/v1/flow/instances',           'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/instances/{id}',      'GET',  '', '', ''),
   ('p', '910001', '/api/v1/flow/instances/{id}/cancel',    'POST', '', '', ''),
+  ('p', '910001', '/api/v1/flow/instances/{id}/withdraw',   'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/instances/{id}/resubmit',  'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/instances/{id}/urge',      'POST', '', '', ''),
-  -- p: API —— 审批任务 (同意/驳回/转办/加签/减签/抄送已读/数量)
+  -- p: API —— 审批任务 (同意/驳回/转办/委派/委派处理/加签/减签/抄送已读/数量)
   ('p', '910001', '/api/v1/flow/tasks/{id}/approve',  'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/tasks/{id}/reject',   'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/tasks/{id}/transfer', 'POST', '', '', ''),
+  ('p', '910001', '/api/v1/flow/tasks/{id}/delegate',        'POST', '', '', ''),
+  ('p', '910001', '/api/v1/flow/tasks/{id}/delegateResolve', 'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/tasks/{id}/append',   'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/tasks/{id}/reduce',   'POST', '', '', ''),
   ('p', '910001', '/api/v1/flow/tasks/{id}/read',     'PUT',  '', '', ''),
