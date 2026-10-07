@@ -114,7 +114,7 @@ function handleCloseAll() {
 .tags-bar {
   background: var(--el-bg-color);
   border-bottom: 1px solid #f0f2f5;
-  padding: 5px 12px;
+  padding: 3px 12px;
 }
 
 .tags-scroll {
@@ -122,6 +122,8 @@ function handleCloseAll() {
   align-items: center;
   gap: 6px;
   overflow-x: auto;
+  /* 纵向留 2px: overflow-x:auto 会把 overflow-y 计算成 auto, 没有它 hover 上移的 1px 会被裁掉 */
+  padding: 2px 0;
   scrollbar-width: none;
 }
 .tags-scroll::-webkit-scrollbar {
@@ -143,19 +145,22 @@ function handleCloseAll() {
   user-select: none;
   transition: all .2s;
 }
-.tag-item:hover {
+/* hover 只作用于未激活标签: 激活态是常驻的更深一层, 不被瞬时反馈覆盖 */
+.tag-item:not(.active):hover {
   color: var(--el-color-primary);
   border-color: var(--el-color-primary-light-7);
   background: var(--el-color-primary-light-9);
+  transform: translateY(-1px);
 }
 .tag-item.active {
-  background: linear-gradient(90deg, var(--el-color-primary), #2f7ce0);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  background: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary-light-5);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(16, 31, 61, 0.08);
 }
 .tag-item.active .tag-dot {
-  background: #fff;
+  background: var(--el-color-primary);
 }
 
 .tag-dot {
@@ -165,7 +170,7 @@ function handleCloseAll() {
   background: var(--el-border-color);
   flex-shrink: 0;
 }
-.tag-item:hover .tag-dot {
+.tag-item:not(.active):hover .tag-dot {
   background: var(--el-color-primary);
 }
 
@@ -179,7 +184,8 @@ function handleCloseAll() {
   color: inherit;
 }
 .tag-item.active .tag-close:hover {
-  background: rgba(255, 255, 255, .3);
+  background: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
 }
 
 .tags-context-menu {

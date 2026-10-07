@@ -5,10 +5,20 @@ html, body, #__nuxt, #__layout {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   font-size: 14px;
   background: #f0f2f5;
   color: #303133;
+}
+
+/* 选中文字用浅蓝, 与全局主色呼应 */
+::selection {
+  background: rgba(64, 158, 255, 0.22);
+}
+
+/* 表格数字等宽, 对齐更利落 */
+.el-table {
+  font-variant-numeric: tabular-nums;
 }
 
 a { color: inherit; text-decoration: none; }

@@ -114,9 +114,9 @@ function handleFullscreen() {
         router
         unique-opened
         class="app-menu"
-        background-color="#0e1d3a"
-        text-color="#a3b1c6"
-        active-text-color="#ffffff"
+        background-color="#ffffff"
+        text-color="#4e5f7a"
+        active-text-color="#409eff"
       >
         <template v-for="m in menuTree" :key="m.id">
           <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
@@ -169,9 +169,11 @@ function handleFullscreen() {
           <el-divider direction="vertical" />
           <el-dropdown @command="handleDropdown">
             <span class="user-info">
-              <el-avatar :size="30" :src="userInfo?.avatar" class="user-avatar">
-                {{ userInfo?.nickname?.charAt(0) || 'U' }}
-              </el-avatar>
+              <span class="avatar-wrap">
+                <el-avatar :size="30" :src="userInfo?.avatar" class="user-avatar">
+                  {{ userInfo?.nickname?.charAt(0) || 'U' }}
+                </el-avatar>
+              </span>
               <span class="username">{{ userInfo?.nickname || userInfo?.username }}</span>
               <el-icon class="caret"><ArrowDown /></el-icon>
             </span>
@@ -198,12 +200,12 @@ function handleFullscreen() {
   height: 100vh;
 }
 .app-aside {
-  background: #0e1d3a;
+  background: #fff;
   transition: width .2s;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 2px 0 12px rgba(0, 21, 41, 0.1);
+  box-shadow: 2px 0 10px rgba(24, 60, 120, 0.06);
 }
 .logo {
   height: 60px;
@@ -212,22 +214,25 @@ function handleFullscreen() {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #fff;
-  /* 顶部微亮的品牌区, 向下融入侧边栏底色 */
-  background: linear-gradient(180deg, rgba(35, 62, 108, 0.85), rgba(14, 29, 58, 0));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #1f2d3d;
+  border-bottom: 1px solid #eef2f8;
   user-select: none;
 }
 .logo-badge {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 9px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #409eff, #2f6fd8);
-  box-shadow: 0 4px 10px rgba(64, 158, 255, 0.3);
+  background: linear-gradient(135deg, #55a3ff, #2f6fd8);
+  box-shadow: 0 4px 10px rgba(47, 111, 216, 0.28);
+  transition: transform .25s;
+}
+/* hover 品牌区时徽章俏皮微倾 */
+.logo:hover .logo-badge {
+  transform: rotate(-8deg) scale(1.06);
 }
 .logo-icon {
   color: #fff;
@@ -251,7 +256,7 @@ function handleFullscreen() {
   border-right: none;
   padding: 8px 10px 16px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: rgba(31, 45, 61, 0.18) transparent;
 }
 .app-menu.el-menu--collapse {
   padding: 8px 5px 16px;
@@ -260,13 +265,13 @@ function handleFullscreen() {
   width: 5px;
 }
 .app-menu::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(31, 45, 61, 0.18);
   border-radius: 3px;
 }
 .app-menu:not(.el-menu--collapse) {
   width: 220px;
 }
-/* 菜单项胶囊化: 圆角 + 悬浮高亮 + 激活渐变底 */
+/* 菜单项胶囊化: 圆角 + 悬浮高亮; 激活态 = 浅蓝底 + 蓝色刻度条 + 蓝色图标 */
 .app-menu :deep(.el-menu-item),
 .app-menu :deep(.el-sub-menu__title) {
   height: 44px;
@@ -277,13 +282,38 @@ function handleFullscreen() {
 }
 .app-menu :deep(.el-menu-item:hover),
 .app-menu :deep(.el-sub-menu__title:hover) {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.07);
+  color: #409eff;
+  background: #f3f8ff;
+}
+/* 悬浮时图标染主色, 与激活态呼应 */
+.app-menu :deep(.el-menu-item .el-icon),
+.app-menu :deep(.el-sub-menu__title .el-icon) {
+  transition: color .2s, transform .2s;
+}
+.app-menu :deep(.el-menu-item:hover .el-icon),
+.app-menu :deep(.el-sub-menu__title:hover .el-icon) {
+  color: #409eff;
 }
 .app-menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(90deg, #409eff, #2f7ce0);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.35);
+  position: relative;
+  background: #e8f3ff;
+  color: #409eff;
+  font-weight: 500;
+}
+.app-menu :deep(.el-menu-item.is-active)::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #66aaff, #2f7ce0);
+  box-shadow: 0 0 8px rgba(64, 158, 255, 0.4);
+}
+.app-menu :deep(.el-menu-item.is-active .el-icon) {
+  color: #409eff;
 }
 .app-header {
   height: 60px;
@@ -352,8 +382,24 @@ function handleFullscreen() {
 .user-info:hover {
   background-color: #f0f2f5;
 }
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+}
+/* 在线状态点 */
+.avatar-wrap::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2fbf71;
+  border: 2px solid #fff;
+}
 .user-avatar {
-  background: linear-gradient(135deg, #409eff, #2f7ce0);
+  background: linear-gradient(135deg, #55a3ff, #2f6fd8);
   color: #fff;
   font-weight: 600;
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18);
