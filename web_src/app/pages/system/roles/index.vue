@@ -392,29 +392,31 @@ onMounted(loadList)
       <el-tabs v-model="activeTab">
         <!-- 菜单权限 Tab -->
         <el-tab-pane label="菜单权限" name="menu">
-          <el-tree
-            ref="menuTreeRef"
-            :data="menuTreeData"
-            show-checkbox
-            node-key="id"
-            :props="{ label: 'name', children: 'children' }"
-            default-expand-all
-            check-strictly
-          >
-            <template #default="{ data }">
-              <span style="display: flex; align-items: center; gap: 6px">
-                <span>{{ data.name }}</span>
-                <el-tag v-if="data.type === 1" size="small" type="info">目录</el-tag>
-                <el-tag v-else-if="data.type === 2" size="small" type="warning">菜单</el-tag>
-                <el-tag v-else-if="data.type === 3" size="small" type="danger">按钮</el-tag>
-              </span>
-            </template>
-          </el-tree>
+          <div class="perm-pane">
+            <el-tree
+              ref="menuTreeRef"
+              :data="menuTreeData"
+              show-checkbox
+              node-key="id"
+              :props="{ label: 'name', children: 'children' }"
+              default-expand-all
+              check-strictly
+            >
+              <template #default="{ data }">
+                <span style="display: flex; align-items: center; gap: 6px">
+                  <span>{{ data.name }}</span>
+                  <el-tag v-if="data.type === 1" size="small" type="info">目录</el-tag>
+                  <el-tag v-else-if="data.type === 2" size="small" type="warning">菜单</el-tag>
+                  <el-tag v-else-if="data.type === 3" size="small" type="danger">按钮</el-tag>
+                </span>
+              </template>
+            </el-tree>
+          </div>
         </el-tab-pane>
 
         <!-- 接口权限 Tab -->
         <el-tab-pane label="接口权限" name="api">
-          <div v-loading="apiListLoading" style="max-height: 500px; overflow-y: auto">
+          <div v-loading="apiListLoading" class="perm-pane">
             <div v-for="group in apiGrouped" :key="group.name" style="margin-bottom: 16px">
               <div style="margin-bottom: 8px; border-bottom: 1px solid #ebeef5; padding-bottom: 6px">
                 <el-checkbox
@@ -455,6 +457,13 @@ onMounted(loadList)
 </template>
 
 <style scoped>
+/* 权限弹窗: 菜单树与接口列表共用同一滚动容器, 保证两个 tab 显示一致 */
+/* overflow-x:hidden — el-row gutter 的负 margin 会产生 8px 隐性横向溢出, 触发无意义横向滚动条 */
+.perm-pane {
+  max-height: 500px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 .scope-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
