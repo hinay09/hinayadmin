@@ -172,7 +172,7 @@ if err == nil {
 
 | 环节 | 位置 |
 |---|---|
-| 业务表 (含 `flow_status`/`flow_instance` 冗余列) | `manifest/sql/upgrade-modules/p016_biz_leave_demo.sql` |
+| 业务表 (含 `flow_status`/`flow_instance` 冗余列) | `manifest/sql/init.sql` 模块段 (演示定义/授权另见 `manifest/sql/demo/p016_biz_leave_demo.sql`) |
 | 回调注册 (四回调写回 `flow_status`) | `server/internal/logic/leave/leave.go` 的 `init()` |
 | 发起 + 退回/撤销后重提 (复用实例) | 同文件 `LeaveSubmit` (`flow.StartForBiz` / `InstanceResubmit`) |
 | 撤销 (转调引擎) | 同文件 `LeaveCancel` (`InstanceCancel`, 状态由 `OnCanceled` 回调写回) |

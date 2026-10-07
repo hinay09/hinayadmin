@@ -34,7 +34,7 @@ import (
 )
 
 func init() {
-	// sys_job 种子行见 upgrade-modules/p018 (默认每 10 分钟), 网页端可调频率/暂停
+	// sys_job 种子行在 manifest/sql/init.sql (默认每 10 分钟), 网页端可调频率/暂停
 	job.RegisterHandler("flow.timeoutScan", scanTimeoutTasks)
 }
 

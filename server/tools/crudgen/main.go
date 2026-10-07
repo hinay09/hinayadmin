@@ -63,7 +63,7 @@ func main() {
 		Table: *table, Mod: *mod, Title: *title,
 		Inputs:     inputs,
 		MenuMaxId:  menuMax,
-		UpgradeSeq: crudgen.NextUpgradeSeq(filepath.Join(serverRoot, "manifest/sql/upgrade")),
+		UpgradeSeq: crudgen.NextUpgradeSeq(filepath.Join(serverRoot, "manifest/sql/gen")),
 	})
 	check(err)
 
@@ -89,7 +89,7 @@ func main() {
 	fmt.Printf(`
 完成! 后续步骤:
   1. 确认建表 DDL 已在 init.sql (或本次升级 SQL) 中, 并执行:
-     mysql -u<user> -p <库名> < manifest/sql/upgrade/%s_gen_%s.sql
+     mysql -u<user> -p <库名> < manifest/sql/gen/%s_gen_%s.sql
   2. (可选) 连库执行 gf gen dao 覆盖重新生成 model/dao (结构一致)
   3. 角色管理 -> 为目标角色分配「%s」菜单与按钮权限
   4. 重启后端生效

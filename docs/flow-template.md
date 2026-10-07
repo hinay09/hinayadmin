@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS `biz_leave` (           -- 替换点: 表名
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请假申请(业务审批Demo)';
 ```
 
-DDL 写两处: 新增 `manifest/sql/upgrade-modules/pXXX_<mod>_demo.sql` 增量脚本 (存量库),
-同内容并入 `modules_init.sql` (新装)。建表进本地库后生成 dao:
+DDL 只写一处: 并入 `manifest/sql/init.sql` 模块段 (项目默认面向新装, 不再维护
+存量增量脚本)。建表进本地库后生成 dao:
 
 ```bash
 mysql ... < pXXX_xxx.sql        # 表建进开发库

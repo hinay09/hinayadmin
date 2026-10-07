@@ -340,7 +340,7 @@ func containsCol(cols []Column, goName string) bool {
 // ---------------------------------------------------------------------------
 
 var (
-	reCreateStart = regexp.MustCompile("(?i)CREATE\\s+TABLE\\s+`([\\w]+)`\\s*\\(")
+	reCreateStart = regexp.MustCompile("(?i)CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`([\\w]+)`\\s*\\(")
 	reColumn      = regexp.MustCompile("^`([\\w]+)`\\s+([A-Za-z]+)([^,]*),?$")
 	reComment     = regexp.MustCompile("COMMENT\\s+'((?:[^']|'')*)'")
 	reMenuRow     = regexp.MustCompile(`(?m)^\s*\((\d+),\s*\d+,`)
@@ -477,7 +477,7 @@ func Render(m *Model) ([]GeneratedFile, error) {
 		{"do", doTmpl, fmt.Sprintf("internal/model/do/%s.go", m.Table)},
 		{"dao", daoTmpl, fmt.Sprintf("internal/dao/%s.go", m.Table)},
 		{"dao-int", daoInternalTmpl, fmt.Sprintf("internal/dao/internal/%s.go", m.Table)},
-		{"sql", sqlTmpl, fmt.Sprintf("manifest/sql/upgrade/%s_gen_%s.sql", m.UpgradeSeq, m.Mod)},
+		{"sql", sqlTmpl, fmt.Sprintf("manifest/sql/gen/%s_gen_%s.sql", m.UpgradeSeq, m.Mod)},
 	} {
 		s, err := render(tpl.name, tpl.body, m)
 		if err != nil {
@@ -519,7 +519,7 @@ func Zip(m *Model, files []GeneratedFile) ([]byte, error) {
   3. web_src/app/composables/useApi/index.ts  增加: export * from './%s'
 
 然后:
-  - 执行 server/manifest/sql/upgrade/%s_gen_%s.sql (建表 DDL 需自行确认已在库中)
+  - 执行 server/manifest/sql/gen/%s_gen_%s.sql (建表 DDL 需自行确认已在库中)
   - 角色管理为目标角色分配「%s」菜单与按钮权限
   - 重启后端 (go build / make run)
 `, m.Title, m.Mod, m.Mod, m.Mod, m.Mod, m.UpgradeSeq, m.Mod, m.Title)

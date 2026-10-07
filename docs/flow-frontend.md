@@ -308,7 +308,7 @@ async function loadCounts() { counts.value = await api.taskCount() }
 - 前端用 `v-permission="'flow:task:handle'"` 指令控制显隐; `admin` 角色自动放行。
 - **审批人只需要 `flow:task:handle` + 菜单可见**, 不需要业务模块的任何权限——审批动作发生在审批中心,
   服务端按任务归属校验, 拿别人的 taskId 操作会报错。
-- 菜单/按钮在 `manifest/sql/upgrade-modules/modules_init.sql` 9000 号段, 走「系统管理→角色管理」勾选分配。
+- 菜单/按钮在 `manifest/sql/init.sql` 模块段 9000 号段, 走「系统管理→角色管理」勾选分配。
 
 ## 九、常见问题 (前端向)
 

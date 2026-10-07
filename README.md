@@ -105,9 +105,8 @@ hinay-admin/
 │   ├── manifest/
 │   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin/ratelimit/gencode)
 │   │   └── sql/
-│   │       ├── init.sql                 # 全新安装: DDL + 种子 + 初始策略
-│   │       ├── upgrade/                 # 基座存量库增量脚本 (按序号执行)
-│   │       └── upgrade-modules/             # 审批流/岗位/AI/请假 Demo (modules_init.sql + pNNN 增量)
+│   │       ├── init.sql                 # 全新安装唯一入口: 基础库 + 全部模块 DDL/种子
+│   │       └── demo/                    # 可选演示种子 (流程测试账号/请假Demo演示定义)
 │   └── Makefile                         # run / initdb / vet / fmt / tidy / gen-crud
 └── web_src/                             # Nuxt 4 前端
     ├── app/
@@ -163,9 +162,8 @@ hinay-admin/
 ```bash
 cd server
 make initdb DB_USER=root DB_PASS=yourpass DB_NAME=hinay_admin
-# 或手动 (全新安装需依序执行两步, modules_init 幂等可重跑):
+# 或手动 (init.sql 为全量基线, 幂等可重跑):
 mysql -uroot -p hinay_admin < manifest/sql/init.sql
-mysql -uroot -p hinay_admin < manifest/sql/upgrade-modules/modules_init.sql
 ```
 
 `init.sql` 会创建以下表并写入种子数据:
@@ -185,10 +183,13 @@ mysql -uroot -p hinay_admin < manifest/sql/upgrade-modules/modules_init.sql
 | `sys_dict_data` | 字典数据项 (支持排序) |
 | `sys_file` | 文件管理 |
 | `sys_audit_log` | 操作审计日志 |
+| `wf_definition`/`wf_instance`/`wf_task`/`wf_record` | 自由审批流 (定义/实例/任务/流转记录) |
+| `sys_post`/`sys_user_post` | 岗位管理 (审批人解析依据) |
+| `ai_conversation`/`ai_chat_message` | AI 会话与消息 |
+| `biz_leave` | 请假 Demo (业务型流程审批)
 
-> 第二步的 `modules_init.sql` 追建审批流 (`wf_definition`/`wf_instance`/`wf_task`/`wf_record`)、
-> 岗位 (`sys_post`/`sys_user_post`)、AI 会话 (`ai_conversation`/`ai_chat_message`)、
-> 请假 Demo (`biz_leave`) 的表结构与 9000 号段菜单/权限种子。
+> 历史的 `upgrade/` (社区版存量增量) 与 `upgrade-modules/` (模块增量 pNNN) 已全部并入
+> `init.sql` —— 项目默认面向新装应用, 单文件完成初始化; 可选演示种子在 `demo/` 目录。
 
 ### 3. 启动后端
 
@@ -255,7 +256,7 @@ docker compose up -d --build
 - 拉取 MySQL 8.0、Redis 7、Node.js 22、Go 1.26 等基础镜像
 - 编译 Go 后端二进制
 - 构建 Nuxt 前端产物
-- 初始化数据库 (依序执行 `init.sql` 与 `upgrade-modules/modules_init.sql`, 创建表和种子数据)
+- 初始化数据库 (执行全量基线 `init.sql`, 创建表和种子数据)
 
 ### 3. 访问
 
@@ -415,7 +416,7 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 
 - **Auth**: 解析 JWT, 校验 Redis 黑名单, 写入 LoginUser 到 ctx; 命中 `publicPaths` (如 `/auth/login`) 直接放行。
 - **Casbin**: 校验 `(用户ID, path, method)`; 超管 (内置角色 id=1) 全放行; 命中 `authWhitelist` (如 `/auth/menus`、`/auth/userInfo`、`/auth/profile`、`/auth/password`、`/auth/logout`) 已登录即可访问, 不进入策略检查。
-- **双维度授权** (关联键均为 ID, 角色 code 仅为展示标识, 存量库执行 `upgrade/0012_casbin_id_subject.sql` 迁移):
+- **双维度授权** (关联键均为 ID, 角色 code 仅为展示标识):
   - 菜单维度: `p, <角色ID>, menu:<menuId>, *`  → 控制可见菜单与按钮权限码
   - API 维度: `p, <角色ID>, <apiPath>, <method>` → 控制实际 HTTP 接口
   - 用户-角色: `g, <用户ID>, <角色ID>` → 在 g 策略中维护
@@ -435,7 +436,7 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 
 新增业务模块的标准步骤 (以 `message` 模块为参考):
 
-1. **DDL**: 在 `server/manifest/sql/init.sql` 增加表与索引, 字段含 `deleted_at`, 顺便加初始菜单/权限码/API 资源; 已有存量库时在 `server/manifest/sql/upgrade/` 追加一份增量脚本 (`<序号>_<模块>.sql`)。
+1. **DDL**: 在 `server/manifest/sql/init.sql` 增加表与索引, 字段含 `deleted_at`, 顺便加初始菜单/权限码/API 资源 (项目默认面向新装应用, 不另维护存量增量脚本)。
 2. **生成 dao/model**: 配好数据库后执行 `gf gen dao`, 自动生成 `internal/dao/<table>.go` 与 `internal/model/{do,entity}/<table>.go`。
 3. **API 契约**: 在 `server/api/<module>/v1/` 编写 `XxxReq/XxxRes`, 用 `g.Meta` 声明 path/method/tags/summary, 加 `v` 校验规则。
 4. **service 接口**: 在 `server/internal/service/<module>.go` 定义 `IXxx interface { Method(ctx, *v1.XxxReq) (*v1.XxxRes, error) }` + `localXxx` 单例 + `Xxx()` 取值 + `RegisterXxx(i IXxx)`。
@@ -483,7 +484,7 @@ make gen-crud TABLE=biz_article TITLE="文章管理"          # 生成 (mod 默�
 make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
 ```
 
-生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 upgrade SQL 并分配角色权限即可。演示见 `-dry` 输出。
+生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 `manifest/sql/gen/` 下产出的 SQL 并分配角色权限即可。演示见 `-dry` 输出。
 
 **sys_api 种子 SQL 生成器** (`server/tools/genapi`, 无需连库): CRUD 生成器产出的升级 SQL 自带 sys_api 行, 但**手写** API 契约 (如审批流加签/减签) 的 `sys_api` INSERT 行此前需手工编写, 路径/方法/描述容易抄漏。本工具扫描 `api/` 目录下所有 `g.Meta` 路由标签, 自动生成幂等的 `INSERT IGNORE` 种子块:
 
@@ -491,11 +492,11 @@ make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
 cd server
 make gen-api-sql                       # 全量路由 → stdout (135+ 条, 按分组排序对齐)
 make gen-api-sql PKG=flow              # 只生成 api/flow 模块
-make gen-api-sql PKG=flow OUT=manifest/sql/upgrade-modules/pXXX_xxx.sql   # 直接写升级脚本
+make gen-api-sql PKG=flow OUT=manifest/sql/gen/xxx_api.sql   # 直接写种子脚本
 make gen-api-sql CHECK=1               # 对照 manifest/sql 种子, 报告尚未入库的路由 (缺则退出码 1, 可当提交前检查)
 ```
 
-说明: 分组名默认按 `tags` 映射为中文 (`Flow=审批中心` 等, 全表见工具内 `defaultGroupNames`, 可用 `-map New=新模块` 覆盖); 路径参数沿用 `g.Meta` 的 `{id}` 花括号风格, Casbin 匹配器已同时兼容 `:id` 与 `{id}`; `-check` 曾一次性发现 10 条历史漏种 (TOTP/SSE/头像等), 已并入 `modules_init.sql` 的 sys_api 种子块。
+说明: 分组名默认按 `tags` 映射为中文 (`Flow=审批中心` 等, 全表见工具内 `defaultGroupNames`, 可用 `-map New=新模块` 覆盖); 路径参数沿用 `g.Meta` 的 `{id}` 花括号风格, Casbin 匹配器已同时兼容 `:id` 与 `{id}`; `-check` 曾一次性发现 10 条历史漏种 (TOTP/SSE/头像等), 已并入 `init.sql` 的 sys_api 种子块。
 
 **密码策略**: 全局配置页修改 `sys.password.*` 即时生效——
 - 复杂度: `min_length`/`max_length`/`require_upper`/`require_lower`/`require_digit`/`require_special`, 校验挂在改密/创建用户/重置密码/Excel 导入四处 (`logic/pwdpolicy`);
@@ -549,16 +550,15 @@ if err = q.Ctx(ctx).Page(req.Page, req.PageSize).Order("id DESC").Scan(&rows); e
 # 后端
 cd server
 make run            # go run main.go
-make initdb         # 初始化数据库 (全新安装, 执行 init.sql; 随后执行 upgrade-modules/modules_init.sql)
+make initdb         # 初始化数据库 (全新安装, 执行全量基线 init.sql)
 make vet            # go vet ./...
 make fmt            # gofmt -s -w .
 make tidy           # go mod tidy
 make gen-crud TABLE=biz_xxx TITLE="xx管理"   # CRUD 代码生成 (DRY=1 仅预览)
 
-# 存量库升级
-# 按文件名序号执行 server/manifest/sql/upgrade/ 下的增量脚本
-# 审批流/岗位/AI 模块的表与种子在 server/manifest/sql/upgrade-modules/:
-#   全新安装只需 init.sql + upgrade-modules/modules_init.sql; 存量库按序补跑 pNNN
+# 数据库说明
+# init.sql 为全量基线 (基础库 + 审批流/岗位/AI/微信/请假Demo 模块), 新装一个文件完成;
+# 历史 upgrade / upgrade-modules 增量脚本已并入基线并移除; 可选演示种子在 manifest/sql/demo/
 
 # 前端
 cd web_src

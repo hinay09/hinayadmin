@@ -15,7 +15,8 @@
 --        (审批人/抄送人为 p012 测试账号 910002/910004/910005)
 --   5) Casbin: 流程测试角色(910001) 增补菜单/API 授权
 --
--- 依赖: init.sql + modules_init.sql + p012_flow_demo_test_seed.sql (审批人账号)。
+-- 依赖: init.sql (含 biz_leave 表/菜单/API) + p012_flow_demo_test_seed.sql (审批人账号);
+--       本脚本提供其独有内容: 演示流程定义(910004) + Casbin 授权。
 -- 幂等: 建表 IF NOT EXISTS / 种子 INSERT IGNORE, 可重复执行。
 -- 注意: 直改 casbin_rule 后需重启服务 (或在角色管理里重新保存任一角色) 触发策略重载。
 -- 清理语句见文件尾部 (默认注释)。

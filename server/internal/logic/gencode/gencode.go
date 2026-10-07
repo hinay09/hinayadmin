@@ -243,7 +243,7 @@ func (s *sGencode) build(ctx context.Context, table, mod, title string, cols []v
 	serverRoot := findServerRoot()
 	seq := ""
 	if serverRoot != "" {
-		seq = crudgen.NextUpgradeSeq(filepath.Join(serverRoot, "manifest/sql/upgrade"))
+		seq = crudgen.NextUpgradeSeq(filepath.Join(serverRoot, "manifest/sql/gen"))
 	}
 	m, err := crudgen.Build(crudgen.BuildOptions{
 		Table: table, Mod: mod, Title: title,

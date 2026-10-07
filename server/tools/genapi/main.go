@@ -236,7 +236,7 @@ func checkMissing(root string, routes []route) []route {
 	return missing
 }
 
-// renderSQL 生成对齐的 INSERT IGNORE 块 (风格与 modules_init.sql 一致)。
+// renderSQL 生成对齐的 INSERT IGNORE 块 (风格与 init.sql 种子块一致)。
 func renderSQL(routes []route) string {
 	wp, wm, wg := 0, 0, 0
 	for _, r := range routes {

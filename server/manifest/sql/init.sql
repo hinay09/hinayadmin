@@ -1,6 +1,14 @@
 -- ============================================================
--- Hinay Admin 数据库初始化脚本
+-- Hinay Admin 数据库初始化脚本 (新装唯一入口)
 -- 数据库: hinay_admin (MySQL 8+, utf8mb4)
+--
+-- 本文件为全量基线: 基础库 + 全部模块 (审批流/岗位/AI/微信/请假Demo)
+-- 与其种子一次到位, 新装只需执行本文件 (make initdb)。
+-- 原 upgrade/ (社区版存量增量) 与 upgrade-modules/ (模块增量 p001~p018)
+-- 的最终态均已并入, 目录已移除 —— 项目默认面向新装应用, 不再维护
+-- 存量库迁移脚本。
+-- 可选演示种子在 demo/ 目录 (流程测试账号/演示定义, 生产库不执行)。
+-- 幂等: 建表 IF NOT EXISTS / 种子 INSERT IGNORE, 可重复执行。
 -- ============================================================
 
 -- 强制设置当前会话字符集为 utf8mb4，防止因 Docker 容器 locale
@@ -17,7 +25,7 @@ USE `hinay_admin`;
 -- 用户表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_user`;
-CREATE TABLE `sys_user` (
+CREATE TABLE IF NOT EXISTS `sys_user` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '用户ID',
   `username`   VARCHAR(64)  NOT NULL                COMMENT '登录账号',
   `password`   VARCHAR(128) NOT NULL                COMMENT 'bcrypt 加密密码',
@@ -45,7 +53,7 @@ CREATE TABLE `sys_user` (
 -- 组织机构表(无限级树形)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_org`;
-CREATE TABLE `sys_org` (
+CREATE TABLE IF NOT EXISTS `sys_org` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '组织ID',
   `parent_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '父级ID, 0=顶级',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '组织名称',
@@ -68,7 +76,7 @@ CREATE TABLE `sys_org` (
 -- 角色表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_role`;
-CREATE TABLE `sys_role` (
+CREATE TABLE IF NOT EXISTS `sys_role` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '角色ID',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '角色名称',
   `code`       VARCHAR(64)  NOT NULL                COMMENT '角色编码',
@@ -89,7 +97,7 @@ CREATE TABLE `sys_role` (
 -- 角色自定义数据范围 <-> 组织 绑定表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_role_org`;
-CREATE TABLE `sys_role_org` (
+CREATE TABLE IF NOT EXISTS `sys_role_org` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `role_id`    BIGINT UNSIGNED NOT NULL                COMMENT '角色ID',
   `org_id`     BIGINT UNSIGNED NOT NULL                COMMENT '组织ID',
@@ -104,7 +112,7 @@ CREATE TABLE `sys_role_org` (
 -- 菜单表(目录/菜单/按钮)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_menu`;
-CREATE TABLE `sys_menu` (
+CREATE TABLE IF NOT EXISTS `sys_menu` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '菜单ID',
   `parent_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '父级ID',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '菜单名称',
@@ -129,7 +137,7 @@ CREATE TABLE `sys_menu` (
 -- API接口资源表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_api`;
-CREATE TABLE `sys_api` (
+CREATE TABLE IF NOT EXISTS `sys_api` (
   `id`          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `path`        VARCHAR(255) NOT NULL COMMENT 'API路径',
   `method`      VARCHAR(10)  NOT NULL COMMENT 'HTTP方法(GET/POST/PUT/DELETE)',
@@ -150,7 +158,7 @@ CREATE TABLE `sys_api` (
 --   ptype = g  (角色继承/分组): v0=用户ID, v1=角色ID,        v2=domain (可选)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `casbin_rule`;
-CREATE TABLE `casbin_rule` (
+CREATE TABLE IF NOT EXISTS `casbin_rule` (
   `id`    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT             COMMENT '主键',
   `ptype` VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '策略类型: p / g / g2 ...',
   `v0`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:sub(角色ID) | g:用户ID',
@@ -170,7 +178,7 @@ CREATE TABLE `casbin_rule` (
 --   type=2 私信通知 (receiver_id 为接收人, target_scope=0)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `biz_message`;
-CREATE TABLE `biz_message` (
+CREATE TABLE IF NOT EXISTS `biz_message` (
   `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `type`         TINYINT      NOT NULL                COMMENT '消息类型:1=系统通知,2=私信',
   `title`        VARCHAR(128) NOT NULL                COMMENT '标题',
@@ -194,7 +202,7 @@ CREATE TABLE `biz_message` (
 -- 消息通知: 系统通知定向目标 (target_scope=2/3 时使用)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `biz_message_target`;
-CREATE TABLE `biz_message_target` (
+CREATE TABLE IF NOT EXISTS `biz_message_target` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `message_id`  BIGINT UNSIGNED NOT NULL              COMMENT '消息ID',
   `target_type` TINYINT      NOT NULL                 COMMENT '目标类型:2=role,3=user',
@@ -209,7 +217,7 @@ CREATE TABLE `biz_message_target` (
 --   兼具 "个人删除" 场景: hidden=1 表示从该用户的收件箱视角隐藏
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `biz_message_read`;
-CREATE TABLE `biz_message_read` (
+CREATE TABLE IF NOT EXISTS `biz_message_read` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `message_id` BIGINT UNSIGNED NOT NULL               COMMENT '消息ID',
   `user_id`    BIGINT UNSIGNED NOT NULL               COMMENT '用户ID',
@@ -229,15 +237,15 @@ CREATE TABLE `biz_message_read` (
 -- 默认账号: admin / 123456
 -- bcrypt hash for "123456" (cost=10)
 -- ============================================================
-INSERT INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`,`must_change_pwd`)
+INSERT IGNORE INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`,`must_change_pwd`)
 VALUES (1, 'admin', '$2a$10$tUEhjYhhbY4OgzKvJRZZWexJRuKuaWFoKFb3U0PRnVjXpSBgvyEDK', '超级管理员', 1, 1);
 
-INSERT INTO `sys_role` (`id`,`name`,`code`,`sort`,`status`,`remark`,`data_scope`) VALUES
+INSERT IGNORE INTO `sys_role` (`id`,`name`,`code`,`sort`,`status`,`remark`,`data_scope`) VALUES
   (1, '超级管理员', 'admin',  1, 1, '内置最高权限角色', 1),
   (2, '普通用户',   'common', 2, 1, '示例普通角色', 5);
 
 -- 菜单(目录 + 仪表盘 + 个人中心 + 系统管理 + 公告)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (30, 0, '仪表盘',   2, '/dashboard',      'dashboard',               'Odometer', 'dashboard:view',   1, 1, 1),
   -- 个人中心: visible=0 不在侧边栏展示 (仅从顶部头像下拉进入), 但仍在菜单管理表中可见可维护
   (40, 0, '个人中心', 2, '/profile',        'profile',                 'User',     'profile:view',     2, 0, 1),
@@ -272,7 +280,7 @@ INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`
   (522, 52, '私信删除',     3, '', '', '', 'message:delete',        2, 0, 1);
 
 -- API接口资源初始数据
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   -- 认证分组
   ('/api/v1/auth/login',     'POST', '认证', '用户登录'),
   ('/api/v1/auth/refresh',   'POST', '认证', '刷新Token'),
@@ -340,7 +348,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: 角色继承(g) + 策略(p)
 -- g: 用户ID-角色ID 映射, p: 角色ID-资源-操作 策略 (关联键均为ID)
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   -- g 策略: 用户1(admin) 属于角色1(admin, 内置超管)
   ('g', '1', '1', '', '', '', ''),
   -- p 策略: admin 角色菜单权限(所有菜单含按钮)
@@ -399,7 +407,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 操作日志: 由中间件自动写入, 记录 POST/PUT/DELETE 操作(含成功/失败/未授权)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_audit_log`;
-CREATE TABLE `sys_audit_log` (
+CREATE TABLE IF NOT EXISTS `sys_audit_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID',
   `username`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '用户名',
@@ -429,7 +437,7 @@ CREATE TABLE `sys_audit_log` (
 -- 字典类型主表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_dict_type`;
-CREATE TABLE `sys_dict_type` (
+CREATE TABLE IF NOT EXISTS `sys_dict_type` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `type_code`  VARCHAR(64)  NOT NULL                   COMMENT '字典类型编码(唯一)',
   `type_name`  VARCHAR(128) NOT NULL                   COMMENT '字典类型名称',
@@ -448,7 +456,7 @@ CREATE TABLE `sys_dict_type` (
 -- 字典数据子表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_dict_data`;
-CREATE TABLE `sys_dict_data` (
+CREATE TABLE IF NOT EXISTS `sys_dict_data` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `type_id`    BIGINT UNSIGNED NOT NULL                COMMENT '字典类型ID(关联sys_dict_type)',
   `dict_label` VARCHAR(128) NOT NULL                   COMMENT '字典标签(展示名)',
@@ -470,7 +478,7 @@ CREATE TABLE `sys_dict_data` (
 -- 文件管理
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_file`;
-CREATE TABLE `sys_file` (
+CREATE TABLE IF NOT EXISTS `sys_file` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `name`          VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '存储文件名',
   `original_name` VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '原始文件名',
@@ -492,14 +500,14 @@ CREATE TABLE `sys_file` (
 -- ------------------------------------------------------------
 -- 新模块种子数据: 字典管理 / 文件管理 / 操作日志
 -- ------------------------------------------------------------
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (14, 1, '字典管理', 2, '/system/dicts', 'system/dicts/index', 'List', 'system:dict:list', 15, 1, 1),
   (15, 1, '文件管理', 2, '/system/files', 'system/files/index', 'FolderOpened', 'system:file:list', 16, 1, 1),
   -- 操作日志挂在系统监控目录下 (id=2)
   (16, 2, '操作日志', 2, '/system/audit-logs', 'system/audit-logs/index', 'Timer', 'system:audit-log:list', 4, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (141, 14, '字典新增', 3, '', '', '', 'system:dict:create', 1, 0, 1),
   (142, 14, '字典修改', 3, '', '', '', 'system:dict:update', 2, 0, 1),
   (143, 14, '字典删除', 3, '', '', '', 'system:dict:delete', 3, 0, 1),
@@ -507,7 +515,7 @@ INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`
   (152, 15, '文件删除', 3, '', '', '', 'system:file:delete', 2, 0, 1);
 
 -- 新 API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/audit-logs',    'GET',    '操作日志', '操作日志列表'),
   -- 字典类型管理
   ('/api/v1/system/dict-types',         'GET',    '字典管理', '字典类型列表'),
@@ -529,7 +537,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/files/:id',     'DELETE', '文件管理', '删除文件');
 
 -- Casbin: admin 角色新菜单权限
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:14', 'access', '', '', ''),
   ('p', '1', 'menu:15', 'access', '', '', ''),
   ('p', '1', 'menu:16', 'access', '', '', ''),
@@ -543,7 +551,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 全局配置
 -- ============================================================
 DROP TABLE IF EXISTS `sys_config`;
-CREATE TABLE `sys_config` (
+CREATE TABLE IF NOT EXISTS `sys_config` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `config_key`  VARCHAR(128) NOT NULL                   COMMENT '配置键(唯一)',
   `config_value` TEXT         NOT NULL                  COMMENT '配置值',
@@ -563,24 +571,24 @@ CREATE TABLE `sys_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局配置';
 
 -- 初始种子数据
-INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
   ('sys.name',        'Hinay Admin',        0, '系统名称',   '显示在登录页和浏览器标题', 1),
   ('sys.logo',        '',                   0, '系统Logo',   'Logo图片URL',              2),
   ('sys.copyright',   '© 2026 Hinay',       0, '版权信息',   '页脚版权文字',              3),
   ('sys.allow_register', 'false',           2, '开放注册',   '是否允许新用户自行注册',    4);
 
 -- 菜单: 全局配置 (挂在系统管理目录下, id=1)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (17, 1, '全局配置', 2, '/system/configs', 'system/configs/index', 'Tools', 'system:config:list', 17, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (171, 17, '配置新增', 3, '', '', '', 'system:config:create', 1, 0, 1),
   (172, 17, '配置修改', 3, '', '', '', 'system:config:update', 2, 0, 1),
   (173, 17, '配置删除', 3, '', '', '', 'system:config:delete', 3, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/configs',      'GET',    '全局配置', '配置列表'),
   ('/api/v1/system/configs',      'POST',   '全局配置', '新增配置'),
   ('/api/v1/system/configs/all',  'GET',    '全局配置', '全部启用配置(前端使用)'),
@@ -588,7 +596,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/configs/:id',  'DELETE', '全局配置', '删除配置');
 
 -- Casbin 权限
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:17',  'access', '', '', ''),
   ('p', '1', 'menu:171', 'access', '', '', ''),
   ('p', '1', 'menu:172', 'access', '', '', ''),
@@ -599,17 +607,17 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- ============================================================
 
 -- 菜单: 组织机构 (挂在系统管理目录下, id=1)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (60, 1, '组织机构', 2, '/system/orgs', 'system/orgs/index', 'OfficeBuilding', 'system:org:list', 10, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (601, 60, '组织新增', 3, '', '', '', 'system:org:create', 1, 0, 1),
   (602, 60, '组织修改', 3, '', '', '', 'system:org:update', 2, 0, 1),
   (603, 60, '组织删除', 3, '', '', '', 'system:org:delete', 3, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/orgs',      'GET',    '组织机构', '组织列表/树'),
   ('/api/v1/system/orgs',      'POST',   '组织机构', '创建组织'),
   ('/api/v1/system/orgs/:id',  'GET',    '组织机构', '组织详情'),
@@ -618,7 +626,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/orgs/tree', 'GET',    '组织机构', '组织树');
 
 -- Casbin 权限
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:60',  'access', '', '', ''),
   ('p', '1', 'menu:601', 'access', '', '', ''),
   ('p', '1', 'menu:602', 'access', '', '', ''),
@@ -628,7 +636,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 登录日志
 -- ============================================================
 DROP TABLE IF EXISTS `sys_login_log`;
-CREATE TABLE `sys_login_log` (
+CREATE TABLE IF NOT EXISTS `sys_login_log` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
   `user_id`    BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID(登录用户不存在时为0)',
   `username`   VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '登录账号',
@@ -645,20 +653,20 @@ CREATE TABLE `sys_login_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志';
 
 -- 菜单: 登录日志 (挂在系统监控目录下, id=2)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (18, 2, '登录日志', 2, '/system/login-logs', 'system/login-logs/index', 'Key', 'system:login-log:list', 3, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (181, 18, '登录日志删除', 3, '', '', '', 'system:login-log:delete', 1, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/login-logs',      'GET',    '登录日志', '登录日志列表'),
   ('/api/v1/system/login-logs/:id',  'DELETE', '登录日志', '删除登录日志');
 
 -- Casbin: admin 角色
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:18',  'access', '', '', ''),
   ('p', '1', 'menu:181', 'access', '', '', '');
 
@@ -668,20 +676,20 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 会话数据存 Redis (hinay:online:sessions), 无需建表。
 
 -- 菜单: 在线用户 (挂在系统监控目录下, id=2; 图标改 View 避免与目录图标重复)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (19, 2, '在线用户', 2, '/system/online', 'system/online/index', 'View', 'system:online:list', 1, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (191, 19, '强制下线', 3, '', '', '', 'system:online:kick', 1, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/online',     'GET',    '在线用户', '在线用户列表'),
   ('/api/v1/system/online/:id', 'DELETE', '在线用户', '强制下线');
 
 -- Casbin: admin 角色
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:19',  'access', '', '', ''),
   ('p', '1', 'menu:191', 'access', '', '', '');
 
@@ -689,7 +697,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 定时任务
 -- ============================================================
 DROP TABLE IF EXISTS `sys_job`;
-CREATE TABLE `sys_job` (
+CREATE TABLE IF NOT EXISTS `sys_job` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '任务ID',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '任务名称',
   `handler`    VARCHAR(128) NOT NULL                COMMENT '处理器名称(需已注册)',
@@ -707,7 +715,7 @@ CREATE TABLE `sys_job` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务';
 
 DROP TABLE IF EXISTS `sys_job_log`;
-CREATE TABLE `sys_job_log` (
+CREATE TABLE IF NOT EXISTS `sys_job_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '日志ID',
   `job_id`      BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '任务ID',
   `job_name`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '任务名称(冗余, 删除任务后日志仍可读)',
@@ -723,11 +731,11 @@ CREATE TABLE `sys_job_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务执行日志';
 
 -- 菜单: 定时任务 (挂在系统监控目录下, id=2)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (20, 2, '定时任务', 2, '/system/jobs', 'system/jobs/index', 'AlarmClock', 'system:job:list', 2, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (201, 20, '任务新增', 3, '', '', '', 'system:job:create', 1, 0, 1),
   (202, 20, '任务修改', 3, '', '', '', 'system:job:update', 2, 0, 1),
   (203, 20, '任务删除', 3, '', '', '', 'system:job:delete', 3, 0, 1),
@@ -736,7 +744,7 @@ INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`
   (206, 20, '执行日志', 3, '', '', '', 'system:job:log', 6, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/jobs',              'GET',    '定时任务', '任务列表'),
   ('/api/v1/system/jobs',              'POST',   '定时任务', '新增任务'),
   ('/api/v1/system/jobs/:id',          'PUT',    '定时任务', '修改任务'),
@@ -747,7 +755,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/jobs/handlers',     'GET',    '定时任务', '已注册处理器列表');
 
 -- Casbin: admin 角色
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:20',  'access', '', '', ''),
   ('p', '1', 'menu:201', 'access', '', '', ''),
   ('p', '1', 'menu:202', 'access', '', '', ''),
@@ -759,7 +767,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- ============================================================
 -- Excel 导入导出 (用户模块示例)
 -- ============================================================
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/users/export',           'GET',  '用户管理', '用户列表导出'),
   ('/api/v1/system/users/import',           'POST', '用户管理', '用户导入'),
   ('/api/v1/system/users/import-template',  'GET',  '用户管理', '用户导入模板下载');
@@ -767,7 +775,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 -- ============================================================
 -- 密码策略 (配置驱动: 全局配置页可直接修改, 无需重启)
 -- ============================================================
-INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
   ('sys.password.min_length',      '6',  1, '密码最小长度', '设置新密码时的最小长度', 10),
   ('sys.password.max_length',      '32', 1, '密码最大长度', '设置新密码时的最大长度', 11),
   ('sys.password.require_upper',   'false', 2, '密码需含大写字母', '设置新密码时校验', 12),
@@ -780,17 +788,17 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `
 -- 网页版代码生成 (gencode)
 -- ============================================================
 -- 菜单: 代码生成 (挂在系统工具目录下, id=3)
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (21, 3, '代码生成', 2, '/system/gencode', 'system/gencode/index', 'MagicStick', 'system:gencode:list', 1, 1, 1);
 
 -- 按钮权限
-INSERT INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (211, 21, '生成预览', 3, '', '', '', 'system:gencode:preview', 1, 0, 1),
   (212, 21, '打包下载', 3, '', '', '', 'system:gencode:download', 2, 0, 1),
   (213, 21, '写入源码', 3, '', '', '', 'system:gencode:write', 3, 0, 1);
 
 -- API 资源
-INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/gencode/tables',    'GET',  '代码生成', '可生成表清单'),
   ('/api/v1/system/gencode/columns',   'GET',  '代码生成', '表列信息'),
   ('/api/v1/system/gencode/preview',   'POST', '代码生成', '预览生成代码'),
@@ -798,7 +806,7 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/gencode/write',     'POST', '代码生成', '生成并写入源码树');
 
 -- Casbin: admin 角色
-INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:21',  'access', '', '', ''),
   ('p', '1', 'menu:211', 'access', '', '', ''),
   ('p', '1', 'menu:212', 'access', '', '', ''),
@@ -808,7 +816,7 @@ INSERT INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- TOTP 两步验证 (2FA)
 -- ============================================================
 DROP TABLE IF EXISTS `sys_user_totp`;
-CREATE TABLE `sys_user_totp` (
+CREATE TABLE IF NOT EXISTS `sys_user_totp` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`    BIGINT UNSIGNED NOT NULL                COMMENT '用户ID(唯一)',
   `secret`     VARCHAR(64)  NOT NULL                   COMMENT 'TOTP 密钥(Base32)',
@@ -822,3 +830,356 @@ CREATE TABLE `sys_user_totp` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户TOTP两步验证';
 -- 说明: 本表无 create_id/update_id 审计列(行为人即 user_id 本身), 不纳入 ormfill 白名单;
 -- 解绑走物理删除(Unscoped), 避免 uk_user_id 与软删残留行冲突。
+
+-- ############################################################
+-- 模块: 审批流 / AI 对话 / 微信公众号 / 业务审批 Demo
+-- (原 upgrade-modules/modules_init.sql 全量并入, 面向新装; 历史增量
+--  脚本 p001~p018 的最终态均已含, 存量库迁移脚本不再单独保留)
+-- 可选演示种子: demo/p012_flow_demo_test_seed.sql (测试账号+演示流程),
+--              demo/p016_biz_leave_demo.sql (请假Demo演示定义+授权)。
+-- ############################################################
+-- ############################################################
+-- 一、自由审批流 + 岗位管理 (原 p001/p002)
+-- 模型: 单行定义(发布原地生效) + 实例携带表单/节点树快照(在途不受定义后续修改影响)
+--       + 任务按"节点×审批人"落行; 岗位管理为审批"指定岗位"与"部门主管"解析依据。
+-- 说明: wf_task / wf_record 为行为表, 不建审计列, 不纳入 ormfill;
+--       wf_definition / wf_instance / sys_post 已在 ormfill 登记; sys_user_post 纯关联表豁免。
+-- 菜单使用 9000 号段。
+-- ############################################################
+
+-- ------------------------------------------------------------
+-- 流程定义 (版本行: version=0 草稿, >=1 已发布版本; 同 flow_key 多版本)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wf_definition` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `flow_key`   VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '流程标识(同标识共用一组版本, 如 leave)',
+  `name`       VARCHAR(128) NOT NULL                COMMENT '流程名称',
+  `form_conf`  JSON         NULL                   COMMENT '表单字段定义 JSON [{key,label,type,options,required}]',
+  `flow_conf`  JSON         NULL                   COMMENT '节点树定义 JSON {id,type,name,child,...}',
+  `version`    INT          NOT NULL DEFAULT 0      COMMENT '版本号=发布次数,0=未发布过',
+  `status`     TINYINT      NOT NULL DEFAULT 0      COMMENT '状态:0=草稿,1=已发布,2=已停用',
+  `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  KEY `idx_flow_key` (`flow_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流程定义';
+
+-- ------------------------------------------------------------
+-- 流程实例 (引用具体定义版本行, 定义后续发布新版本不影响在途实例)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wf_instance` (
+  `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `definition_id`     BIGINT UNSIGNED NOT NULL             COMMENT '定义版本行ID',
+  `flow_key`          VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '流程标识(冗余)',
+  `flow_name`         VARCHAR(128) NOT NULL DEFAULT ''     COMMENT '流程名称(冗余)',
+  `biz_id`            BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '业务关联ID(0=审批中心直接发起)',
+  `title`             VARCHAR(128) NOT NULL                COMMENT '申请标题',
+  `form_data`         JSON         NULL                   COMMENT '提交的表单数据 JSON',
+  `form_conf`         JSON         NULL                   COMMENT '表单定义快照(发起时从定义复制)',
+  `flow_conf`         JSON         NULL                   COMMENT '节点树快照(发起时从定义复制, 驳回重提沿用)',
+  `self_selects`      JSON         NULL                   COMMENT '发起人自选审批人快照 {nodeId: [userId]} (发起/重提时写入, 推进时读取)',
+  `current_node_ids`  VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '当前活跃节点ID(逗号分隔)',
+  `status`            TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回(待重提),7=已撤回(发起人收回,待重提)',
+  `start_user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '发起人ID',
+  `start_user_name`   VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '发起人昵称(冗余)',
+  `finished_at`       DATETIME     NULL                   COMMENT '结束时间',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  KEY `idx_definition` (`definition_id`),
+  KEY `idx_start_user` (`start_user_id`),
+  KEY `idx_biz` (`flow_key`, `biz_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流程实例';
+
+-- ------------------------------------------------------------
+-- 审批任务 (会签/或签按"节点×审批人"一人一行; 抄送为待阅行)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wf_task` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `instance_id`   BIGINT UNSIGNED NOT NULL             COMMENT '实例ID',
+  `node_id`       VARCHAR(32)  NOT NULL                COMMENT '节点ID(树内唯一)',
+  `node_name`     VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '节点名称(冗余)',
+  `node_type`     TINYINT      NOT NULL DEFAULT 1      COMMENT '节点类型:1=审批,2=抄送',
+  `sign_type`     TINYINT      NOT NULL DEFAULT 1      COMMENT '签核方式:1=或签,2=会签',
+  `assignee_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '处理人ID',
+  `assignee_name` VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '处理人昵称(冗余)',
+  `delegate_from_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '委派来源任务ID(0=非被委派任务,>0=被委派的代办任务)',
+  `status`        TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效(退回/撤销后原同意失效),7=已委派,8=委办完成',
+  `comment`       VARCHAR(500) NOT NULL DEFAULT ''     COMMENT '审批意见',
+  `receive_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '到达时间',
+  `due_time`      DATETIME     NULL                   COMMENT '办理期限(节点超时配置物化,NULL=不限)',
+  `acted_at`      DATETIME     NULL                   COMMENT '处理时间',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_instance` (`instance_id`),
+  KEY `idx_assignee` (`assignee_id`, `status`),
+  KEY `idx_status_due` (`status`, `due_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批任务';
+
+-- ------------------------------------------------------------
+-- 流转记录 (只追加时间线, 含系统动作; operator=0 表示系统)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wf_record` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `instance_id`   BIGINT UNSIGNED NOT NULL             COMMENT '实例ID',
+  `task_id`       BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '关联任务ID(无则为0)',
+  `node_id`       VARCHAR(32)  NOT NULL DEFAULT ''     COMMENT '节点ID',
+  `node_name`     VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '节点名称',
+  `action`        VARCHAR(16)  NOT NULL                COMMENT '动作:submit/resubmit/approve/reject/back/cancel/withdraw/cc/finish/transfer/delegate/delegateResolve/terminate/urge/append/reduce/timeoutRemind/timeoutTransfer/timeoutApprove',
+  `operator_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '操作人ID(0=系统)',
+  `operator_name` VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '操作人昵称(0=系统)',
+  `comment`       VARCHAR(500) NOT NULL DEFAULT ''     COMMENT '备注/意见',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_instance` (`instance_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流转记录';
+
+-- ------------------------------------------------------------
+-- 岗位管理: 审批人解析依据 (指定岗位 / 部门主管岗)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `sys_post` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `post_code`  VARCHAR(32)  NOT NULL                COMMENT '岗位编码(唯一, 如 hr, dept_leader)',
+  `post_name`  VARCHAR(64)  NOT NULL                COMMENT '岗位名称',
+  `post_kind`  TINYINT      NOT NULL DEFAULT 1      COMMENT '岗位类型:1=普通岗,2=主管岗(部门主管解析依据)',
+  `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
+  `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
+  `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_post_code` (`post_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='岗位管理';
+
+-- 用户挂岗 (谁在哪个组织担任什么岗位; 纯关联表, 物理删除, 无审计列)
+CREATE TABLE IF NOT EXISTS `sys_user_post` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id`    BIGINT UNSIGNED NOT NULL                COMMENT '用户ID',
+  `post_id`    BIGINT UNSIGNED NOT NULL                COMMENT '岗位ID',
+  `org_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '组织ID(0=不限定组织)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_post_org` (`user_id`, `post_id`, `org_id`),
+  KEY `idx_post` (`post_id`),
+  KEY `idx_org` (`org_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户岗位关联';
+
+-- 内置两个常用岗位 (原 p002 种子)
+INSERT IGNORE INTO `sys_post` (`post_code`,`post_name`,`post_kind`,`sort`,`status`,`remark`) VALUES
+  ('dept_leader', '部门主管', 2, 1, 1, '主管岗: 部门主管解析时优先取挂此岗的用户(可自定义多个主管岗)'),
+  ('general_manager', '总经理', 2, 2, 1, '示例主管岗');
+
+-- ------------------------------------------------------------
+-- 菜单 (9000 号段: 审批中心 + 岗位管理; 岗位管理挂社区版"系统管理"目录 id=1 下)
+-- ------------------------------------------------------------
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9000, 0,    '审批中心', 1, '/flow',              'Layout',                 'Stamp',   'flow',                 30, 1, 1),
+  (9010, 9000, '流程定义', 2, '/flow/definitions',  'flow/definitions/index', 'Tickets', 'flow:definition:list', 31, 1, 1),
+  (9020, 9000, '我的审批', 2, '/flow/center',       'flow/center/index',      'Check',   'flow:instance:list',   32, 1, 1),
+  -- 流程详情页: 侧边栏不可见 (从列表/待办跳转进入)
+  (9030, 9000, '流程详情', 2, '/flow/detail',       'flow/detail/index',      '',        'flow:instance:list',   33, 0, 1),
+  -- 实例管理 (管理员全局视角, 默认仅超管可见): 全部审批记录 + 动态加签/减签/中止
+  (9050, 9000, '实例管理', 2, '/flow/instances',    'flow/instances/index',   'Files',   'flow:instance:manage', 34, 1, 1),
+  -- 按钮权限
+  (9011, 9010, '定义新增', 3, '', '', '', 'flow:definition:create',  1, 0, 1),
+  (9012, 9010, '定义修改', 3, '', '', '', 'flow:definition:update',  2, 0, 1),
+  (9013, 9010, '定义删除', 3, '', '', '', 'flow:definition:delete',  3, 0, 1),
+  (9014, 9010, '定义发布', 3, '', '', '', 'flow:definition:publish', 4, 0, 1),
+  (9021, 9020, '发起流程', 3, '', '', '', 'flow:instance:start',    1, 0, 1),
+  (9022, 9020, '撤销流程', 3, '', '', '', 'flow:instance:cancel',   2, 0, 1),
+  (9023, 9020, '审批操作', 3, '', '', '', 'flow:task:handle',       3, 0, 1),
+  (9040, 1, '岗位管理', 2, '/system/posts', 'system/posts/index', 'Suitcase', 'system:post:list', 15, 1, 1),
+  (9041, 9040, '岗位新增', 3, '', '', '', 'system:post:create', 1, 0, 1),
+  (9042, 9040, '岗位修改', 3, '', '', '', 'system:post:update', 2, 0, 1),
+  (9043, 9040, '岗位删除', 3, '', '', '', 'system:post:delete', 3, 0, 1);
+
+-- ------------------------------------------------------------
+-- API 资源 (依赖 sys_api uk_path_method 唯一键幂等)
+-- ------------------------------------------------------------
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/flow/definitions',            'GET',    '审批中心', '流程定义列表'),
+  ('/api/v1/flow/definitions/usable',     'GET',    '审批中心', '可发起的流程列表(最新发布版)'),
+  ('/api/v1/flow/definitions',            'POST',   '审批中心', '新增流程定义(草稿)'),
+  ('/api/v1/flow/definitions/{id}',       'GET',    '审批中心', '流程定义详情'),
+  ('/api/v1/flow/definitions/{id}',       'PUT',    '审批中心', '修改流程定义(仅草稿)'),
+  ('/api/v1/flow/definitions/{id}',       'DELETE', '审批中心', '删除流程定义(仅草稿)'),
+  ('/api/v1/flow/definitions/{id}/publish', 'POST', '审批中心', '发布流程定义(生成新版本)'),
+  ('/api/v1/flow/definitions/{id}/disable', 'POST', '审批中心', '停用流程定义版本'),
+  ('/api/v1/flow/designer/options',       'GET',    '审批中心', '设计器选项(用户/角色)'),
+  ('/api/v1/flow/instances',              'GET',    '审批中心', '流程实例列表(待办/已办/我发起/抄送/全部-管理员)'),
+  ('/api/v1/flow/instances',              'POST',   '审批中心', '发起流程'),
+  ('/api/v1/flow/instances/{id}',         'GET',    '审批中心', '流程实例详情'),
+  ('/api/v1/flow/instances/{id}/cancel',  'POST',   '审批中心', '撤销流程(发起人)'),
+  ('/api/v1/flow/instances/{id}/withdraw', 'POST',  '审批中心', '撤回流程(发起人,尚无审批时收回待改)'),
+  ('/api/v1/flow/instances/{id}/resubmit','POST',   '审批中心', '重新提交(退回后)'),
+  ('/api/v1/flow/instances/{id}/terminate','POST',  '审批中心', '终止流程(管理员)'),
+  ('/api/v1/flow/instances/{id}/urge',    'POST',   '审批中心', '催办(发起人, 10分钟限一次)'),
+  ('/api/v1/flow/tasks/{id}/transfer',    'POST',   '审批中心', '转办(待办转给他人)'),
+  ('/api/v1/flow/tasks/{id}/delegate',        'POST', '审批中心', '委派(代办后回到原审批人终审)'),
+  ('/api/v1/flow/tasks/{id}/delegateResolve', 'POST', '审批中心', '委派处理(被委托人提交意见)'),
+  ('/api/v1/flow/tasks/{id}/append',      'POST',   '审批中心', '加签(当前节点追加必要审批人)'),
+  ('/api/v1/flow/tasks/{id}/reduce',      'POST',   '审批中心', '减签(移除节点待办审批人)'),
+  ('/api/v1/flow/tasks/{id}/approve',     'POST',   '审批中心', '同意'),
+  ('/api/v1/flow/tasks/{id}/reject',      'POST',   '审批中心', '驳回'),
+  ('/api/v1/flow/tasks/{id}/read',        'PUT',    '审批中心', '抄送已读'),
+  ('/api/v1/flow/tasks/count',            'GET',    '审批中心', '待办/待阅数量'),
+  ('/api/v1/system/posts',                'GET',    '岗位管理', '岗位分页列表'),
+  ('/api/v1/system/posts/all',            'GET',    '岗位管理', '启用岗位全量'),
+  ('/api/v1/system/posts',                'POST',   '岗位管理', '新增岗位'),
+  ('/api/v1/system/posts/{id}',           'PUT',    '岗位管理', '修改岗位'),
+  ('/api/v1/system/posts/{id}',           'DELETE', '岗位管理', '删除岗位'),
+  ('/api/v1/system/posts/{id}/members',   'GET',    '岗位管理', '岗位成员列表'),
+  ('/api/v1/system/posts/{id}/members',   'POST',   '岗位管理', '添加岗位成员'),
+  ('/api/v1/system/posts/members/{relId}','DELETE', '岗位管理', '移除岗位成员'),
+  -- 社区版模块历史缺漏补种 (原 p013, tools/genapi -check 扫描发现)
+  ('/api/v1/auth/avatar',                'POST', '认证',     '上传头像'),
+  ('/api/v1/auth/login/totp',            'POST', '认证',     '两步验证登录'),
+  ('/api/v1/auth/public-key',            'GET',  '认证',     '获取登录加密公钥'),
+  ('/api/v1/auth/totp/disable',          'PUT',  '认证',     '解绑两步验证'),
+  ('/api/v1/auth/totp/enable',           'PUT',  '认证',     '绑定两步验证'),
+  ('/api/v1/auth/totp/setup',            'GET',  '认证',     '生成两步验证密钥'),
+  ('/api/v1/message/events',             'GET',  '消息通知', '消息事件流(SSE)'),
+  ('/api/v1/system/apis/all',            'GET',  'API管理',  '全量API'),
+  ('/api/v1/system/roles/all',           'GET',  '角色管理', '全量角色'),
+  ('/api/v1/system/users/{id}/password', 'PUT',  '用户管理', '重置密码');
+
+-- ############################################################
+-- 二、AI 智能对话 (原 p003/p005/p006/p007)
+-- OpenAI 兼容接口 (基于 langchaingo), 配置存 sys_config (全局配置页维护);
+-- 会话与消息 MySQL 持久化, 上下文取最近 20 条, 历史查看全量。
+-- ############################################################
+
+-- 会话与消息表 (原 p007)
+CREATE TABLE IF NOT EXISTS `ai_conversation` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `session_id`    VARCHAR(64)  NOT NULL                   COMMENT '会话ID(前端生成并保管)',
+  `user_id`       BIGINT UNSIGNED NOT NULL                COMMENT '所属用户ID',
+  `title`         VARCHAR(128) NOT NULL DEFAULT ''        COMMENT '会话标题(首条用户消息裁剪)',
+  `message_count` INT UNSIGNED NOT NULL DEFAULT 0         COMMENT '累计消息条数(user+assistant)',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最近一轮对话时间',
+  `deleted_at`    DATETIME     DEFAULT NULL               COMMENT '未使用(保留列对齐代码生成器约定)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_session_id` (`session_id`),
+  KEY `idx_user_updated` (`user_id`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI会话';
+
+CREATE TABLE IF NOT EXISTS `ai_chat_message` (
+  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `conversation_id` BIGINT UNSIGNED NOT NULL               COMMENT '会话ID(ai_conversation.id)',
+  `role`            VARCHAR(16)  NOT NULL                  COMMENT '角色:user/assistant/tool(tool=工具调用步骤,内容为步骤JSON)',
+  `content`         MEDIUMTEXT   NOT NULL                  COMMENT '消息正文(思考过程不落库)',
+  `prompt_tokens`     INT UNSIGNED DEFAULT NULL            COMMENT '输入token用量(仅assistant行,本轮累计)',
+  `completion_tokens` INT UNSIGNED DEFAULT NULL            COMMENT '输出token用量(仅assistant行,本轮累计)',
+  `total_tokens`      INT UNSIGNED DEFAULT NULL            COMMENT '总token用量(仅assistant行;网关未回报为0)',
+  `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at`      DATETIME     DEFAULT NULL               COMMENT '未使用(保留列对齐代码生成器约定)',
+  PRIMARY KEY (`id`),
+  KEY `idx_conversation` (`conversation_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI会话消息';
+
+-- 菜单 (9100 号段: AI 助手)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9100, 0,    'AI 助手', 1, '/ai',       'Layout',            'MagicStick',   'ai',            40, 1, 1),
+  (9110, 9100, '智能对话', 2, '/ai/chat', 'ai/chat/index',     'ChatDotRound', 'ai:chat:list',  41, 1, 1);
+
+-- API 资源 (原 p003/p005/p006)
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/ai/chat',     'POST',   'AI助手', 'AI对话(流式SSE)'),
+  ('/api/v1/ai/config',   'GET',    'AI助手', 'AI配置状态'),
+  ('/api/v1/ai/history',  'GET',    'AI助手', 'AI会话历史(恢复界面)'),
+  ('/api/v1/ai/sessions', 'GET',    'AI助手', 'AI会话列表(历史会话栏)'),
+  ('/api/v1/ai/sessions', 'DELETE', 'AI助手', 'AI会话删除');
+
+-- 配置种子 (api_key 不预置, 管理员自行填写; uk_config_key 幂等)
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('ai.base_url',      'https://api.openai.com/v1', 0, 'AI接口地址',  'OpenAI 兼容地址, 可换 DeepSeek/通义兼容模式/Ollama 等', 50),
+  ('ai.model',         'gpt-4o-mini',               0, 'AI模型',      '如 gpt-4o-mini / deepseek-chat / qwen-plus',           51),
+  ('ai.temperature',   '0.7',                       1, 'AI温度',      '0-2, 越低越确定, 越高越发散',                          52),
+  ('ai.system_prompt', '',                          0, 'AI系统提示词', '全局系统提示词, 可空',                                 53),
+  ('ai.api_key',       '',                          0, 'AI API Key',  'OpenAI 兼容接口密钥, 填写后 AI 对话可用',               54);
+
+-- ############################################################
+-- 三、微信公众号对接 (原 p004, 占位, 基于 silenceper/wechat/v2)
+-- 回调地址: /wechat/callback (根路由, 免鉴权, 供微信服务器调用;
+--          部署时需暴露公网, nginx 反代规则同 /upload)
+-- 消息处理: Echo 占位 (回复用户发送的文本)
+-- ############################################################
+
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('wechat.app_id',           '', 0, '微信公众号AppID',     '公众号开发信息中的 AppID',                 60),
+  ('wechat.app_secret',       '', 0, '微信公众号AppSecret', '公众号开发信息中的 AppSecret',             61),
+  ('wechat.token',            '', 0, '微信服务器Token',      '公众号服务器配置的 Token (用于URL验签)',   62),
+  ('wechat.encoding_aes_key', '', 0, '消息加解密密钥',       'EncodingAESKey, 明文模式可留空',           63);
+
+-- ############################################################
+-- 四、业务审批 Demo: 请假申请 (原 p016)
+-- 演示「业务表 + 编程式接入」: 业务数据存 biz_leave 单表, 不走流程表单设计器;
+-- 后端 leave 模块调 flow.StartForBiz(flowKey="biz_leave") 发起, flow_status 全部由
+-- flow.RegisterBizListener 四回调 (通过/退回/撤销/终止) 写回 —— 业务侧不写审批状态机。
+-- 演示流程定义 (条件分支+会签+抄送) 与测试账号授权依赖 p012, 见
+-- upgrade-modules/p016_biz_leave_demo.sql (可选种子)。
+-- ############################################################
+
+CREATE TABLE IF NOT EXISTS `biz_leave` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `leave_type`    TINYINT      NOT NULL DEFAULT 1         COMMENT '请假类型:1=事假,2=病假,3=年假,4=调休,5=其他',
+  `start_date`    DATE         NOT NULL                   COMMENT '开始日期',
+  `end_date`      DATE         NOT NULL                   COMMENT '结束日期',
+  `days`          DECIMAL(5,1) NOT NULL DEFAULT 1.0       COMMENT '请假天数(0.5天粒度,申请人填报)',
+  `reason`        VARCHAR(500) NOT NULL DEFAULT ''        COMMENT '请假事由',
+  `flow_status`   TINYINT      NOT NULL DEFAULT 0         COMMENT '审批状态:0=审批中,1=已通过,2=被退回,3=已撤销,4=已终止(引擎回调写入;未发起时无意义)',
+  `flow_instance` BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '流程实例ID(0=未发起/草稿)',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  KEY `idx_create` (`create_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请假申请(业务审批Demo)';
+
+-- 菜单 (9200 号段: 业务审批)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9200, 0,    '业务审批', 1, '/biz',       'Layout',           'Calendar', 'biz',              35, 1, 1),
+  (9210, 9200, '请假申请', 2, '/biz/leave', 'biz/leave/index',  'AlarmClock', 'biz:leave:list', 36, 1, 1),
+  (9211, 9210, '假单新增', 3, '', '', '', 'biz:leave:create', 1, 0, 1),
+  (9212, 9210, '假单修改', 3, '', '', '', 'biz:leave:update', 2, 0, 1),
+  (9213, 9210, '假单删除', 3, '', '', '', 'biz:leave:delete', 3, 0, 1),
+  (9214, 9210, '提交审批', 3, '', '', '', 'biz:leave:submit', 4, 0, 1),
+  (9215, 9210, '撤销审批', 3, '', '', '', 'biz:leave:cancel', 5, 0, 1);
+
+-- API 资源
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/leaves',              'GET',    '业务审批', '请假申请列表(本人;admin全部)'),
+  ('/api/v1/leaves',              'POST',   '业务审批', '新增请假申请(草稿)'),
+  ('/api/v1/leaves/{id}',         'PUT',    '业务审批', '修改请假申请(未在审批流中)'),
+  ('/api/v1/leaves/{id}',         'DELETE', '业务审批', '删除请假申请(未在审批流中)'),
+  ('/api/v1/leaves/{id}/submit',  'POST',   '业务审批', '提交审批(草稿发起/退回撤销后重提)'),
+  ('/api/v1/leaves/{id}/cancel',  'POST',   '业务审批', '撤销审批(发起人,运行中或退回态)');
+
+-- ############################################################
+-- 五、流程超时扫描定时任务 (原 p018)
+-- 审批节点配置办理期限后, 引擎生成任务时物化 due_time;
+-- 本任务按节点超时策略处理逾期: 提醒/自动转办/自动通过。
+-- 幂等: handler 未种子过才插入; 网页端 定时任务 页可调频率/暂停。
+-- ############################################################
+INSERT IGNORE INTO `sys_job` (`name`,`handler`,`cron_expr`,`params`,`status`,`remark`)
+SELECT '流程超时扫描', 'flow.timeoutScan', '0 */10 * * * *', '', 1,
+       '审批任务超时处理: 提醒/自动转办/自动通过 (按审批节点超时配置, 无配置不受影响)'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_job` WHERE `handler` = 'flow.timeoutScan' AND `deleted_at` IS NULL);

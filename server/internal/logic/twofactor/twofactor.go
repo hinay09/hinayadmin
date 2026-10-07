@@ -137,7 +137,7 @@ func (s *sTwoFactor) Enabled(ctx context.Context, userId uint64) bool {
 	if err != nil {
 		warnQueryOnce.Do(func() {
 			g.Log().Warningf(ctx,
-				"查询 sys_user_totp 失败, 两步验证按未开启降级 (登录不受影响; 若未建表请执行 manifest/sql/upgrade/0011_totp.sql): %v", err)
+				"查询 sys_user_totp 失败, 两步验证按未开启降级 (登录不受影响; 若未建表请执行 manifest/sql/init.sql): %v", err)
 		})
 		return false
 	}
