@@ -34,6 +34,10 @@
 - 中间件链: CORS / RequestId / 全局限流 / 安全响应头 / 操作日志 / JWT 鉴权 / Casbin 权限
 - 代码生成器 (CLI + 网页版): 见下方「CRUD 代码生成」
 - GoFrame 工程化分层: `api -> controller -> service -> logic -> dao` (gen ctrl / gen dao / gen service)
+- 自由审批流: 表单/流程可视化设计器, 发起/审批/驳回/转办/加签/减签/中止, 会签与或签, 审批人支持指定岗位与部门主管解析, 审批中心 (我的审批 / 实例管理); 业务审批标准模板见 `docs/flow-template.md` (内置请假申请 Demo)
+- 岗位管理 (`sys_post`): 用户挂多岗位, 作为审批流「指定岗位」审批人的解析依据
+- AI 智能对话: OpenAI 兼容接口 (langchaingo), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
+- 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
 
 ## 目录结构
 
@@ -84,7 +88,8 @@ hinay-admin/
 │   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin/ratelimit/gencode)
 │   │   └── sql/
 │   │       ├── init.sql                 # 全新安装: DDL + 种子 + 初始策略
-│   │       └── upgrade/                 # 存量库增量脚本 (0001-0009, 按序执行)
+│   │       ├── upgrade/                 # 基座存量库增量脚本 (按序号执行)
+│   │       └── upgrade-modules/             # 审批流/岗位/AI/请假 Demo (modules_init.sql + pNNN 增量)
 │   └── Makefile                         # run / initdb / vet / fmt / tidy / gen-crud
 └── web_src/                             # Nuxt 4 前端
     ├── app/
@@ -140,8 +145,9 @@ hinay-admin/
 ```bash
 cd server
 make initdb DB_USER=root DB_PASS=yourpass DB_NAME=hinay_admin
-# 或手动:
+# 或手动 (全新安装需依序执行两步, modules_init 幂等可重跑):
 mysql -uroot -p hinay_admin < manifest/sql/init.sql
+mysql -uroot -p hinay_admin < manifest/sql/upgrade-modules/modules_init.sql
 ```
 
 `init.sql` 会创建以下表并写入种子数据:
@@ -161,6 +167,10 @@ mysql -uroot -p hinay_admin < manifest/sql/init.sql
 | `sys_dict_data` | 字典数据项 (支持排序) |
 | `sys_file` | 文件管理 |
 | `sys_audit_log` | 操作审计日志 |
+
+> 第二步的 `modules_init.sql` 追建审批流 (`wf_definition`/`wf_instance`/`wf_task`/`wf_record`)、
+> 岗位 (`sys_post`/`sys_user_post`)、AI 会话 (`ai_conversation`/`ai_chat_message`)、
+> 请假 Demo (`biz_leave`) 的表结构与 9000 号段菜单/权限种子。
 
 ### 3. 启动后端
 
@@ -227,7 +237,7 @@ docker compose up -d --build
 - 拉取 MySQL 8.0、Redis 7、Node.js 22、Go 1.26 等基础镜像
 - 编译 Go 后端二进制
 - 构建 Nuxt 前端产物
-- 初始化数据库 (执行 `init.sql`, 创建表和种子数据)
+- 初始化数据库 (依序执行 `init.sql` 与 `upgrade-modules/modules_init.sql`, 创建表和种子数据)
 
 ### 3. 访问
 
@@ -457,17 +467,17 @@ make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
 
 生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 upgrade SQL 并分配角色权限即可。演示见 `-dry` 输出。
 
-**sys_api 种子 SQL 生成器** (`server/tools/genapi`, 无需连库): CRUD 生成器产出的升级 SQL 自带 sys_api 行, 但**手写** API 契约 (如消息中心/认证的 TOTP 等) 的 `sys_api` INSERT 行此前需手工编写, 路径/方法/描述容易抄漏。本工具扫描 `api/` 目录下所有 `g.Meta` 路由标签, 自动生成幂等的 `INSERT IGNORE` 种子块:
+**sys_api 种子 SQL 生成器** (`server/tools/genapi`, 无需连库): CRUD 生成器产出的升级 SQL 自带 sys_api 行, 但**手写** API 契约 (如审批流加签/减签) 的 `sys_api` INSERT 行此前需手工编写, 路径/方法/描述容易抄漏。本工具扫描 `api/` 目录下所有 `g.Meta` 路由标签, 自动生成幂等的 `INSERT IGNORE` 种子块:
 
 ```bash
 cd server
-make gen-api-sql                          # 全量路由 → stdout (按分组排序对齐)
-make gen-api-sql PKG=message              # 只生成 api/message 模块
-make gen-api-sql PKG=message OUT=manifest/sql/upgrade/pXXX_xxx.sql   # 直接写升级脚本
-make gen-api-sql CHECK=1                  # 对照 manifest/sql 种子, 报告尚未入库的路由 (缺则退出码 1, 可当提交前检查)
+make gen-api-sql                       # 全量路由 → stdout (135+ 条, 按分组排序对齐)
+make gen-api-sql PKG=flow              # 只生成 api/flow 模块
+make gen-api-sql PKG=flow OUT=manifest/sql/upgrade-modules/pXXX_xxx.sql   # 直接写升级脚本
+make gen-api-sql CHECK=1               # 对照 manifest/sql 种子, 报告尚未入库的路由 (缺则退出码 1, 可当提交前检查)
 ```
 
-说明: 分组名默认按 `tags` 映射为中文 (`Message=消息通知` 等, 全表见工具内 `defaultGroupNames`, 可用 `-map New=新模块` 覆盖); 路径参数沿用 `g.Meta` 的 `{id}` 花括号风格, Casbin 匹配器已同时兼容 `:id` 与 `{id}`; `-check` 曾一次性发现 10 条历史漏种 (TOTP/SSE/头像等), 已补入 init.sql 的 sys_api 种子块。
+说明: 分组名默认按 `tags` 映射为中文 (`Flow=审批中心` 等, 全表见工具内 `defaultGroupNames`, 可用 `-map New=新模块` 覆盖); 路径参数沿用 `g.Meta` 的 `{id}` 花括号风格, Casbin 匹配器已同时兼容 `:id` 与 `{id}`; `-check` 曾一次性发现 10 条历史漏种 (TOTP/SSE/头像等), 已并入 `modules_init.sql` 的 sys_api 种子块。
 
 **密码策略**: 全局配置页修改 `sys.password.*` 即时生效——
 - 复杂度: `min_length`/`max_length`/`require_upper`/`require_lower`/`require_digit`/`require_special`, 校验挂在改密/创建用户/重置密码/Excel 导入四处 (`logic/pwdpolicy`);
@@ -521,16 +531,16 @@ if err = q.Ctx(ctx).Page(req.Page, req.PageSize).Order("id DESC").Scan(&rows); e
 # 后端
 cd server
 make run            # go run main.go
-make initdb         # 初始化数据库 (全新安装, 执行 init.sql)
+make initdb         # 初始化数据库 (全新安装, 执行 init.sql; 随后执行 upgrade-modules/modules_init.sql)
 make vet            # go vet ./...
 make fmt            # gofmt -s -w .
 make tidy           # go mod tidy
 make gen-crud TABLE=biz_xxx TITLE="xx管理"   # CRUD 代码生成 (DRY=1 仅预览)
 
 # 存量库升级
-# 按序执行 server/manifest/sql/upgrade/ 下的增量脚本:
-#   0001 登录日志 / 0002 在线用户 / 0003 定时任务 / 0004 数据权限
-#   0005 Excel / 0006 移除登录日志清空 / 0007 审计字段 / 0008 密码策略 / 0009 代码生成
+# 按文件名序号执行 server/manifest/sql/upgrade/ 下的增量脚本
+# 审批流/岗位/AI 模块的表与种子在 server/manifest/sql/upgrade-modules/:
+#   全新安装只需 init.sql + upgrade-modules/modules_init.sql; 存量库按序补跑 pNNN
 
 # 前端
 cd web_src

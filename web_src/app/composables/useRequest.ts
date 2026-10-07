@@ -222,8 +222,8 @@ export function useRequest() {
       request<T>(url, { method: 'POST', body }),
     put: <T = any>(url: string, body?: any) =>
       request<T>(url, { method: 'PUT', body }),
-    del: <T = any>(url: string) =>
-      request<T>(url, { method: 'DELETE' }),
+    del: <T = any>(url: string, query?: any) =>
+      request<T>(url, { method: 'DELETE', query }),
     download,
   }
 }

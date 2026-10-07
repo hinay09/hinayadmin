@@ -48,6 +48,13 @@ var fillTables = map[string]struct{}{
 	"sys_file":      {},
 	"sys_job":       {},
 	"biz_message":   {},
+	// 审批流 (wf_task/wf_record 为行为表, 行为人即 assignee/operator, 不纳入;
+	// sys_user_post 为纯关联表, 不纳入)
+	"wf_definition": {},
+	"wf_instance":   {},
+	"sys_post":      {},
+	// 业务审批 Demo: 请假申请 (flow_status/flow_instance 由引擎回调维护)
+	"biz_leave": {},
 }
 
 // Driver 审计字段填充驱动: 继承内置 mysql 驱动, 重写 DoInsert / DoUpdate。

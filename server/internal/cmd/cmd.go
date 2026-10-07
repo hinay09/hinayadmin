@@ -12,8 +12,12 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 	"hinay.cn/admin/internal/controller/system"
 
+	"hinay.cn/admin/internal/controller/ai"
 	"hinay.cn/admin/internal/controller/auth"
+	"hinay.cn/admin/internal/controller/flow"
+	"hinay.cn/admin/internal/controller/leave"
 	"hinay.cn/admin/internal/controller/message"
+	"hinay.cn/admin/internal/controller/post"
 	"hinay.cn/admin/internal/logic/casbinx"
 	"hinay.cn/admin/internal/middleware"
 	"hinay.cn/admin/internal/service"
@@ -59,11 +63,21 @@ var Main = gcmd.Command{
 			grp.Group("/", func(sec *ghttp.RouterGroup) {
 				sec.Middleware(middleware.Auth, middleware.Casbin)
 				sec.Bind(
+					ai.NewV1(),
 					auth.NewV1(),
+					flow.NewV1(),
+					leave.NewV1(),
 					message.NewV1(),
+					post.NewV1(),
 					system.NewV1(),
 				)
 			})
+		})
+
+		// 微信公众号回调 (占位): 微信服务器直接调用, 不走鉴权;
+		// 部署时需将 /wechat/callback 暴露公网 (nginx 反代规则同 /upload)。
+		s.BindHandler("/wechat/callback", func(r *ghttp.Request) {
+			service.Wechat().Callback(r)
 		})
 
 		// 上传文件静态服务(替代 AddStaticPath, 以便附加安全响应头)。

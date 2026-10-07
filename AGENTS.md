@@ -14,7 +14,7 @@ make fmt            # gofmt -s -w .
 make tidy           # go mod tidy
 make initdb         # create DB + run manifest/sql/init.sql (mysql client required)
 make gen-crud TABLE=biz_xxx TITLE="xx管理"   # CRUD codegen (DRY=1 = dry run)
-make gen-api-sql [PKG=message] [OUT=x.sql] # scan api/ g.Meta routes -> sys_api seed SQL (CHECK=1 = lint)
+make gen-api-sql [PKG=flow] [OUT=x.sql]  # scan api/ g.Meta routes -> sys_api seed SQL (CHECK=1 = lint)
 
 # Frontend (Nuxt 4 + Vue 3 + Element Plus + Pinia, yarn)
 cd web_src
@@ -39,6 +39,7 @@ There are **no automated tests**. Verify with `make vet` / `yarn build`.
 - Casbin: `Enforce()` takes the **user ID**; `g`/`p` rows are keyed by 用户ID/角色ID (numeric strings) — role `code` is display-only, renames never break policies. `g(r.sub, p.sub)` maps users→roles. Two policy dimensions: `p, roleId, menu:<id>, *` and `p, roleId, /api/path, METHOD`. The enforcer uses a custom `memAdapter` reading the `casbin_rule` table (not file-based); after policy changes call `casbinx.Reload(ctx)` to rebuild it. Existing installs migrate legacy string keys via `manifest/sql/upgrade/0012_casbin_id_subject.sql`.
 - OperationLog middleware: after the handler returns, an async goroutine (`context.Background()`) inserts audit rows for POST/PUT/DELETE. Multipart uploads never write the raw body to DB — upload logic stashes a file summary (name/size/content-type) via `contextx.SetAuditUpload`, which the middleware reads into the `detail` column.
 - Demo mode (`utility/demox`): `DEMO_MODE` env var takes precedence over `demo.enable` config; when on, password change/reset is globally blocked (428).
+- Business-approval features (leave/expense/contract… any approval with its own business table) follow the standard template in `docs/flow-template.md`: 业务与流程分离 — business CRUD on the draft row, submit via the shared `<FlowSubmitDialog :show-form="false">` dialog, `flow_status` written only by `flow.RegisterBizListener` callbacks. Reference implementation: `server/internal/logic/leave` + `web_src/app/pages/biz/leave` + seed `p016`.
 
 ## Database rules
 
@@ -47,6 +48,7 @@ There are **no automated tests**. Verify with `make vet` / `yarn build`.
 - All core tables use soft delete (`deleted_at`), handled by DAO automatically.
 - `create_id`/`update_id` are auto-filled by the `ormfill` mysql driver override (`internal/logic/ormfill/`) — business code must never set them. **New business tables must be added to the `fillTables` whitelist** there, and only tables that actually have both columns (otherwise inserts fail with unknown-column errors).
 - Audit-fill excluded tables: `casbin_rule`, log tables (`sys_audit_log`, `sys_login_log`, `sys_job_log`), `biz_message_read`, `biz_message_target`.
+- Same exception as `sys_user_totp`: AI conversation tables (`ai_conversation`, `ai_chat_message`) have NO `create_id`/`update_id` (owner is `ai_conversation.user_id`) → **not** in `ormfill.fillTables`; conversation delete is physical (`Unscoped`) because `uk_session_id` conflicts with soft-deleted rows.
 - Login log has no clear-all by design (GoFrame blocks unconditional DELETE) — per-ID delete only.
 
 ## Context & user extraction
@@ -72,6 +74,6 @@ isAdmin := contextx.IsAdmin(ctx)  // "admin" role check via Casbin
 - `server/manifest/config/config.yaml` contains real DB credentials and JWT secret (defaults: mysql `root`, secret `hinay-admin-please-change-me`). Don't commit credential changes inadvertently; `config.docker.yaml` is the container variant.
 - `/upload` static files are served **outside** the auth middleware group — public by design.
 - `make gen-crud` parses DDL from `manifest/sql/init.sql` (no DB connection needed) and auto-wires `logic.go`, `cmd.go`, `useApi/index.ts`; web-based codegen (`gencode.enable`, default off) can zip-download or write into the source tree (refused inside containers).
-- 仓库自带 `goframe-v2` 技能（`.agents/skills/goframe-v2`，GoFrame v2 官方文档与示例的本地镜像），改后端时可查阅。
+- Flow/AI/post/leave module tables and seeds live in `server/manifest/sql/upgrade-modules/` (`modules_init.sql` is the idempotent full seed for fresh installs — runs after `init.sql`); incremental scripts there are numbered `pNNN`. Docs: `docs/flow-integration.md`, `docs/flow-frontend.md`, `docs/flow-template.md`.
 - SQL upgrades live in `server/manifest/sql/upgrade/`; init schema in `server/manifest/sql/init.sql`.
 - Comments and docs are in Chinese; commit messages follow the existing Chinese `主题: 描述` style.
