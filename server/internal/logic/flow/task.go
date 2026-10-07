@@ -604,23 +604,27 @@ func (s *sFlow) TaskRead(ctx context.Context, in *v1.FlowTaskReadReq) (res *v1.F
 // TaskCount 我的待办/待阅数量。
 func (s *sFlow) TaskCount(ctx context.Context, in *v1.FlowTaskCountReq) (res *v1.FlowTaskCountRes, err error) {
 	uid := contextx.UserId(ctx)
-	todo, err := dao.WfTask.Ctx(ctx).
+	// 一次分组查询同时取待办/待阅两档计数 (原先两条 COUNT 合并)
+	rows, err := dao.WfTask.Ctx(ctx).
 		Where("assignee_id", uid).
-		Where("node_type", taskNodeTypeApprove).
 		Where("status", taskStatusPending).
-		Count()
+		WhereIn("node_type", []int{taskNodeTypeApprove, taskNodeTypeCC}).
+		Fields("node_type", "COUNT(*) AS cnt").
+		Group("node_type").
+		All()
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	cc, err := dao.WfTask.Ctx(ctx).
-		Where("assignee_id", uid).
-		Where("node_type", taskNodeTypeCC).
-		Where("status", taskStatusPending).
-		Count()
-	if err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	res = &v1.FlowTaskCountRes{}
+	for _, r := range rows {
+		switch r["node_type"].Int() {
+		case taskNodeTypeApprove:
+			res.Todo = r["cnt"].Int()
+		case taskNodeTypeCC:
+			res.Cc = r["cnt"].Int()
+		}
 	}
-	return &v1.FlowTaskCountRes{Todo: int(todo), Cc: int(cc)}, nil
+	return res, nil
 }
 
 // ============================================================

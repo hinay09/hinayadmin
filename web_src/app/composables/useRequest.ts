@@ -45,6 +45,8 @@ export function useRequest() {
     url: string,
     options: any = {},
   ): Promise<T> {
+    // silent: 业务失败时不自动弹错误提示, 由调用方汇总展示 (批量循环调用场景)
+    const { silent, ...fetchOptions } = options
     userStore.restore()
     const headers: Record<string, string> = {
       ...(options.headers || {}),
@@ -58,7 +60,7 @@ export function useRequest() {
 
     try {
       const res = await $fetch<ApiResult<T>>(fullUrl, {
-        ...options,
+        ...fetchOptions,
         headers,
       })
       // GoFrame MiddlewareHandlerResponse 返回 {code,message,data}
@@ -66,7 +68,7 @@ export function useRequest() {
         if (res.code === 0) {
           return (res.data ?? null) as T
         }
-        ElMessage.error(res.message || '请求失败')
+        if (!silent) ElMessage.error(res.message || '请求失败')
         const bizErr: any = new Error(res.message || `code=${res.code}`)
         bizErr.code = res.code
         throw bizErr
@@ -85,7 +87,7 @@ export function useRequest() {
             const newToken = await doRefresh(config, userStore)
             // 重试当前请求
             const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` }
-            const retryRes = await $fetch<ApiResult<T>>(fullUrl, { ...options, headers: retryHeaders })
+            const retryRes = await $fetch<ApiResult<T>>(fullUrl, { ...fetchOptions, headers: retryHeaders })
             if (retryRes && typeof retryRes === 'object' && 'code' in retryRes) {
               if (retryRes.code === 0) {
                 retryPending(newToken)
@@ -119,7 +121,7 @@ export function useRequest() {
               }
               try {
                 const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` }
-                const retryRes = await $fetch<ApiResult<T>>(fullUrl, { ...options, headers: retryHeaders })
+                const retryRes = await $fetch<ApiResult<T>>(fullUrl, { ...fetchOptions, headers: retryHeaders })
                 if (retryRes && typeof retryRes === 'object' && 'code' in retryRes) {
                   if (retryRes.code === 0) {
                     resolve((retryRes.data ?? null) as T)
@@ -167,10 +169,10 @@ export function useRequest() {
         }
       }
       else if (data?.message) {
-        ElMessage.error(data.message)
+        if (!silent) ElMessage.error(data.message)
       }
       else if (!err?.message?.startsWith('code=')) {
-        ElMessage.error(err?.message || '网络错误')
+        if (!silent) ElMessage.error(err?.message || '网络错误')
       }
       throw err
     }
@@ -216,14 +218,14 @@ export function useRequest() {
   }
 
   return {
-    get: <T = any>(url: string, query?: any) =>
-      request<T>(url, { method: 'GET', query }),
-    post: <T = any>(url: string, body?: any) =>
-      request<T>(url, { method: 'POST', body }),
-    put: <T = any>(url: string, body?: any) =>
-      request<T>(url, { method: 'PUT', body }),
-    del: <T = any>(url: string, query?: any) =>
-      request<T>(url, { method: 'DELETE', query }),
+    get: <T = any>(url: string, query?: any, opts?: { silent?: boolean }) =>
+      request<T>(url, { method: 'GET', query, silent: opts?.silent }),
+    post: <T = any>(url: string, body?: any, opts?: { silent?: boolean }) =>
+      request<T>(url, { method: 'POST', body, silent: opts?.silent }),
+    put: <T = any>(url: string, body?: any, opts?: { silent?: boolean }) =>
+      request<T>(url, { method: 'PUT', body, silent: opts?.silent }),
+    del: <T = any>(url: string, query?: any, opts?: { silent?: boolean }) =>
+      request<T>(url, { method: 'DELETE', query, silent: opts?.silent }),
     download,
   }
 }

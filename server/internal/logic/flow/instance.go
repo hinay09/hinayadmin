@@ -137,7 +137,7 @@ func startInstanceTx(ctx context.Context, def *entity.WfDefinition, title string
 func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (res *v1.FlowInstanceListRes, err error) {
 	uid := contextx.UserId(ctx)
 	q := dao.WfInstance.Ctx(ctx).Where("deleted_at IS NULL")
-	myTask := map[uint64]uint64{} // instanceId -> 我的任务ID
+	myTaskRow := map[uint64]*entity.WfTask{} // instanceId -> 当前用户的相关任务 (列表项回填任务状态/到达时间)
 
 	switch in.Scope {
 	case "todo":
@@ -149,7 +149,7 @@ func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (r
 			return emptyInstancePage(in), nil
 		}
 		for _, t := range tasks {
-			myTask[t.InstanceId] = t.Id
+			myTaskRow[t.InstanceId] = t
 		}
 		q = q.WhereIn("id", instanceIds(tasks)).Where("status", instStatusRunning)
 	case "done":
@@ -161,9 +161,20 @@ func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (r
 		if len(tasks) == 0 {
 			return emptyInstancePage(in), nil
 		}
+		// 同一实例可能多节点处理过: 任务按 id 倒序, 首次出现即本人最新一次动作
+		for _, t := range tasks {
+			if _, ok := myTaskRow[t.InstanceId]; !ok {
+				myTaskRow[t.InstanceId] = t
+			}
+		}
 		q = q.WhereIn("id", instanceIds(tasks))
 	case "ccme":
-		tasks, te := myTasks(ctx, uid, taskNodeTypeCC, []int{taskStatusPending, taskStatusApproved})
+		// 抄送状态复用任务状态: 1=未读, 2=已阅; 支持前端"只看未读"筛选
+		ccStatuses := []int{taskStatusPending, taskStatusApproved}
+		if in.TaskStatus != nil && (*in.TaskStatus == taskStatusPending || *in.TaskStatus == taskStatusApproved) {
+			ccStatuses = []int{*in.TaskStatus}
+		}
+		tasks, te := myTasks(ctx, uid, taskNodeTypeCC, ccStatuses)
 		if te != nil {
 			return nil, te
 		}
@@ -171,7 +182,7 @@ func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (r
 			return emptyInstancePage(in), nil
 		}
 		for _, t := range tasks {
-			myTask[t.InstanceId] = t.Id
+			myTaskRow[t.InstanceId] = t
 		}
 		q = q.WhereIn("id", instanceIds(tasks))
 	case "mine":
@@ -211,7 +222,7 @@ func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (r
 	nodeNames := currentNodeNamesBatch(ctx, rows)
 	list := make([]*v1.FlowInstanceItem, 0, len(rows))
 	for _, r := range rows {
-		list = append(list, instItem(r, myTask[r.Id], nodeNames[r.Id]))
+		list = append(list, instItem(r, myTaskRow[r.Id], nodeNames[r.Id]))
 	}
 	page := response.Page(list, int64(total), in.Page, in.PageSize)
 	return (*v1.FlowInstanceListRes)(&page), nil
@@ -287,7 +298,7 @@ func (s *sFlow) InstanceDetail(ctx context.Context, in *v1.FlowInstanceDetailReq
 		}
 	}
 	return &v1.FlowInstanceDetailRes{
-		Instance:        instItem(inst, 0, currentNodeNames(ctx, inst)),
+		Instance:        instItem(inst, nil, currentNodeNames(ctx, inst)),
 		FormConf:        formConf,
 		FormData:        inst.FormData,
 		FlowConf:        flowConf,
@@ -820,9 +831,10 @@ func prevSelfSelects(flowConf string, tasks []*entity.WfTask) map[string][]uint6
 	return out
 }
 
-// instItem 实例转 API 条目。
-func instItem(r *entity.WfInstance, taskId uint64, currentNodes string) *v1.FlowInstanceItem {
-	return &v1.FlowInstanceItem{
+// instItem 实例转 API 条目; task 为当前用户在该实例上的相关任务 (可为 nil):
+// 回填任务 ID/状态/到达时间, 供列表页展示停留时长、我的处理结果、抄送未读。
+func instItem(r *entity.WfInstance, task *entity.WfTask, currentNodes string) *v1.FlowInstanceItem {
+	item := &v1.FlowInstanceItem{
 		Id:            r.Id,
 		DefinitionId:  r.DefinitionId,
 		FlowKey:       r.FlowKey,
@@ -833,10 +845,15 @@ func instItem(r *entity.WfInstance, taskId uint64, currentNodes string) *v1.Flow
 		StartUserId:   r.StartUserId,
 		StartUserName: r.StartUserName,
 		CurrentNodes:  currentNodes,
-		TaskId:        taskId,
 		CreatedAt:     r.CreatedAt,
 		FinishedAt:    r.FinishedAt,
 	}
+	if task != nil {
+		item.TaskId = task.Id
+		item.TaskStatus = task.Status
+		item.TaskReceiveTime = task.ReceiveTime
+	}
+	return item
 }
 
 // taskItem 任务转 API 条目。

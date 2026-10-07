@@ -55,9 +55,9 @@ type AiStreamEmit struct {
 
 // AiHistoryMessage 会话历史消息 (工具步骤行 role=tool, 前端折叠渲染到其后紧邻的 assistant 气泡)。
 type AiHistoryMessage struct {
-	Role    string        `json:"role"`           // user / assistant / tool
-	Content string        `json:"content"`        // 正文; role=tool 时为空
-	Tool    *AiToolStep   `json:"tool,omitempty"` // role=tool: 步骤详情
+	Role    string        `json:"role"`            // user / assistant / tool
+	Content string        `json:"content"`         // 正文; role=tool 时为空
+	Tool    *AiToolStep   `json:"tool,omitempty"`  // role=tool: 步骤详情
 	Usage   *AiTokenUsage `json:"usage,omitempty"` // role=assistant: 本轮 token 用量 (旧数据/网关未回报无)
 }
 

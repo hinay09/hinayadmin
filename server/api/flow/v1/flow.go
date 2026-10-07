@@ -177,19 +177,21 @@ type FlowDesignerOptionsRes struct {
 
 // FlowInstanceItem 实例条目。
 type FlowInstanceItem struct {
-	Id            uint64      `json:"id"`
-	DefinitionId  uint64      `json:"definitionId"`
-	FlowKey       string      `json:"flowKey"`
-	BizId         uint64      `json:"bizId"    dc:"业务关联ID, 0=审批中心直接发起"`
-	FlowName      string      `json:"flowName"`
-	Title         string      `json:"title"`
-	Status        int         `json:"status" dc:"1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回待重提"`
-	StartUserId   uint64      `json:"startUserId"`
-	StartUserName string      `json:"startUserName"`
-	CurrentNodes  string      `json:"currentNodes" dc:"当前节点名(逗号分隔, 运行中才有)"`
-	TaskId        uint64      `json:"taskId" dc:"当前用户的相关任务ID(待办/待阅), 0=无"`
-	CreatedAt     *gtime.Time `json:"createdAt"`
-	FinishedAt    *gtime.Time `json:"finishedAt"`
+	Id              uint64      `json:"id"`
+	DefinitionId    uint64      `json:"definitionId"`
+	FlowKey         string      `json:"flowKey"`
+	BizId           uint64      `json:"bizId"    dc:"业务关联ID, 0=审批中心直接发起"`
+	FlowName        string      `json:"flowName"`
+	Title           string      `json:"title"`
+	Status          int         `json:"status" dc:"1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回待重提"`
+	StartUserId     uint64      `json:"startUserId"`
+	StartUserName   string      `json:"startUserName"`
+	CurrentNodes    string      `json:"currentNodes" dc:"当前节点名(逗号分隔, 运行中才有)"`
+	TaskId          uint64      `json:"taskId" dc:"当前用户的相关任务ID(待办/待阅), 0=无"`
+	TaskStatus      int         `json:"taskStatus" dc:"当前用户相关任务状态: 1=待办/待阅, 2=已同意(抄送=已阅), 3=已驳回, 6=已失效, 0=无"`
+	TaskReceiveTime *gtime.Time `json:"taskReceiveTime" dc:"任务到达时间(待办停留时长/待阅未读时长的计算起点)"`
+	CreatedAt       *gtime.Time `json:"createdAt"`
+	FinishedAt      *gtime.Time `json:"finishedAt"`
 }
 
 // FlowInstanceStartReq 发起流程。
@@ -208,13 +210,14 @@ type FlowInstanceStartRes struct {
 
 // FlowInstanceListReq 实例列表 (按 scope 切换视角; all=管理员全局视角, 跨用户列出全部实例)。
 type FlowInstanceListReq struct {
-	g.Meta   `path:"/flow/instances" tags:"Flow" method:"get" summary:"流程实例列表"`
-	Scope    string `json:"scope"    in:"query" d:"todo" v:"in:todo,done,mine,ccme,all#视角取值 todo/done/mine/ccme/all"`
-	Keyword  string `json:"keyword"  in:"query"`
-	Status   *int   `json:"status"   in:"query" dc:"实例状态筛选(mine/all 视角可用)"`
-	FlowKey  string `json:"flowKey"  in:"query" dc:"流程标识精确筛选(仅 all 视角)"`
-	Page     int    `json:"page"     in:"query" d:"1"`
-	PageSize int    `json:"pageSize" in:"query" d:"10"`
+	g.Meta     `path:"/flow/instances" tags:"Flow" method:"get" summary:"流程实例列表"`
+	Scope      string `json:"scope"    in:"query" d:"todo" v:"in:todo,done,mine,ccme,all#视角取值 todo/done/mine/ccme/all"`
+	Keyword    string `json:"keyword"  in:"query"`
+	Status     *int   `json:"status"   in:"query" dc:"实例状态筛选(mine/all 视角可用)"`
+	FlowKey    string `json:"flowKey"  in:"query" dc:"流程标识精确筛选(仅 all 视角)"`
+	TaskStatus *int   `json:"taskStatus" in:"query" dc:"任务状态筛选(仅 ccme 视角: 1=未读,2=已读)"`
+	Page       int    `json:"page"     in:"query" d:"1"`
+	PageSize   int    `json:"pageSize" in:"query" d:"10"`
 }
 
 // FlowInstanceListRes 列表响应。

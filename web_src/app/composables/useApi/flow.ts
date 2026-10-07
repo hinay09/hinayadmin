@@ -102,7 +102,12 @@ export interface FlowInstanceItem {
   startUserId: number
   startUserName: string
   currentNodes: string
+  /** 当前用户相关任务: ID, 0=无 */
   taskId: number
+  /** 当前用户相关任务状态: 1=待办/未读, 2=已同意(抄送=已阅), 3=已驳回, 6=已失效, 0=无 */
+  taskStatus: number
+  /** 任务到达时间 (停留时长计算起点) */
+  taskReceiveTime: string | null
   createdAt: string
   finishedAt: string | null
 }
@@ -174,7 +179,7 @@ export function useFlowApi() {
     // 实例
     instStart: (data: { definitionId: number, title: string, formData?: Record<string, any>, selfSelects?: Record<string, number[]> }) =>
       r.post<{ id: number }>('/flow/instances', data),
-    instList: (params: { scope: 'todo' | 'done' | 'mine' | 'ccme' | 'all', keyword?: string, status?: number, flowKey?: string, page?: number, pageSize?: number }) =>
+    instList: (params: { scope: 'todo' | 'done' | 'mine' | 'ccme' | 'all', keyword?: string, status?: number, flowKey?: string, taskStatus?: number, page?: number, pageSize?: number }) =>
       r.get<{ list: FlowInstanceItem[], total: number }>('/flow/instances', params),
     instDetail: (id: number) => r.get<FlowInstanceDetail>(`/flow/instances/${id}`),
     instCancel: (id: number) => r.post(`/flow/instances/${id}/cancel`),
@@ -183,7 +188,8 @@ export function useFlowApi() {
     instTerminate: (id: number, comment: string) => r.post(`/flow/instances/${id}/terminate`, { comment }),
     instUrge: (id: number, comment: string) => r.post(`/flow/instances/${id}/urge`, { comment }),
     // 任务
-    taskApprove: (id: number, comment: string) => r.post(`/flow/tasks/${id}/approve`, { comment }),
+    taskApprove: (id: number, comment: string, opts?: { silent?: boolean }) =>
+      r.post(`/flow/tasks/${id}/approve`, { comment }, opts),
     taskReject: (id: number, comment: string, targetNodeId?: string) =>
       r.post(`/flow/tasks/${id}/reject`, { comment, targetNodeId: targetNodeId || undefined }),
     taskTransfer: (id: number, targetUserId: number, comment: string) =>
@@ -192,7 +198,7 @@ export function useFlowApi() {
       r.post(`/flow/tasks/${id}/append`, { userIds, comment }),
     taskReduce: (id: number, userIds: number[], comment: string) =>
       r.post(`/flow/tasks/${id}/reduce`, { userIds, comment }),
-    taskRead: (id: number) => r.put(`/flow/tasks/${id}/read`),
+    taskRead: (id: number, opts?: { silent?: boolean }) => r.put(`/flow/tasks/${id}/read`, undefined, opts),
     taskCount: () => r.get<{ todo: number, cc: number }>('/flow/tasks/count'),
   }
 }
