@@ -282,6 +282,8 @@ INSERT INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/auth/profile',   'GET',  '认证', '个人中心详情'),
   ('/api/v1/auth/profile',   'PUT',  '认证', '修改个人资料'),
   ('/api/v1/auth/password',  'PUT',  '认证', '修改密码'),
+  ('/api/v1/auth/register',        'POST', '认证', '用户注册(公开, 受 sys.allow_register 开关控制)'),
+  ('/api/v1/auth/register/status', 'GET',  '认证', '查询注册开关(公开)'),
   -- 用户管理
   ('/api/v1/system/users',         'GET',    '用户管理', '获取用户列表'),
   ('/api/v1/system/users',         'POST',   '用户管理', '创建用户'),

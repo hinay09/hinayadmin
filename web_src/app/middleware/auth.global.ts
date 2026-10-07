@@ -12,7 +12,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const isLoginPage = to.path === '/login'
 
   if (!userStore.token) {
-    if (isLoginPage) return
+    // 登录/注册页对匿名访客开放 (注册入口受 sys.allow_register 开关控制, 由页面自判)
+    if (isLoginPage || to.path === '/register') return
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
 

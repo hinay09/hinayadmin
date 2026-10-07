@@ -42,6 +42,11 @@ type (
 		UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res *v1.UploadAvatarRes, err error)
 		// MenuTree 当前用户可见菜单树 (排除按钮类型)。
 		MenuTree(ctx context.Context, req *v1.MenuTreeReq) (res *v1.MenuTreeRes, err error)
+		// RegisterStatus 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口)。
+		RegisterStatus(ctx context.Context, _ *v1.RegisterStatusReq) (res *v1.RegisterStatusRes, err error)
+		// Register 自助注册: 开关校验 -> RSA 解密 -> 密码策略 -> 建用户 -> 绑定内置普通角色。
+		// 注册的密码由用户本人设定, 不置强制改密标志 (区别于管理员代建账号)。
+		Register(ctx context.Context, req *v1.RegisterReq) (res *v1.RegisterRes, err error)
 	}
 )
 

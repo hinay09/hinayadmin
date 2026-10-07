@@ -113,7 +113,8 @@ const (
 )
 
 // 内置角色ID: 超级管理员角色固定为 1 (种子数据/删除保护/权限配置豁免均按此ID判定,
-// 角色code仅为展示标识, 不参与权限匹配)
+// 角色code仅为展示标识, 不参与权限匹配); 普通用户角色固定为 2, 自助注册默认绑定。
 const (
-	RoleAdminId uint64 = 1
+	RoleAdminId  uint64 = 1
+	RoleCommonId uint64 = 2
 )

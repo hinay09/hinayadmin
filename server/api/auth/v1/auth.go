@@ -42,6 +42,30 @@ type LoginRes struct {
 	UserInfo *model.LoginUser `json:"userInfo" dc:"用户信息"`
 }
 
+// RegisterReq 用户注册请求 (受全局配置 sys.allow_register 开关控制)。
+// 密码与登录一致: 须先用 PublicKey 接口返回的公钥加密(RSA PKCS#1 v1.5, base64)后提交。
+// 注册成功不自动登录, 前端引导用户走正常登录流程 (含两步验证)。
+type RegisterReq struct {
+	g.Meta   `path:"/auth/register" tags:"Auth" method:"post" summary:"用户注册"`
+	Username string `v:"required|length:2,32#请输入账号|用户名长度 2-32 个字符" json:"username" dc:"账号"`
+	Password string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
+	KeyId    string `v:"required#缺少加密密钥标识" json:"keyId"   dc:"公钥标识"`
+	Nickname string `v:"length:0,32#昵称最长 32 个字符" json:"nickname" dc:"昵称, 空则默认取账号"`
+}
+
+// RegisterRes 注册响应。
+type RegisterRes struct{}
+
+// RegisterStatusReq 查询注册开关状态 (公开接口, 登录页据此决定是否展示注册入口)。
+type RegisterStatusReq struct {
+	g.Meta `path:"/auth/register/status" tags:"Auth" method:"get" summary:"查询注册开关"`
+}
+
+// RegisterStatusRes 注册开关响应。
+type RegisterStatusRes struct {
+	AllowRegister bool `json:"allowRegister" dc:"是否开放注册"`
+}
+
 // TotpLoginReq 两步验证登录第二步: 携带第一步返回的票据与 TOTP 动态码换取 token。
 type TotpLoginReq struct {
 	g.Meta `path:"/auth/login/totp" tags:"Auth" method:"post" summary:"两步验证登录"`

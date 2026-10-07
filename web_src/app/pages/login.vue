@@ -23,9 +23,15 @@ const router = useRouter()
 const api = useAuthApi()
 
 // 配置接口需登录后才能访问, 登录页读本地缓存展示(上次登录时写入), 无缓存回退默认值
+// 注册入口由公开接口 /auth/register/status 实时决定 (sys.allow_register 开关)
+const allowRegister = ref(false)
+
 onMounted(() => {
   configStore.restore()
   startCountUp()
+  api.registerStatus()
+    .then(res => (allowRegister.value = !!res.allowRegister))
+    .catch(() => (allowRegister.value = false))
 })
 
 /* ---- 品牌区插画: "今日登录"数字滚动计数 ---- */
@@ -300,6 +306,11 @@ function backToPassword() {
             >
               登录
             </el-button>
+            <!-- 开放注册时展示注册入口 (sys.allow_register) -->
+            <div v-if="allowRegister" class="register-entry">
+              <span>还没有账号?</span>
+              <el-link type="primary" :underline="false" @click="router.push('/register')">注册账号</el-link>
+            </div>
           </el-form>
           <!-- 默认凭据提示仅在开发构建渲染, 生产构建(import.meta.dev=false)不输出 -->
           <div v-if="showDefaultHint" class="tips">默认账号: admin / 123456 (仅开发环境)</div>
@@ -783,6 +794,17 @@ function backToPassword() {
   font-size: 12px;
   color: #909399;
   text-align: center;
+}
+
+/* 注册入口: 开放注册(sys.allow_register)时展示在登录按钮下 */
+.register-entry {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #909399;
 }
 .form-copyright {
   position: absolute;
