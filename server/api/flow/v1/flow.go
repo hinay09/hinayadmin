@@ -183,7 +183,7 @@ type FlowInstanceItem struct {
 	BizId           uint64      `json:"bizId"    dc:"业务关联ID, 0=审批中心直接发起"`
 	FlowName        string      `json:"flowName"`
 	Title           string      `json:"title"`
-	Status          int         `json:"status" dc:"1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回待重提"`
+	Status          int         `json:"status" dc:"1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回待重提,7=已撤回待重提"`
 	StartUserId     uint64      `json:"startUserId"`
 	StartUserName   string      `json:"startUserName"`
 	CurrentNodes    string      `json:"currentNodes" dc:"当前节点名(逗号分隔, 运行中才有)"`
@@ -225,25 +225,27 @@ type FlowInstanceListRes response.PageResult
 
 // FlowTaskItem 任务条目。
 type FlowTaskItem struct {
-	Id           uint64      `json:"id"`
-	InstanceId   uint64      `json:"instanceId"`
-	NodeId       string      `json:"nodeId"`
-	NodeName     string      `json:"nodeName"`
-	NodeType     int         `json:"nodeType" dc:"1=审批,2=抄送"`
-	SignType     int         `json:"signType" dc:"1=或签,2=会签"`
-	AssigneeId   uint64      `json:"assigneeId"`
-	AssigneeName string      `json:"assigneeName"`
-	Status       int         `json:"status" dc:"1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效(退回/撤销后原同意失效)"`
-	Comment      string      `json:"comment"`
-	ReceiveTime  *gtime.Time `json:"receiveTime"`
-	ActedAt      *gtime.Time `json:"actedAt"`
+	Id             uint64      `json:"id"`
+	InstanceId     uint64      `json:"instanceId"`
+	NodeId         string      `json:"nodeId"`
+	NodeName       string      `json:"nodeName"`
+	NodeType       int         `json:"nodeType" dc:"1=审批,2=抄送"`
+	SignType       int         `json:"signType" dc:"1=或签,2=会签"`
+	AssigneeId     uint64      `json:"assigneeId"`
+	AssigneeName   string      `json:"assigneeName"`
+	DelegateFromId uint64      `json:"delegateFromId" dc:"委派来源任务ID: >0=本人被委派的代办任务, 处理后回到原审批人"`
+	Status         int         `json:"status" dc:"1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效,7=已委派,8=委办完成"`
+	Comment        string      `json:"comment"`
+	ReceiveTime    *gtime.Time `json:"receiveTime"`
+	DueTime        *gtime.Time `json:"dueTime" dc:"办理期限 (节点超时配置物化, NULL=不限)"`
+	ActedAt        *gtime.Time `json:"actedAt"`
 }
 
 // FlowRecordItem 流转记录条目。
 type FlowRecordItem struct {
 	Id           uint64      `json:"id"`
 	NodeName     string      `json:"nodeName"`
-	Action       string      `json:"action" dc:"submit/resubmit/approve/reject/back/cancel/cc/finish/transfer/terminate/urge/append/reduce"`
+	Action       string      `json:"action" dc:"submit/resubmit/approve/reject/back/cancel/withdraw/cc/finish/transfer/delegate/delegateResolve/terminate/urge/append/reduce/timeoutRemind/timeoutTransfer/timeoutApprove"`
 	OperatorId   uint64      `json:"operatorId" dc:"0=系统"`
 	OperatorName string      `json:"operatorName"`
 	Comment      string      `json:"comment"`
@@ -268,7 +270,8 @@ type FlowInstanceDetailRes struct {
 	MyCcTaskId      uint64              `json:"myCcTaskId"      dc:"当前用户待阅任务ID, 0=无"`
 	RejectTargets   []*FlowRejectTarget `json:"rejectTargets"   dc:"当前待办可驳回到的目标节点 (历史已通过的审批节点)"`
 	CanCancel       bool                `json:"canCancel"       dc:"当前用户是否可撤销"`
-	CanResubmit     bool                `json:"canResubmit"     dc:"当前用户是否可重新提交(退回态/已撤销的发起人)"`
+	CanWithdraw     bool                `json:"canWithdraw"     dc:"当前用户是否可撤回(发起人+运行中+尚无任何审批人同意)"`
+	CanResubmit     bool                `json:"canResubmit"     dc:"当前用户是否可重新提交(退回态/已撤销/已撤回的发起人)"`
 	PrevSelfSelects map[string][]uint64 `json:"prevSelfSelects" dc:"上一轮自选节点已选审批人 {nodeId: [userId]}, 重提弹窗默认值"`
 }
 
@@ -291,6 +294,17 @@ type FlowInstanceCancelReq struct {
 
 // FlowInstanceCancelRes 撤销响应。
 type FlowInstanceCancelRes struct{}
+
+// FlowInstanceWithdrawReq 发起人撤回流程: 尚无任何审批人同意时收回, 实例转入已撤回态(7)。
+// 与撤销的区别: 撤销是终态(业务回调 OnCanceled); 撤回是"收回待改"——实例未结束,
+// 修改表单后可重新提交 (复用 InstanceResubmit, 业务回调 OnWithdrawn, 未注册时回退 OnReturned)。
+type FlowInstanceWithdrawReq struct {
+	g.Meta `path:"/flow/instances/{id}/withdraw" tags:"Flow" method:"post" summary:"撤回流程(发起人,尚无审批时)"`
+	Id     uint64 `json:"id" in:"path" v:"required"`
+}
+
+// FlowInstanceWithdrawRes 撤回响应。
+type FlowInstanceWithdrawRes struct{}
 
 // FlowInstanceTerminateReq 终止流程 (管理员): 运行中实例立即结束, 待办作废。
 type FlowInstanceTerminateReq struct {
@@ -354,6 +368,29 @@ type FlowTaskTransferReq struct {
 
 // FlowTaskTransferRes 转办响应。
 type FlowTaskTransferRes struct{}
+
+// FlowTaskDelegateReq 委派: 将我的待办交给被委托人先行处理。
+// 与转办的区别: 转办后原审批人出局; 委派后被委托人仅提交处理意见 (委派处理),
+// 任务回到原审批人做最终同意/驳回 —— 被委派的代办任务不能再委派/转办。
+type FlowTaskDelegateReq struct {
+	g.Meta       `path:"/flow/tasks/{id}/delegate" tags:"Flow" method:"post" summary:"委派(代办后回到原审批人)"`
+	Id           uint64 `json:"id"           in:"path" v:"required"`
+	TargetUserId uint64 `json:"targetUserId" v:"required#请选择被委托人"`
+	Comment      string `json:"comment"      dc:"委派说明 (选填)"`
+}
+
+// FlowTaskDelegateRes 委派响应。
+type FlowTaskDelegateRes struct{}
+
+// FlowTaskDelegateResolveReq 委派处理: 被委托人提交处理意见, 任务回到原审批人终审。
+type FlowTaskDelegateResolveReq struct {
+	g.Meta  `path:"/flow/tasks/{id}/delegateResolve" tags:"Flow" method:"post" summary:"委派处理(被委托人提交意见)"`
+	Id      uint64 `json:"id"      in:"path" v:"required"`
+	Comment string `json:"comment" dc:"处理意见 (选填)"`
+}
+
+// FlowTaskDelegateResolveRes 委派处理响应。
+type FlowTaskDelegateResolveRes struct{}
 
 // FlowTaskAppendReq 加签: 以我的待办所在节点为锚追加必要审批人。
 // 语义 (钉钉式"同时加签"): 节点全部待办转为会签 —— 原处理人与新加人均须同意, 节点才通过。

@@ -24,6 +24,10 @@ func (c *ControllerV1) InstanceCancel(ctx context.Context, req *v1.FlowInstanceC
 	return service.Flow().InstanceCancel(ctx, req)
 }
 
+func (c *ControllerV1) InstanceWithdraw(ctx context.Context, req *v1.FlowInstanceWithdrawReq) (res *v1.FlowInstanceWithdrawRes, err error) {
+	return service.Flow().InstanceWithdraw(ctx, req)
+}
+
 func (c *ControllerV1) InstanceResubmit(ctx context.Context, req *v1.FlowInstanceResubmitReq) (res *v1.FlowInstanceResubmitRes, err error) {
 	return service.Flow().InstanceResubmit(ctx, req)
 }

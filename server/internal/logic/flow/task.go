@@ -18,6 +18,7 @@ import (
 )
 
 // TaskApprove 同意: 或签首签即过节点, 会签须全部同意后过节点并推进。
+// 事务内核 approveInTx 与超时自动通过 (timeoutScan) 共用。
 func (s *sFlow) TaskApprove(ctx context.Context, in *v1.FlowTaskApproveReq) (res *v1.FlowTaskApproveRes, err error) {
 	act := &taskAction{taskId: in.Id, comment: in.Comment}
 	inst, def, node, notify, err := s.loadAndValidateTask(ctx, act)
@@ -26,57 +27,7 @@ func (s *sFlow) TaskApprove(ctx context.Context, in *v1.FlowTaskApproveReq) (res
 	}
 
 	err = dao.WfInstance.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		// 实例行锁串行化并发动作 (或签双击/会签并发), 锁后复核实例仍在运行
-		if e := lockInstanceRow(ctx, tx, inst.Id); e != nil {
-			return e
-		}
-		if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning); e != nil {
-			return e
-		}
-		// 锁后重读签核方式: 任务在锁前加载, 并发加签可能已把本节点从或签升级为会签
-		signType, e := taskSignTypeInTx(ctx, tx, act.task.Id)
-		if e != nil {
-			return e
-		}
-		// 任务置已同意 (仅当仍为待办, 并发已处理则报错回滚)
-		if e := completeTask(ctx, tx, act.task.Id, taskStatusApproved, act.comment); e != nil {
-			return e
-		}
-		if e := writeRecord(ctx, tx, inst.Id, act.task.Id, act.task.NodeId, act.task.NodeName,
-			"approve", act.operatorId, act.operatorName, act.comment); e != nil {
-			return e
-		}
-		// 会签: 还有其他待办则继续等待
-		if signType == taskSignAll {
-			cnt, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
-				Where("instance_id", inst.Id).
-				Where("node_id", act.task.NodeId).
-				Where("status", taskStatusPending).
-				Count()
-			if e != nil {
-				return e
-			}
-			if cnt > 0 {
-				return nil
-			}
-		}
-		// 或签: 其余待办作废
-		if signType == taskSignAny {
-			if e := voidPendingTasks(ctx, tx, inst.Id, act.task.NodeId, act.task.Id); e != nil {
-				return e
-			}
-		}
-		// 节点完成, 推进到下一节点 (自选审批人取实例快照: 发起时选的人存在实例行上)
-		selfSelects, e := tx.Model(dao.WfInstance.Table()).Ctx(ctx).
-			Where("id", inst.Id).Value("self_selects")
-		if e != nil {
-			return e
-		}
-		ss, e := parseSelfSelects(gconv.String(selfSelects))
-		if e != nil {
-			return e
-		}
-		return advanceFlow(ctx, tx, def, inst, node.Child, ss, notify)
+		return approveInTx(ctx, tx, act, inst, def, node, notify, "approve")
 	})
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
@@ -85,6 +36,66 @@ func (s *sFlow) TaskApprove(ctx context.Context, in *v1.FlowTaskApproveReq) (res
 	notify.flush(ctx)
 	fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowTaskApproveRes{}, nil
+}
+
+// approveInTx 同意的事务内核 (API 同意与超时自动通过共用):
+// 锁实例 → 复核运行中 → 锁后重读签核方式 → 任务置已同意 (条件更新防并发双推进) →
+// 流转记录 → 会签仍有待办则等待 / 或签作废同伴 → 推进下一节点。
+// recordAction 区分时间线动作 (approve/timeoutApprove)。
+func approveInTx(ctx context.Context, tx gdb.TX, act *taskAction, inst *entity.WfInstance,
+	def *entity.WfDefinition, node *Node, notify *notifySink, recordAction string) error {
+
+	if e := lockInstanceRow(ctx, tx, inst.Id); e != nil {
+		return e
+	}
+	if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning); e != nil {
+		return e
+	}
+	// 锁后重读签核方式: 任务在锁前加载, 并发加签可能已把本节点从或签升级为会签
+	signType, e := taskSignTypeInTx(ctx, tx, act.task.Id)
+	if e != nil {
+		return e
+	}
+	// 任务置已同意 (仅当仍为待办, 并发已处理则报错回滚)
+	if e := completeTask(ctx, tx, act.task.Id, taskStatusApproved, act.comment); e != nil {
+		return e
+	}
+	if e := writeRecord(ctx, tx, inst.Id, act.task.Id, act.task.NodeId, act.task.NodeName,
+		recordAction, act.operatorId, act.operatorName, act.comment); e != nil {
+		return e
+	}
+	// 会签: 还有其他待办则继续等待 (被委派对的"原任务挂起+代办待办"整体只算一票:
+	// 原任务状态7不计入待办, 代办行状态1计数, 语义不变)
+	if signType == taskSignAll {
+		cnt, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
+			Where("instance_id", inst.Id).
+			Where("node_id", act.task.NodeId).
+			Where("status", taskStatusPending).
+			Count()
+		if e != nil {
+			return e
+		}
+		if cnt > 0 {
+			return nil
+		}
+	}
+	// 或签: 其余待办作废 (含被委派挂起的原任务)
+	if signType == taskSignAny {
+		if e := voidPendingTasks(ctx, tx, inst.Id, act.task.NodeId, act.task.Id); e != nil {
+			return e
+		}
+	}
+	// 节点完成, 推进到下一节点 (自选审批人取实例快照: 发起时选的人存在实例行上)
+	selfSelects, e := tx.Model(dao.WfInstance.Table()).Ctx(ctx).
+		Where("id", inst.Id).Value("self_selects")
+	if e != nil {
+		return e
+	}
+	ss, e := parseSelfSelects(gconv.String(selfSelects))
+	if e != nil {
+		return e
+	}
+	return advanceFlow(ctx, tx, def, inst, node.Child, ss, notify)
 }
 
 // TaskReject 驳回: 节点级动作 —— 驳回者的待办置已驳回, 同节点其余待办作废。
@@ -277,12 +288,13 @@ func (s *sFlow) TaskTransfer(ctx context.Context, in *v1.FlowTaskTransferReq) (r
 		if e != nil {
 			return e
 		}
-		// 对方已是本节点待办审批人则拒绝: 同节点同人两行待办会要求其同意两次, 时间线也随之重复
+		// 对方已是本节点待办审批人则拒绝: 同节点同人两行待办会要求其同意两次, 时间线也随之重复。
+		// 已委派挂起(状态7)的原审批人也算在内: 其代办回归后恢复待办, 同样构成两票
 		dup, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
 			Where("instance_id", inst.Id).
 			Where("node_id", act.task.NodeId).
 			Where("node_type", taskNodeTypeApprove).
-			Where("status", taskStatusPending).
+			WhereIn("status", []int{taskStatusPending, taskStatusDelegated}).
 			Where("assignee_id", target.Id).
 			Count()
 		if e != nil {
@@ -294,7 +306,8 @@ func (s *sFlow) TaskTransfer(ctx context.Context, in *v1.FlowTaskTransferReq) (r
 		if e := completeTask(ctx, tx, act.task.Id, taskStatusTransferred, act.comment); e != nil {
 			return e
 		}
-		// receive_time 沿用原任务: 与本轮同伴同轮聚合 (流程图/时间线口径)
+		// receive_time/due_time 沿用原任务: 与本轮同伴同轮聚合 (流程图/时间线口径),
+		// 办理期限不变 (转办是换人办事, 节点期限不重置)
 		if _, e = tx.Model(dao.WfTask.Table()).Ctx(ctx).Data(g.Map{
 			"instance_id":   inst.Id,
 			"node_id":       act.task.NodeId,
@@ -305,6 +318,7 @@ func (s *sFlow) TaskTransfer(ctx context.Context, in *v1.FlowTaskTransferReq) (r
 			"assignee_name": targetName,
 			"status":        taskStatusPending,
 			"receive_time":  act.task.ReceiveTime,
+			"due_time":      act.task.DueTime,
 		}).Insert(); e != nil {
 			return e
 		}
@@ -333,6 +347,196 @@ func transferNote(comment string) string {
 		return ""
 	}
 	return " (说明: " + comment + ")"
+}
+
+// TaskDelegate 委派: 将我的待办交给被委托人先行处理 (代办后回到我终审)。
+// 与转办的区别: 转办后原审批人出局; 委派后原任务置已委派(状态7)挂起,
+// 被委托人生成 delegate_from_id 指向原任务的代办待办, 其通过「委派处理」
+// 提交意见后任务回到原审批人做最终同意/驳回。
+// 或签/会签计数时该对任务整体仍算一票: 原任务(7)不计待办, 代办行(1)计一票。
+func (s *sFlow) TaskDelegate(ctx context.Context, in *v1.FlowTaskDelegateReq) (res *v1.FlowTaskDelegateRes, err error) {
+	act := &taskAction{taskId: in.Id, comment: in.Comment}
+	inst, _, _, notify, err := s.loadAndValidateTask(ctx, act)
+	if err != nil {
+		return nil, err
+	}
+	if in.TargetUserId == act.operatorId {
+		return nil, xerror.New(xerror.CodeParamInvalid, "不能委派给自己")
+	}
+	var target *entity.SysUser
+	if err = dao.SysUser.Ctx(ctx).
+		Where("id", in.TargetUserId).Where("status", 1).Where("deleted_at IS NULL").
+		Scan(&target); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if target == nil {
+		return nil, xerror.New(xerror.CodeParamInvalid, "被委托人不存在或已被禁用")
+	}
+	targetName := pickName(target.Nickname, target.Username)
+
+	err = dao.WfInstance.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if e := lockInstanceRow(ctx, tx, inst.Id); e != nil {
+			return e
+		}
+		if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning); e != nil {
+			return e
+		}
+		// 锁后重读签核方式: 并发加签可能已把本节点升级为会签, 代办行须跟随当前口径
+		signType, e := taskSignTypeInTx(ctx, tx, act.task.Id)
+		if e != nil {
+			return e
+		}
+		// 对方已是本节点待办审批人则拒绝 (同转办: 同节点同人两行会要求其同意两次;
+		// 已委派挂起(状态7)的原审批人也算在内, 其代办回归后同样构成两票)
+		dup, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
+			Where("instance_id", inst.Id).
+			Where("node_id", act.task.NodeId).
+			Where("node_type", taskNodeTypeApprove).
+			WhereIn("status", []int{taskStatusPending, taskStatusDelegated}).
+			Where("assignee_id", target.Id).
+			Count()
+		if e != nil {
+			return e
+		}
+		if dup > 0 {
+			return xerror.New(xerror.CodeParamInvalid, "对方已是该节点待办审批人, 无需委派")
+		}
+		// 原任务置已委派 (仅当仍为待办; 并发处理则报错回滚)
+		res2, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
+			Where("id", act.task.Id).
+			Where("status", taskStatusPending).
+			Data("status", taskStatusDelegated).Update()
+		if e != nil {
+			return e
+		}
+		if n, _ := res2.RowsAffected(); n == 0 {
+			return xerror.New(xerror.CodeParamInvalid, "任务已被处理, 请刷新后重试")
+		}
+		// 被委托人代办待办: receive_time/due_time 沿用原任务 (同轮聚合, 节点期限不重置)
+		if _, e = tx.Model(dao.WfTask.Table()).Ctx(ctx).Data(g.Map{
+			"instance_id":      inst.Id,
+			"node_id":          act.task.NodeId,
+			"node_name":        act.task.NodeName,
+			"node_type":        taskNodeTypeApprove,
+			"sign_type":        signType,
+			"assignee_id":      target.Id,
+			"assignee_name":    targetName,
+			"status":           taskStatusPending,
+			"receive_time":     act.task.ReceiveTime,
+			"delegate_from_id": act.task.Id,
+			"due_time":         act.task.DueTime,
+		}).Insert(); e != nil {
+			return e
+		}
+		comment := "委派给 " + targetName + " 代办, 处理后回到本人终审"
+		if act.comment != "" {
+			comment += ": " + act.comment
+		}
+		return writeRecord(ctx, tx, inst.Id, act.task.Id, act.task.NodeId, act.task.NodeName,
+			"delegate", act.operatorId, act.operatorName, comment)
+	})
+	if err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	notify.add(target.Id,
+		fmt.Sprintf("审批委派: %s", inst.Title),
+		fmt.Sprintf("%s 将「%s」的节点「%s」审批委派给您代办%s, 请到 审批中心-我的审批 提交处理意见 (处理后回到对方终审)。",
+			act.operatorName, inst.Title, act.task.NodeName, transferNote(act.comment)))
+	notify.flush(ctx)
+	return &v1.FlowTaskDelegateRes{}, nil
+}
+
+// TaskDelegateResolve 委派处理: 被委托人提交处理意见, 任务回到原审批人终审。
+// 被委托人行置委办完成(状态8, 终态, 不计入会签/或签统计); 原任务从已委派(7)
+// 恢复为待办(1)。若节点/实例已被并发动作推进 (原任务已作废), 仅收尾被委托人行。
+func (s *sFlow) TaskDelegateResolve(ctx context.Context, in *v1.FlowTaskDelegateResolveReq) (res *v1.FlowTaskDelegateResolveRes, err error) {
+	uid := contextx.UserId(ctx)
+	if uid == 0 {
+		return nil, xerror.New(xerror.CodeUnauthorized)
+	}
+	user := contextx.LoginUser(ctx)
+	operatorName := pickName(user.Nickname, user.Username)
+
+	var t *entity.WfTask
+	if err = dao.WfTask.Ctx(ctx).Where("id", in.Id).Scan(&t); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if t == nil {
+		return nil, xerror.New(xerror.CodeNotFound, "任务不存在")
+	}
+	if t.AssigneeId != uid {
+		return nil, xerror.New(xerror.CodeForbidden, "非任务处理人")
+	}
+	if t.NodeType != taskNodeTypeApprove {
+		return nil, xerror.New(xerror.CodeParamInvalid, "仅审批任务支持委派处理")
+	}
+	if t.Status != taskStatusPending {
+		return nil, xerror.New(xerror.CodeParamInvalid, "任务已处理")
+	}
+	if t.DelegateFromId == 0 {
+		return nil, xerror.New(xerror.CodeParamInvalid, "非被委派的代办任务")
+	}
+	inst, err := loadInstance(ctx, t.InstanceId)
+	if err != nil {
+		return nil, err
+	}
+	if inst.Status != instStatusRunning {
+		return nil, xerror.New(xerror.CodeParamInvalid, "流程已结束")
+	}
+	// 原任务行 (委派发起时的挂起票), 事务外预读用于回执通知
+	var orig *entity.WfTask
+	if err = dao.WfTask.Ctx(ctx).Where("id", t.DelegateFromId).Scan(&orig); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	err = dao.WfInstance.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if e := lockInstanceRow(ctx, tx, inst.Id); e != nil {
+			return e
+		}
+		if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning); e != nil {
+			return e
+		}
+		// 被委托人行置委办完成 (条件更新: 并发已处理/已作废则报错回滚)
+		if e := completeTask(ctx, tx, t.Id, taskStatusDelegatedDone, in.Comment); e != nil {
+			return e
+		}
+		// 原任务恢复待办 (仅当仍为已委派)。并发推进 (或签同伴抢先等) 会把原任务与
+		// 代办行一并作废, 那时上方 completeTask 已先行报错回滚; 此处 0 行仅防御脏数据
+		if _, e := tx.Model(dao.WfTask.Table()).Ctx(ctx).
+			Where("id", t.DelegateFromId).
+			Where("status", taskStatusDelegated).
+			Data("status", taskStatusPending).Update(); e != nil {
+			return e
+		}
+		comment := "委派处理完成, 回到 " + origAssigneeName(orig) + " 终审"
+		if c := truncateRunes(in.Comment, 400); c != "" {
+			comment += ": " + c
+		}
+		return writeRecord(ctx, tx, inst.Id, t.Id, t.NodeId, t.NodeName,
+			"delegateResolve", uid, operatorName, comment)
+	})
+	if err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	if orig != nil && orig.AssigneeId != 0 {
+		notify := &notifySink{sender: uid}
+		notify.add(orig.AssigneeId,
+			fmt.Sprintf("委派已办: %s", inst.Title),
+			fmt.Sprintf("%s 已完成「%s」节点「%s」的委派处理, 请回到审批中心-我的审批 做最终同意/驳回。",
+				operatorName, inst.Title, t.NodeName))
+		notify.flush(ctx)
+	}
+	return &v1.FlowTaskDelegateResolveRes{}, nil
+}
+
+// origAssigneeName 原任务处理人昵称 (预读失败时兜底)。
+func origAssigneeName(orig *entity.WfTask) string {
+	if orig != nil && orig.AssigneeName != "" {
+		return orig.AssigneeName
+	}
+	return "原审批人"
 }
 
 // loadAnchorTask 加签/减签的任务锚: 待办审批任务 + 运行中实例。
@@ -432,12 +636,13 @@ func (s *sFlow) TaskAppend(ctx context.Context, in *v1.FlowTaskAppendReq) (res *
 		if len(added) == 0 {
 			return xerror.New(xerror.CodeParamInvalid, "所选用户均已是该节点审批人或已同意过该节点")
 		}
-		// 节点转为会签: 本轮全部待办改 sign_type=2 (既有待办也须同意)
+		// 节点转为会签: 本轮全部待办与已委派挂起任务改 sign_type=2
+		// (已委派任务恢复待办后同样须同意, 口径不能落在旧值上)
 		if _, e = tx.Model(dao.WfTask.Table()).Ctx(ctx).
 			Where("instance_id", inst.Id).
 			Where("node_id", act.task.NodeId).
 			Where("node_type", taskNodeTypeApprove).
-			Where("status", taskStatusPending).
+			WhereIn("status", []int{taskStatusPending, taskStatusDelegated}).
 			Data("sign_type", taskSignAll).Update(); e != nil {
 			return e
 		}
@@ -502,12 +707,22 @@ func (s *sFlow) TaskReduce(ctx context.Context, in *v1.FlowTaskReduceReq) (res *
 		if len(pend) == 0 {
 			return xerror.New(xerror.CodeParamInvalid, "该节点已处理完成, 无法减签")
 		}
+		// 被委派出去的代办行不可移除: 其作废会让原审批人的已委派任务永远挂起无人回归
+		reducible := make([]*entity.WfTask, 0, len(pend))
+		for _, t := range pend {
+			if t.DelegateFromId == 0 {
+				reducible = append(reducible, t)
+			}
+		}
+		if len(reducible) == 0 {
+			return xerror.New(xerror.CodeParamInvalid, "该节点当前没有可移除的待办审批人 (被委派任务不可减签)")
+		}
 		removeIds := map[uint64]bool{}
 		for _, uid := range in.UserIds {
 			removeIds[uid] = true
 		}
 		removed = make([]*entity.WfTask, 0, len(in.UserIds))
-		for _, t := range pend {
+		for _, t := range reducible {
 			if removeIds[t.AssigneeId] {
 				removed = append(removed, t)
 			}
@@ -515,7 +730,7 @@ func (s *sFlow) TaskReduce(ctx context.Context, in *v1.FlowTaskReduceReq) (res *
 		if len(removed) == 0 {
 			return xerror.New(xerror.CodeParamInvalid, "所选用户均不是该节点的待办审批人")
 		}
-		if len(removed) == len(pend) {
+		if len(removed) == len(reducible) {
 			return xerror.New(xerror.CodeParamInvalid, "不能移除全部待办审批人, 至少保留一人")
 		}
 		ids := make([]uint64, 0, len(removed))
@@ -703,6 +918,11 @@ func (s *sFlow) loadAndValidateTask(ctx context.Context, act *taskAction) (
 	}
 	if act.task.NodeType != taskNodeTypeApprove {
 		return nil, nil, nil, nil, xerror.New(xerror.CodeParamInvalid, "抄送任务无审批动作")
+	}
+	// 被委派的代办任务不能同意/驳回/转办/再委派: 委派语义是"给意见后回到原审批人终审",
+	// 越过终审直接表决会破坏委派的回归链 (处理入口仅 TaskDelegateResolve)
+	if act.task.DelegateFromId > 0 {
+		return nil, nil, nil, nil, xerror.New(xerror.CodeParamInvalid, "被委派的代办任务请通过「委派处理」提交意见")
 	}
 
 	if inst, err = loadInstance(ctx, act.task.InstanceId); err != nil {

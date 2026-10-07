@@ -20,6 +20,14 @@ func (c *ControllerV1) TaskTransfer(ctx context.Context, req *v1.FlowTaskTransfe
 	return service.Flow().TaskTransfer(ctx, req)
 }
 
+func (c *ControllerV1) TaskDelegate(ctx context.Context, req *v1.FlowTaskDelegateReq) (res *v1.FlowTaskDelegateRes, err error) {
+	return service.Flow().TaskDelegate(ctx, req)
+}
+
+func (c *ControllerV1) TaskDelegateResolve(ctx context.Context, req *v1.FlowTaskDelegateResolveReq) (res *v1.FlowTaskDelegateResolveRes, err error) {
+	return service.Flow().TaskDelegateResolve(ctx, req)
+}
+
 func (c *ControllerV1) TaskAppend(ctx context.Context, req *v1.FlowTaskAppendReq) (res *v1.FlowTaskAppendRes, err error) {
 	return service.Flow().TaskAppend(ctx, req)
 }

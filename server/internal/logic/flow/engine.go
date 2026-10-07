@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
@@ -62,8 +63,13 @@ func advanceFlow(ctx context.Context, tx gdb.TX, def *entity.WfDefinition, inst 
 			if cur.SignType == "all" {
 				signType = taskSignAll
 			}
+			// 办理期限物化: 节点超时配置落到任务行, 超时扫描 (flow.timeoutScan) 只认 due_time
+			var dueVal any
+			if cur.TimeoutHours > 0 {
+				dueVal = gtime.Now().Add(time.Duration(cur.TimeoutHours) * time.Hour)
+			}
 			for _, u := range users {
-				if _, err = tx.Model(dao.WfTask.Table()).Ctx(ctx).Data(g.Map{
+				data := g.Map{
 					"instance_id":   inst.Id,
 					"node_id":       cur.Id,
 					"node_name":     cur.Name,
@@ -72,7 +78,11 @@ func advanceFlow(ctx context.Context, tx gdb.TX, def *entity.WfDefinition, inst 
 					"assignee_id":   u.Id,
 					"assignee_name": u.Name,
 					"status":        taskStatusPending,
-				}).Insert(); err != nil {
+				}
+				if dueVal != nil {
+					data["due_time"] = dueVal
+				}
+				if _, err = tx.Model(dao.WfTask.Table()).Ctx(ctx).Data(data).Insert(); err != nil {
 					return err
 				}
 				notify.add(u.Id,
@@ -183,12 +193,14 @@ func ensureInstanceStatus(ctx context.Context, tx gdb.TX, instanceId uint64, all
 	return xerror.New(xerror.CodeParamInvalid, "流程状态已变化, 请刷新后重试")
 }
 
-// voidPendingTasks 作废待办任务 (事务内调用)。
-// nodeId 为空时作废实例全部待办; excludeTaskId 排除指定任务 (或签抢先场景)。
+// voidPendingTasks 作废未完结任务 (事务内调用): 待办 + 已委派挂起一并关闭。
+// 已委派任务(状态7)是"等待被委托人代办"的挂起票 —— 节点被或签抢先/整单结束时,
+// 其对应的被委托人待办(状态1)会被本查询作废, 原任务若不同步关闭将永远挂在已委派态。
+// nodeId 为空时作废实例全部未完结; excludeTaskId 排除指定任务 (或签抢先场景)。
 func voidPendingTasks(ctx context.Context, tx gdb.TX, instanceId uint64, nodeId string, excludeTaskId uint64) error {
 	q := tx.Model(dao.WfTask.Table()).Ctx(ctx).
 		Where("instance_id", instanceId).
-		Where("status", taskStatusPending)
+		WhereIn("status", []int{taskStatusPending, taskStatusDelegated})
 	if nodeId != "" {
 		q = q.Where("node_id", nodeId)
 	}
@@ -539,6 +551,13 @@ func fireEvent(flowKey string, status int, instanceId, bizId uint64) {
 		}
 	case instStatusReturned:
 		if l.OnReturned != nil {
+			l.OnReturned(instanceId, bizId)
+		}
+	case instStatusWithdrawn:
+		// 撤回与退回对业务侧同为"可修改重提"; 未注册 OnWithdrawn 的存量业务回退 OnReturned
+		if l.OnWithdrawn != nil {
+			l.OnWithdrawn(instanceId, bizId)
+		} else if l.OnReturned != nil {
 			l.OnReturned(instanceId, bizId)
 		}
 	case instStatusCanceled:

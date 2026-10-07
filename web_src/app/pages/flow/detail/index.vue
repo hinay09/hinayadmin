@@ -7,7 +7,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Bell, Check, CircleCheck, CircleClose, Clock, Close, EditPen,
+  ArrowLeft, Bell, Check, CircleCheck, CircleClose, Clock, Close, Connection, EditPen,
   Minus, Plus, Position, RefreshLeft, Share, Stamp, VideoPause, Warning,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '~/stores/user'
@@ -55,7 +55,7 @@ const heroTone = computed(() => {
   const s = detail.value?.instance.status || 0
   if (s === 1) return 'run'
   if (s === 2) return 'ok'
-  if (s === 6) return 'back'
+  if (s === 6 || s === 7) return 'back'
   if (s === 5) return 'stop'
   return 'off'
 })
@@ -96,17 +96,21 @@ function avatarChar(name: string, operatorId: number) {
 
 /** 时间线动作配色 */
 function recTone(a: string) {
-  if (a === 'approve' || a === 'finish') return 'ok'
+  if (a === 'approve' || a === 'finish' || a === 'timeoutApprove') return 'ok'
   if (a === 'reject') return 'danger'
-  if (a === 'resubmit' || a === 'back' || a === 'urge' || a === 'reduce') return 'warn'
+  if (a === 'resubmit' || a === 'back' || a === 'urge' || a === 'reduce' || a === 'withdraw' || a === 'timeoutRemind') return 'warn'
   if (a === 'cancel' || a === 'terminate') return 'off'
-  if (a === 'transfer' || a === 'append') return 'run'
+  if (a === 'transfer' || a === 'append' || a === 'delegate' || a === 'delegateResolve' || a === 'timeoutTransfer') return 'run'
   return 'run'
 }
 
-/** 重新提交卡片文案: 被驳回 / 已撤销 两种可重提状态 */
-const resubmitTitle = computed(() =>
-  detail.value?.instance.status === 4 ? '流程已撤销, 修改后可重新提交' : '被驳回, 修改后重新提交')
+/** 重新提交卡片文案: 被驳回 / 已撤回 / 已撤销 三种可重提状态 */
+const resubmitTitle = computed(() => {
+  const s = detail.value?.instance.status
+  if (s === 4) return '流程已撤销, 修改后可重新提交'
+  if (s === 7) return '流程已撤回, 修改后可重新提交'
+  return '被驳回, 修改后重新提交'
+})
 
 /** 重新提交表单 (退回态/已撤销态编辑) */
 const resubmitForm = reactive({
@@ -205,6 +209,52 @@ async function confirmTransfer() {
     await api.taskTransfer(taskId, transferTarget.value, transferComment.value.trim())
     ElMessage.success('已转办')
     transferVisible.value = false
+    load()
+  } catch {} finally { acting.value = false }
+}
+
+// ============================================================
+// 委派: 我的待办交被委托人代办, 其提交意见后回到本人终审 (区别于转办换人)
+// ============================================================
+const delegateVisible = ref(false)
+const delegateTarget = ref<number | undefined>(undefined)
+const delegateComment = ref('')
+
+function openDelegate() {
+  delegateTarget.value = undefined
+  delegateComment.value = ''
+  delegateVisible.value = true
+}
+
+async function confirmDelegate() {
+  const taskId = detail.value?.myPendingTaskId
+  if (!taskId) { delegateVisible.value = false; return }
+  if (!delegateTarget.value) { ElMessage.warning('请选择被委托人'); return }
+  acting.value = true
+  try {
+    await api.taskDelegate(taskId, delegateTarget.value, delegateComment.value.trim())
+    ElMessage.success('已委派, 待对方提交处理意见后回到你终审')
+    delegateVisible.value = false
+    load()
+  } catch {} finally { acting.value = false }
+}
+
+/** 我的待办是否为被委派的代办任务 (只能提交处理意见, 不能直接表决) */
+const isDelegatedTask = computed(() => (myTask.value?.delegateFromId || 0) > 0)
+/** 委派发起人任务行 (代办横幅展示对方昵称) */
+const delegatorTask = computed(() => {
+  const from = myTask.value?.delegateFromId || 0
+  return from ? (detail.value?.tasks || []).find(t => t.id === from) || null : null
+})
+
+async function confirmDelegateResolve() {
+  const taskId = detail.value?.myPendingTaskId
+  if (!taskId) return
+  acting.value = true
+  try {
+    await api.taskDelegateResolve(taskId, comment.value.trim())
+    ElMessage.success('已提交处理意见, 待原审批人终审')
+    comment.value = ''
     load()
   } catch {} finally { acting.value = false }
 }
@@ -340,6 +390,19 @@ async function cancel() {
   } catch {}
 }
 
+// 撤回: 尚无审批人同意时收回流程 (待修改重提, 区别于撤销终态)
+async function withdraw() {
+  await ElMessageBox.confirm(
+    '撤回后当前待办作废, 流程回到你手中; 可修改表单后重新提交 (流程从头重走, 历史记录保留)。已有审批人同意时不可撤回。',
+    '撤回确认', { type: 'warning', confirmButtonText: '确认撤回' },
+  )
+  try {
+    await api.instWithdraw(instanceId.value)
+    ElMessage.success('已撤回, 可修改后重新提交')
+    load()
+  } catch {}
+}
+
 function actionText(a: string) { return flowActionMap[a] || a }
 
 onMounted(async () => {
@@ -398,14 +461,24 @@ onMounted(async () => {
           <span>待你审批</span>
           <span class="fd-act__sub">该流程正在等待你的处理</span>
         </div>
+        <!-- 被委派的代办任务: 只提交处理意见, 表决权在原审批人 -->
+        <el-alert v-if="isDelegatedTask" type="warning" :closable="false" show-icon style="margin-bottom:12px"
+          :title="`「${delegatorTask?.assigneeName || '原审批人'}」将该审批委派给你代办`"
+          description="提交处理意见后任务会回到对方做最终同意/驳回; 你不能直接代替对方表决。" />
         <el-input v-model="comment" type="textarea" :rows="3" maxlength="500" show-word-limit
-          placeholder="审批意见 (同意时选填, 点驳回时会带入驳回弹窗)" />
+          :placeholder="isDelegatedTask ? '处理意见 (选填, 将随委派回执通知原审批人)' : '审批意见 (同意时选填, 点驳回时会带入驳回弹窗)'" />
         <div class="fd-act__btns">
-          <el-button v-permission="'flow:task:handle'" plain :icon="Share" @click="openTransfer">转办</el-button>
-          <el-button v-permission="'flow:task:handle'" plain :icon="Plus" @click="openAppend">加签</el-button>
-          <el-button v-permission="'flow:task:handle'" plain :icon="Minus" @click="openReduce">减签</el-button>
-          <el-button v-permission="'flow:task:handle'" type="danger" plain :icon="Close" :loading="acting" @click="openReject">驳回</el-button>
-          <el-button v-permission="'flow:task:handle'" type="primary" :icon="Check" :loading="acting" @click="act(true)">同意</el-button>
+          <template v-if="isDelegatedTask">
+            <el-button v-permission="'flow:task:handle'" type="primary" :icon="Check" :loading="acting" @click="confirmDelegateResolve">委派处理</el-button>
+          </template>
+          <template v-else>
+            <el-button v-permission="'flow:task:handle'" plain :icon="Share" @click="openTransfer">转办</el-button>
+            <el-button v-permission="'flow:task:handle'" plain :icon="Connection" @click="openDelegate">委派</el-button>
+            <el-button v-permission="'flow:task:handle'" plain :icon="Plus" @click="openAppend">加签</el-button>
+            <el-button v-permission="'flow:task:handle'" plain :icon="Minus" @click="openReduce">减签</el-button>
+            <el-button v-permission="'flow:task:handle'" type="danger" plain :icon="Close" :loading="acting" @click="openReject">驳回</el-button>
+            <el-button v-permission="'flow:task:handle'" type="primary" :icon="Check" :loading="acting" @click="act(true)">同意</el-button>
+          </template>
         </div>
       </el-card>
 
@@ -474,6 +547,29 @@ onMounted(async () => {
         </template>
       </el-dialog>
 
+      <!-- 委派弹窗: 交被委托人代办, 处理后回到本人终审 -->
+      <el-dialog v-model="delegateVisible" title="委派" width="460px" append-to-body destroy-on-close>
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom:14px"
+          title="委派与转办不同: 被委托人提交处理意见后, 任务回到你做最终同意/驳回; 对方不能代替你表决。" />
+        <el-form label-width="90px">
+          <el-form-item label="委派给" required>
+            <el-select v-model="delegateTarget" filterable placeholder="选择被委托人" style="width:100%">
+              <el-option v-for="u in users" :key="u.id"
+                :label="u.nickname || u.username" :value="u.id"
+                :disabled="u.id === userStore.userInfo?.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="委派说明">
+            <el-input v-model="delegateComment" type="textarea" :rows="3" maxlength="500" show-word-limit
+              placeholder="选填, 将随委派通知对方" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="delegateVisible = false">取消</el-button>
+          <el-button type="primary" :loading="acting" @click="confirmDelegate">确认委派</el-button>
+        </template>
+      </el-dialog>
+
       <!-- 驳回弹窗: 退回发起人 / 退回到指定已审批节点 -->
       <el-dialog v-model="rejectVisible" title="驳回" width="500px" append-to-body destroy-on-close>
         <el-alert type="info" :closable="false" show-icon style="margin-bottom:14px"
@@ -505,7 +601,7 @@ onMounted(async () => {
           <span>{{ resubmitTitle }}</span>
           <span class="fd-act__sub">流程将从头重走, 之前的审批记录保留</span>
         </div>
-        <el-alert v-if="lastRejectComment && detail.instance.status !== 4" type="warning" :closable="false" show-icon style="margin-bottom:12px"
+        <el-alert v-if="lastRejectComment && detail.instance.status !== 4 && detail.instance.status !== 7" type="warning" :closable="false" show-icon style="margin-bottom:12px"
           :title="`${lastRejectComment.operatorName} 驳回 (${lastRejectComment.nodeName})`"
           :description="lastRejectComment.comment || '未填写意见'" />
         <FormRender v-model="resubmitForm.data" :fields="fields" />
@@ -525,13 +621,14 @@ onMounted(async () => {
         </div>
       </el-card>
 
-      <!-- 运行中操作栏: 发起人可撤销/催办, 管理员可终止/加签/减签 -->
-      <div v-if="detail.instance.status === 1 && (detail.canCancel || isAdmin)" class="fd-cancelbar">
+      <!-- 运行中操作栏: 发起人可撤回/撤销/催办, 管理员可终止/加签/减签 -->
+      <div v-if="detail.instance.status === 1 && (detail.canCancel || detail.canWithdraw || isAdmin)" class="fd-cancelbar">
         <span>
-          流程运行中<template v-if="detail.canCancel">, 发起人可撤销或催办</template><template v-if="isAdmin">, 管理员可终止/加签/减签</template>
+          流程运行中<template v-if="detail.canCancel || detail.canWithdraw">, 发起人可<template v-if="detail.canWithdraw">撤回(尚无审批时)或</template>撤销/催办</template><template v-if="isAdmin">, 管理员可终止/加签/减签</template>
         </span>
         <div style="display:flex;gap:8px">
           <el-button v-if="detail.canCancel" plain size="small" :icon="Bell" @click="urge">催办</el-button>
+          <el-button v-if="detail.canWithdraw" v-permission="'flow:instance:cancel'" type="warning" plain size="small" :icon="RefreshLeft" @click="withdraw">撤回</el-button>
           <el-button v-if="detail.canCancel" v-permission="'flow:instance:cancel'" type="warning" plain size="small" :icon="RefreshLeft" @click="cancel">撤销流程</el-button>
           <!-- 管理员节点级人员调整 (锚定当前节点任一待办); 本人有待办时走上方"待你审批"卡片入口 -->
           <el-button v-if="isAdmin && !myTask && signAnchorTask" v-permission="'flow:task:handle'" plain size="small" :icon="Plus" @click="openAppend">加签</el-button>
@@ -612,7 +709,12 @@ onMounted(async () => {
           <el-table-column label="签核" width="80">
             <template #default="{ row }">{{ row.signType === 2 ? '会签' : '或签' }}</template>
           </el-table-column>
-          <el-table-column prop="assigneeName" label="处理人" width="110" />
+          <el-table-column label="处理人" width="130">
+            <template #default="{ row }">
+              <span>{{ row.assigneeName }}</span>
+              <el-tag v-if="row.delegateFromId" size="small" effect="plain" type="warning" style="margin-left:4px">委办</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
               <el-tag :type="flowTaskStatusMap[row.status]?.tag || 'info'" size="small">
@@ -622,6 +724,14 @@ onMounted(async () => {
           </el-table-column>
           <el-table-column prop="comment" label="意见" min-width="140" show-overflow-tooltip />
           <el-table-column prop="receiveTime" label="到达时间" width="165" />
+          <el-table-column label="办理期限" width="165">
+            <template #default="{ row }">
+              <span v-if="row.dueTime" :class="{ 'fd-overdue': row.status === 1 && new Date(row.dueTime) < new Date() }">
+                {{ row.dueTime }}
+              </span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="actedAt" label="处理时间" width="165" />
         </el-table>
       </el-card>
@@ -885,5 +995,11 @@ onMounted(async () => {
   color: #606266;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 逾期待办的办理期限标红 */
+.fd-overdue {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 </style>

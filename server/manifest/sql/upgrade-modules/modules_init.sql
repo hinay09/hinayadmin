@@ -38,6 +38,13 @@
 -- 2026-10-06 五次增量 (p017): 流程实例管理 —— 实例列表新增管理员 all 视角
 --   (代码层新增 scope, 无表结构变化), 菜单 9050 与 sys_api 描述已并入下方种子块;
 --   存量库执行 p017_flow_instance_manage.sql。
+--
+-- 2026-10-07 六次增量 (p018): 流程引擎补齐 —— 发起人撤回 (实例状态 7=已撤回,
+--   尚无审批时收回待改, OnWithdrawn 回调) / 任务委派 (wf_task.delegate_from_id
+--   + 状态 7=已委派/8=委办完成, 代办后回到原审批人终审) / 审批超时 (wf_task.due_time
+--   + 节点 timeoutHours/timeoutAction/timeoutTransfer 配置, 定时任务 flow.timeoutScan:
+--   提醒/自动转办/自动通过); 建表 DDL 与 sys_api/sys_job 种子已并入下方;
+--   存量库执行 p018_flow_withdraw_delegate_timeout.sql。
 -- ============================================================
 
 -- ############################################################
@@ -85,7 +92,7 @@ CREATE TABLE IF NOT EXISTS `wf_instance` (
   `flow_conf`         JSON         NULL                   COMMENT '节点树快照(发起时从定义复制, 驳回重提沿用)',
   `self_selects`      JSON         NULL                   COMMENT '发起人自选审批人快照 {nodeId: [userId]} (发起/重提时写入, 推进时读取)',
   `current_node_ids`  VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '当前活跃节点ID(逗号分隔)',
-  `status`            TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回(待重提)',
+  `status`            TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回(待重提),7=已撤回(发起人收回,待重提)',
   `start_user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '发起人ID',
   `start_user_name`   VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '发起人昵称(冗余)',
   `finished_at`       DATETIME     NULL                   COMMENT '结束时间',
@@ -112,15 +119,18 @@ CREATE TABLE IF NOT EXISTS `wf_task` (
   `sign_type`     TINYINT      NOT NULL DEFAULT 1      COMMENT '签核方式:1=或签,2=会签',
   `assignee_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '处理人ID',
   `assignee_name` VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '处理人昵称(冗余)',
-  `status`        TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效(退回/撤销后原同意失效)',
+  `delegate_from_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '委派来源任务ID(0=非被委派任务,>0=被委派的代办任务)',
+  `status`        TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效(退回/撤销后原同意失效),7=已委派,8=委办完成',
   `comment`       VARCHAR(500) NOT NULL DEFAULT ''     COMMENT '审批意见',
   `receive_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '到达时间',
+  `due_time`      DATETIME     NULL                   COMMENT '办理期限(节点超时配置物化,NULL=不限)',
   `acted_at`      DATETIME     NULL                   COMMENT '处理时间',
   `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_instance` (`instance_id`),
-  KEY `idx_assignee` (`assignee_id`, `status`)
+  KEY `idx_assignee` (`assignee_id`, `status`),
+  KEY `idx_status_due` (`status`, `due_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批任务';
 
 -- ------------------------------------------------------------
@@ -132,7 +142,7 @@ CREATE TABLE IF NOT EXISTS `wf_record` (
   `task_id`       BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '关联任务ID(无则为0)',
   `node_id`       VARCHAR(32)  NOT NULL DEFAULT ''     COMMENT '节点ID',
   `node_name`     VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '节点名称',
-  `action`        VARCHAR(16)  NOT NULL                COMMENT '动作:submit/resubmit/approve/reject/back/cancel/cc/finish/transfer/terminate/urge/append/reduce',
+  `action`        VARCHAR(16)  NOT NULL                COMMENT '动作:submit/resubmit/approve/reject/back/cancel/withdraw/cc/finish/transfer/delegate/delegateResolve/terminate/urge/append/reduce/timeoutRemind/timeoutTransfer/timeoutApprove',
   `operator_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '操作人ID(0=系统)',
   `operator_name` VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '操作人昵称(0=系统)',
   `comment`       VARCHAR(500) NOT NULL DEFAULT ''     COMMENT '备注/意见',
@@ -222,10 +232,13 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/flow/instances',              'POST',   '审批中心', '发起流程'),
   ('/api/v1/flow/instances/{id}',         'GET',    '审批中心', '流程实例详情'),
   ('/api/v1/flow/instances/{id}/cancel',  'POST',   '审批中心', '撤销流程(发起人)'),
+  ('/api/v1/flow/instances/{id}/withdraw', 'POST',  '审批中心', '撤回流程(发起人,尚无审批时收回待改)'),
   ('/api/v1/flow/instances/{id}/resubmit','POST',   '审批中心', '重新提交(退回后)'),
   ('/api/v1/flow/instances/{id}/terminate','POST',  '审批中心', '终止流程(管理员)'),
   ('/api/v1/flow/instances/{id}/urge',    'POST',   '审批中心', '催办(发起人, 10分钟限一次)'),
   ('/api/v1/flow/tasks/{id}/transfer',    'POST',   '审批中心', '转办(待办转给他人)'),
+  ('/api/v1/flow/tasks/{id}/delegate',        'POST', '审批中心', '委派(代办后回到原审批人终审)'),
+  ('/api/v1/flow/tasks/{id}/delegateResolve', 'POST', '审批中心', '委派处理(被委托人提交意见)'),
   ('/api/v1/flow/tasks/{id}/append',      'POST',   '审批中心', '加签(当前节点追加必要审批人)'),
   ('/api/v1/flow/tasks/{id}/reduce',      'POST',   '审批中心', '减签(移除节点待办审批人)'),
   ('/api/v1/flow/tasks/{id}/approve',     'POST',   '审批中心', '同意'),
@@ -367,3 +380,15 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/leaves/{id}',         'DELETE', '业务审批', '删除请假申请(未在审批流中)'),
   ('/api/v1/leaves/{id}/submit',  'POST',   '业务审批', '提交审批(草稿发起/退回撤销后重提)'),
   ('/api/v1/leaves/{id}/cancel',  'POST',   '业务审批', '撤销审批(发起人,运行中或退回态)');
+
+-- ############################################################
+-- 五、流程超时扫描定时任务 (原 p018)
+-- 审批节点配置办理期限后, 引擎生成任务时物化 due_time;
+-- 本任务按节点超时策略处理逾期: 提醒/自动转办/自动通过。
+-- 幂等: handler 未种子过才插入; 网页端 定时任务 页可调频率/暂停。
+-- ############################################################
+INSERT INTO `sys_job` (`name`,`handler`,`cron_expr`,`params`,`status`,`remark`)
+SELECT '流程超时扫描', 'flow.timeoutScan', '0 */10 * * * *', '', 1,
+       '审批任务超时处理: 提醒/自动转办/自动通过 (按审批节点超时配置, 无配置不受影响)'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `sys_job` WHERE `handler` = 'flow.timeoutScan' AND `deleted_at` IS NULL);

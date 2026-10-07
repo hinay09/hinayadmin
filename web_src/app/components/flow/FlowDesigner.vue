@@ -118,6 +118,12 @@ function nodeDesc(node: FNode): string {
     default: who = '未设置'
   }
   if (node.type === 'approver' && node.signType === 'all') who += ' (会签)'
+  // 超时配置摘要: 卡片上一眼可见期限与策略
+  if (node.type === 'approver' && (node.timeoutHours || 0) > 0) {
+    const act = node.timeoutAction === 'transfer' ? '超时转办'
+      : node.timeoutAction === 'approve' ? '超时自动通过' : '超时提醒'
+    who += ` · 限${node.timeoutHours}h(${act})`
+  }
   return who
 }
 
@@ -146,6 +152,11 @@ const approverTypeOptions = [
 ]
 const ccTypeOptions = approverTypeOptions.filter(o => o.value !== 'selfSelect')
 function openNodeCfg(node: FNode) {
+  // 超时配置归一 (存量节点无这些字段): 期限 0=不限, 策略默认提醒
+  if (node.type === 'approver') {
+    if (node.timeoutHours === undefined || node.timeoutHours === null) node.timeoutHours = 0
+    if (!node.timeoutAction) node.timeoutAction = 'remind'
+  }
   cfgNode.value = node
   nodeCfgVisible.value = true
 }
@@ -274,6 +285,30 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
             <el-radio value="all">会签 (全部通过)</el-radio>
           </el-radio-group>
         </el-form-item>
+        <!-- 超时处理: 期限物化到任务行, 由定时任务 flow.timeoutScan 扫描 -->
+        <template v-if="cfgNode.type === 'approver'">
+          <el-divider content-position="left">超时处理</el-divider>
+          <el-form-item label="办理期限">
+            <el-input-number v-model="cfgNode.timeoutHours" :min="0" :max="720" :step="1" controls-position="right" />
+            <span class="fd-tip-inline">小时 (0=不限时)</span>
+          </el-form-item>
+          <el-form-item v-if="(cfgNode.timeoutHours || 0) > 0" label="超时策略">
+            <el-radio-group v-model="cfgNode.timeoutAction">
+              <el-radio value="remind">提醒</el-radio>
+              <el-radio value="transfer">自动转办</el-radio>
+              <el-radio value="approve">自动通过</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="(cfgNode.timeoutHours || 0) > 0 && cfgNode.timeoutAction === 'transfer'" label="转办给">
+            <el-select v-model="cfgNode.timeoutTransfer" filterable placeholder="超时后转给谁" style="width:100%">
+              <el-option v-for="u in users" :key="u.id" :label="u.nickname || u.username" :value="u.id" />
+            </el-select>
+          </el-form-item>
+          <div v-if="(cfgNode.timeoutHours || 0) > 0" class="fd-tip">
+            逾期后由定时任务处理: 提醒=通知审批人 (一次); 自动转办=系统转给指定人 (转办后不再计时);
+            自动通过=系统代为同意并推进。未配置期限的节点不受影响。
+          </div>
+        </template>
         <div v-if="cfgNode.approverType === 'superior'" class="fd-tip">
           从发起人所在组织起逐级向上查找挂「主管岗」的用户 (跳过发起人自己), 到根仍无则发起失败并提示。
         </div>
@@ -424,5 +459,10 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   background: var(--el-fill-color-light);
   border-radius: 4px;
   padding: 8px 10px;
+}
+.fd-tip-inline {
+  margin-left: 8px;
+  color: #9aa1ac;
+  font-size: 12px;
 }
 </style>

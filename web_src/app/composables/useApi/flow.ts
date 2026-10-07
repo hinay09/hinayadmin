@@ -14,6 +14,12 @@ export interface FlowNode {
   approverIds?: number[]
   /** approver: any=或签, all=会签 */
   signType?: string
+  /** approver: 办理期限(小时), 0=不限; 逾期由定时任务按超时策略处理 */
+  timeoutHours?: number
+  /** approver: 超时策略 remind=提醒(默认)/transfer=自动转办/approve=自动通过 */
+  timeoutAction?: string
+  /** approver: 自动转办目标用户ID (timeoutAction=transfer 必填) */
+  timeoutTransfer?: number
   /** condition: 分支列表 */
   branches?: FlowBranch[]
 }
@@ -121,9 +127,13 @@ export interface FlowTaskItem {
   signType: number
   assigneeId: number
   assigneeName: string
+  /** 委派来源任务ID: >0=本人被委派的代办任务 (提交意见后回到原审批人终审) */
+  delegateFromId: number
   status: number
   comment: string
   receiveTime: string
+  /** 办理期限 (节点超时配置物化, null=不限) */
+  dueTime: string | null
   actedAt: string | null
 }
 
@@ -154,6 +164,8 @@ export interface FlowInstanceDetail {
   myCcTaskId: number
   rejectTargets: FlowRejectTarget[]
   canCancel: boolean
+  /** 发起人可撤回 (运行中且尚无任何审批人同意) */
+  canWithdraw: boolean
   canResubmit: boolean
   prevSelfSelects: Record<string, number[]>
 }
@@ -183,6 +195,7 @@ export function useFlowApi() {
       r.get<{ list: FlowInstanceItem[], total: number }>('/flow/instances', params),
     instDetail: (id: number) => r.get<FlowInstanceDetail>(`/flow/instances/${id}`),
     instCancel: (id: number) => r.post(`/flow/instances/${id}/cancel`),
+    instWithdraw: (id: number) => r.post(`/flow/instances/${id}/withdraw`),
     instResubmit: (id: number, data: { formData?: Record<string, any>, selfSelects?: Record<string, number[]> }) =>
       r.post(`/flow/instances/${id}/resubmit`, data),
     instTerminate: (id: number, comment: string) => r.post(`/flow/instances/${id}/terminate`, { comment }),
@@ -194,6 +207,10 @@ export function useFlowApi() {
       r.post(`/flow/tasks/${id}/reject`, { comment, targetNodeId: targetNodeId || undefined }),
     taskTransfer: (id: number, targetUserId: number, comment: string) =>
       r.post(`/flow/tasks/${id}/transfer`, { targetUserId, comment }),
+    taskDelegate: (id: number, targetUserId: number, comment: string) =>
+      r.post(`/flow/tasks/${id}/delegate`, { targetUserId, comment }),
+    taskDelegateResolve: (id: number, comment: string) =>
+      r.post(`/flow/tasks/${id}/delegateResolve`, { comment }),
     taskAppend: (id: number, userIds: number[], comment: string) =>
       r.post(`/flow/tasks/${id}/append`, { userIds, comment }),
     taskReduce: (id: number, userIds: number[], comment: string) =>
@@ -211,6 +228,7 @@ export const flowInstStatusMap: Record<number, { text: string, tag: string }> = 
   4: { text: '已撤销', tag: 'info' },
   5: { text: '已终止', tag: 'warning' },
   6: { text: '被驳回', tag: 'danger' },
+  7: { text: '已撤回', tag: 'warning' },
 }
 
 /** 任务状态文本/颜色 */
@@ -221,6 +239,8 @@ export const flowTaskStatusMap: Record<number, { text: string, tag: string }> = 
   4: { text: '已转出', tag: 'info' },
   5: { text: '已作废', tag: 'info' },
   6: { text: '已失效', tag: 'info' },
+  7: { text: '已委派', tag: 'warning' },
+  8: { text: '委办完成', tag: 'success' },
 }
 
 /** 流转动作文本 */
@@ -231,13 +251,19 @@ export const flowActionMap: Record<string, string> = {
   reject: '驳回',
   back: '退回到',
   cancel: '撤销',
+  withdraw: '撤回',
   cc: '抄送',
   finish: '流程通过',
   transfer: '转办',
+  delegate: '委派',
+  delegateResolve: '委派处理',
   terminate: '终止',
   urge: '催办',
   append: '加签',
   reduce: '减签',
+  timeoutRemind: '超时提醒',
+  timeoutTransfer: '超时转办',
+  timeoutApprove: '超时自动通过',
 }
 
 /** 收集节点树中所有"发起人自选"审批节点 (发起/重提弹窗需要动态选人) */
@@ -310,6 +336,7 @@ export function flowStatesFromTasks(tasks: FlowTaskItem[] = []): Record<string, 
 export function flowEndState(status: number): { state: 'done' | 'rejected' | 'voided' | 'warn' | 'wait', text: string } {
   if (status === 2) return { state: 'done', text: '流程通过' }
   if (status === 6) return { state: 'rejected', text: '退回发起人' }
+  if (status === 7) return { state: 'voided', text: '已撤回待修改' }
   if (status === 4) return { state: 'voided', text: '已撤销' }
   if (status === 5) return { state: 'warn', text: '已终止' }
   return { state: 'wait', text: '结束' }

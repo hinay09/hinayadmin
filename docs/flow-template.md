@@ -21,10 +21,10 @@
   │                                          或 InstanceResubmit(退回/撤销后重提)
   │                                           ──▶ 建实例+表单/节点树快照, 推进, 站内通知审批人
   │
-  │ ③ 审批/驳回/转办/加签… 全部在「审批中心 → 我的审批」详情页 (业务页不实现审批 UI)
+  │ ③ 审批/驳回/转办/委派/加签… 全部在「审批中心 → 我的审批」详情页 (业务页不实现审批 UI)
   │
   │ ④ 状态列变化: flow_status 冗余列 ←── BizListener 四回调 (引擎事务提交后尽力调用)
-  │        OnApproved→1  OnReturned→2  OnCanceled→3  OnTerminated→4
+  │        OnApproved→1  OnReturned→2  OnCanceled→3  OnTerminated→4  (撤回 OnWithdrawn 未注册时回退 OnReturned)
 ```
 
 三条铁律 (后面「规范速查」有完整版):

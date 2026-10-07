@@ -22,9 +22,10 @@ const (
 	instStatusRunning    = 1 // 运行中
 	instStatusApproved   = 2 // 已通过
 	instStatusRejected   = 3 // 已废弃 (历史"整单驳回"; 现驳回退回为 6, 不再使用)
-	instStatusCanceled   = 4 // 已撤销
+	instStatusCanceled   = 4 // 已撤销 (终态)
 	instStatusTerminated = 5 // 已终止
 	instStatusReturned   = 6 // 已退回 (被驳回, 待发起人修改后重提或撤销)
+	instStatusWithdrawn  = 7 // 已撤回 (发起人主动收回, 待修改后重提或撤销; 区别于撤销终态 4)
 )
 
 // 任务节点类型。
@@ -41,12 +42,21 @@ const (
 
 // 任务状态。
 const (
-	taskStatusPending     = 1 // 待办/待阅
-	taskStatusApproved    = 2 // 已同意/已阅
-	taskStatusRejected    = 3 // 已驳回
-	taskStatusTransferred = 4 // 已转出
-	taskStatusVoid        = 5 // 已作废(或签被抢先/流程终止连带)
-	taskStatusInvalid     = 6 // 已失效(退回/撤销后原审批同意不再计入当前轮, 历史记录保留)
+	taskStatusPending       = 1 // 待办/待阅
+	taskStatusApproved      = 2 // 已同意/已阅
+	taskStatusRejected      = 3 // 已驳回
+	taskStatusTransferred   = 4 // 已转出
+	taskStatusVoid          = 5 // 已作废(或签被抢先/流程终止连带)
+	taskStatusInvalid       = 6 // 已失效(退回/撤销后原审批同意不再计入当前轮, 历史记录保留)
+	taskStatusDelegated     = 7 // 已委派(原任务挂起, 等待被委托人代办后回到本任务终审)
+	taskStatusDelegatedDone = 8 // 委办完成(被委托人已提交意见, 已回到原审批人; 不计入会签/或签统计)
+)
+
+// 审批超时策略 (approver 节点 timeoutAction 配置)。
+const (
+	timeoutActionRemind   = "remind"   // 逾期提醒: 通知审批人 (默认, 每任务一次)
+	timeoutActionTransfer = "transfer" // 自动转办: 系统转给指定人 (转办后不再计时, 防循环)
+	timeoutActionApprove  = "approve"  // 自动通过: 系统代为同意并推进
 )
 
 // 节点类型标识。
@@ -106,6 +116,11 @@ type Node struct {
 	ApproverIds  []uint64  `json:"approverIds,omitempty"`
 	SignType     string    `json:"signType,omitempty"` // approver: any=或签, all=会签
 	Branches     []*Branch `json:"branches,omitempty"` // condition
+
+	// approver: 超时处理 (任务生成时物化为 wf_task.due_time, 由定时任务 flow.timeoutScan 扫描)
+	TimeoutHours    int    `json:"timeoutHours,omitempty"`    // 办理期限(小时), 0=不限
+	TimeoutAction   string `json:"timeoutAction,omitempty"`   // 超时策略: remind(默认)/transfer/approve
+	TimeoutTransfer uint64 `json:"timeoutTransfer,omitempty"` // 自动转办目标用户ID (timeoutAction=transfer 必填)
 }
 
 // ============================================================
@@ -213,6 +228,24 @@ func walkValidate(n *Node, ids map[string]bool) error {
 			if cur.Type == nodeTypeApprover && cur.SignType == "" {
 				return fmt.Errorf("审批节点「%s」未设置签核方式", cur.Name)
 			}
+			// 超时配置校验 (仅审批节点; 配错发布即拦, 避免扫描期才发现转办目标缺失)
+			if cur.Type == nodeTypeApprover && cur.TimeoutHours != 0 {
+				if cur.TimeoutHours < 0 {
+					return fmt.Errorf("审批节点「%s」办理期限不能为负数", cur.Name)
+				}
+				switch cur.TimeoutAction {
+				case "", timeoutActionRemind:
+					// 未配置按提醒, 合法
+				case timeoutActionTransfer:
+					if cur.TimeoutTransfer == 0 {
+						return fmt.Errorf("审批节点「%s」超时策略为自动转办, 未选择转办对象", cur.Name)
+					}
+				case timeoutActionApprove:
+					// 自动通过无附加配置
+				default:
+					return fmt.Errorf("审批节点「%s」超时策略不合法: %s", cur.Name, cur.TimeoutAction)
+				}
+			}
 		case nodeTypeCondition:
 			if len(cur.Branches) == 0 {
 				return fmt.Errorf("条件节点「%s」缺少分支", cur.Name)
@@ -267,11 +300,12 @@ func findNode(root *Node, id string) *Node {
 // 业务回调注册 (业务模块按 flow_key 挂接流程结束回调)
 // ============================================================
 
-// BizListener 流程结束回调 (事务提交后尽力调用)。
+// BizListener 流程状态回调 (事务提交后尽力调用)。
 type BizListener struct {
 	OnApproved   func(instanceId, bizId uint64) // 全部节点通过
 	OnReturned   func(instanceId, bizId uint64) // 被驳回退回发起人 (可重提)
-	OnCanceled   func(instanceId, bizId uint64) // 发起人撤销
+	OnWithdrawn  func(instanceId, bizId uint64) // 发起人撤回 (可重提); 未注册时回退 OnReturned
+	OnCanceled   func(instanceId, bizId uint64) // 发起人撤销 (终态)
 	OnTerminated func(instanceId, bizId uint64) // 管理员终止
 }
 

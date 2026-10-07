@@ -5,7 +5,7 @@
 //   - LeaveSubmit 调 flow.StartForBiz(flowKey) 发起审批, 表单数据由业务表字段组装,
 //     仅作流程详情页只读快照 + 条件分支求值 (days>3 加签);
 //   - 审批状态 flow_status 不由业务代码推进 —— 全部来自 flow.RegisterBizListener
-//     四回调 (通过/退回/撤销/终止), 业务侧只做幂等回写;
+//     五回调 (通过/退回/撤回/撤销/终止), 业务侧只做幂等回写;
 //   - 撤销/重提复用审批引擎的实例动作 (InstanceCancel/InstanceResubmit),
 //     前端审批操作仍统一在「审批中心 → 我的审批」完成。
 package leave
@@ -47,6 +47,7 @@ func init() {
 	flow.RegisterBizListener(flowKeyLeave, flow.BizListener{
 		OnApproved:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusApproved) },
 		OnReturned:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusReturned) },
+		OnWithdrawn:  func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusReturned) }, // 撤回≈退回: 单据回到可修改重提态
 		OnCanceled:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusCanceled) },
 		OnTerminated: func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusTermed) },
 	})

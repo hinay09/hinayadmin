@@ -297,6 +297,16 @@ func (s *sFlow) InstanceDetail(ctx context.Context, in *v1.FlowInstanceDetailReq
 			rejectTargets = append(rejectTargets, &v1.FlowRejectTarget{NodeId: t.NodeId, NodeName: t.NodeName})
 		}
 	}
+	// 撤回标记: 发起人 + 运行中 + 本轮尚无任何审批人同意 (与 InstanceWithdraw 同口径)
+	canWithdraw := inst.Status == instStatusRunning && inst.StartUserId == uid
+	if canWithdraw {
+		for _, t := range tasks {
+			if t.NodeType == taskNodeTypeApprove && t.Status == taskStatusApproved {
+				canWithdraw = false
+				break
+			}
+		}
+	}
 	return &v1.FlowInstanceDetailRes{
 		Instance:        instItem(inst, nil, currentNodeNames(ctx, inst)),
 		FormConf:        formConf,
@@ -307,13 +317,16 @@ func (s *sFlow) InstanceDetail(ctx context.Context, in *v1.FlowInstanceDetailReq
 		MyPendingTaskId: myPending,
 		MyCcTaskId:      myCc,
 		RejectTargets:   rejectTargets,
-		CanCancel:       (inst.Status == instStatusRunning || inst.Status == instStatusReturned) && inst.StartUserId == uid,
-		CanResubmit:     (inst.Status == instStatusReturned || inst.Status == instStatusCanceled) && inst.StartUserId == uid,
+		CanCancel: (inst.Status == instStatusRunning || inst.Status == instStatusReturned ||
+			inst.Status == instStatusWithdrawn) && inst.StartUserId == uid,
+		CanWithdraw: canWithdraw,
+		CanResubmit: (inst.Status == instStatusReturned || inst.Status == instStatusCanceled ||
+			inst.Status == instStatusWithdrawn) && inst.StartUserId == uid,
 		PrevSelfSelects: prevSelfSelects(flowConf, tasks),
 	}, nil
 }
 
-// InstanceCancel 发起人撤销流程 (运行中或退回待重提均可撤销)。
+// InstanceCancel 发起人撤销流程 (运行中、退回待重提或已撤回待重提均可撤销)。
 func (s *sFlow) InstanceCancel(ctx context.Context, in *v1.FlowInstanceCancelReq) (res *v1.FlowInstanceCancelRes, err error) {
 	uid := contextx.UserId(ctx)
 	if uid == 0 {
@@ -326,7 +339,7 @@ func (s *sFlow) InstanceCancel(ctx context.Context, in *v1.FlowInstanceCancelReq
 	if err != nil {
 		return nil, err
 	}
-	if inst.Status != instStatusRunning && inst.Status != instStatusReturned {
+	if inst.Status != instStatusRunning && inst.Status != instStatusReturned && inst.Status != instStatusWithdrawn {
 		return nil, xerror.New(xerror.CodeParamInvalid, "流程已结束, 无法撤销")
 	}
 	if inst.StartUserId != uid {
@@ -337,8 +350,8 @@ func (s *sFlow) InstanceCancel(ctx context.Context, in *v1.FlowInstanceCancelReq
 		if te := lockInstanceRow(ctx, tx, inst.Id); te != nil {
 			return te
 		}
-		// 锁后复核状态: 加载与加锁之间可能已被并发撤销/驳回
-		if te := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning, instStatusReturned); te != nil {
+		// 锁后复核状态: 加载与加锁之间可能已被并发撤销/驳回/撤回
+		if te := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning, instStatusReturned, instStatusWithdrawn); te != nil {
 			return te
 		}
 		if te := voidPendingTasks(ctx, tx, inst.Id, "", 0); te != nil {
@@ -360,7 +373,111 @@ func (s *sFlow) InstanceCancel(ctx context.Context, in *v1.FlowInstanceCancelReq
 	return &v1.FlowInstanceCancelRes{}, nil
 }
 
-// InstanceResubmit 重新提交: 仅退回态(6)/已撤销(4)且发起人可操作 —— 撤销后仍可改表单再次发起。
+// InstanceWithdraw 发起人撤回: 尚无任何审批人同意时收回流程, 实例转入已撤回态(7)。
+// 与撤销的区别: 撤销是终态(4)并触发 OnCanceled; 撤回是"收回待改"——实例未结束,
+// 修改表单后重新提交 (复用 InstanceResubmit), 业务回调 OnWithdrawn (未注册回退 OnReturned)。
+// 时机约束: 本轮已有审批人同意 (存在状态2任务) 则不可撤回, 提示改走撤销;
+// 驳回退回重提的旧轮同意已被置为失效(6), 不构成阻断。
+func (s *sFlow) InstanceWithdraw(ctx context.Context, in *v1.FlowInstanceWithdrawReq) (res *v1.FlowInstanceWithdrawRes, err error) {
+	uid := contextx.UserId(ctx)
+	if uid == 0 {
+		return nil, xerror.New(xerror.CodeUnauthorized)
+	}
+	user := contextx.LoginUser(ctx)
+	userName := pickName(user.Nickname, user.Username)
+
+	inst, err := loadInstance(ctx, in.Id)
+	if err != nil {
+		return nil, err
+	}
+	if inst.Status != instStatusRunning {
+		return nil, xerror.New(xerror.CodeParamInvalid, "流程不在运行中, 无法撤回")
+	}
+	if inst.StartUserId != uid {
+		return nil, xerror.New(xerror.CodeForbidden, "仅发起人可撤回")
+	}
+	// 时机校验 (事务内锁后复核, 防与并发同意赛跑)
+	if err = ensureNoApprovalYet(ctx, g.DB(), inst.Id); err != nil {
+		return nil, err
+	}
+	// 被作废待办的当前处理人 (含被委派人): 撤回后收到待办作废通知
+	var pend []*entity.WfTask
+	if err = dao.WfTask.Ctx(ctx).
+		Where("instance_id", inst.Id).
+		Where("status", taskStatusPending).
+		Scan(&pend); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	notify := &notifySink{sender: uid}
+	err = dao.WfInstance.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if te := lockInstanceRow(ctx, tx, inst.Id); te != nil {
+			return te
+		}
+		if te := ensureInstanceStatus(ctx, tx, inst.Id, instStatusRunning); te != nil {
+			return te
+		}
+		// 锁后复核时机: 加载与加锁之间可能已有审批人同意
+		if te := ensureNoApprovalYet(ctx, tx, inst.Id); te != nil {
+			return te
+		}
+		// 当前全部待办/委派挂起作废 (时机约束下不存在需失效的已同意, 不再调用 invalidate)
+		if te := voidPendingTasks(ctx, tx, inst.Id, "", 0); te != nil {
+			return te
+		}
+		// 转入已撤回态: 不置 finished_at (流程未结束, 待修改重提)
+		if _, te := tx.Model(dao.WfInstance.Table()).Ctx(ctx).Where("id", inst.Id).Data(g.Map{
+			"status":           instStatusWithdrawn,
+			"current_node_ids": "",
+		}).Update(); te != nil {
+			return te
+		}
+		inst.Status = instStatusWithdrawn
+		return writeRecord(ctx, tx, inst.Id, 0, "", "", "withdraw", uid, userName, "发起人撤回, 修改后可重新提交")
+	})
+	if err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	// 待办作废通知 (尽力而为)
+	seen := map[uint64]bool{}
+	for _, t := range pend {
+		if seen[t.AssigneeId] {
+			continue
+		}
+		seen[t.AssigneeId] = true
+		notify.add(t.AssigneeId,
+			fmt.Sprintf("审批已撤回: %s", inst.Title),
+			fmt.Sprintf("发起人 %s 撤回了「%s」, 你的待办已作废, 无需再处理。", inst.StartUserName, inst.Title))
+	}
+	notify.flush(ctx)
+	fireEvent(inst.FlowKey, instStatusWithdrawn, inst.Id, inst.BizId)
+	return &v1.FlowInstanceWithdrawRes{}, nil
+}
+
+// modelRunner 同时容纳 g.DB() 与事务 (两者都提供 Model 入口), 供复核类小查询复用。
+type modelRunner interface {
+	Model(tableNameQueryVariant ...any) *gdb.Model
+}
+
+// ensureNoApprovalYet 复核实例本轮尚无任何审批人同意 (撤回时机约束)。
+// 事务外传 g.DB(), 事务内传 tx; 锁后复核防与并发同意赛跑。
+func ensureNoApprovalYet(ctx context.Context, db modelRunner, instanceId uint64) error {
+	cnt, err := db.Model(dao.WfTask.Table()).Ctx(ctx).
+		Where("instance_id", instanceId).
+		Where("node_type", taskNodeTypeApprove).
+		Where("status", taskStatusApproved).
+		Count()
+	if err != nil {
+		return err
+	}
+	if cnt > 0 {
+		return xerror.New(xerror.CodeParamInvalid, "已有审批人同意, 无法撤回; 如需结束请撤销流程")
+	}
+	return nil
+}
+
+// InstanceResubmit 重新提交: 仅退回态(6)/已撤销(4)/已撤回(7)且发起人可操作 —— 撤销后仍可改表单再次发起。
 // 沿用实例快照的流程定义 (可顺带修改表单数据); 重新提交流程从头重走, 历史轮次保留。
 func (s *sFlow) InstanceResubmit(ctx context.Context, in *v1.FlowInstanceResubmitReq) (res *v1.FlowInstanceResubmitRes, err error) {
 	uid := contextx.UserId(ctx)
@@ -371,8 +488,8 @@ func (s *sFlow) InstanceResubmit(ctx context.Context, in *v1.FlowInstanceResubmi
 	if err != nil {
 		return nil, err
 	}
-	if inst.Status != instStatusReturned && inst.Status != instStatusCanceled {
-		return nil, xerror.New(xerror.CodeParamInvalid, "当前状态不可重新提交 (仅被驳回或已撤销)")
+	if inst.Status != instStatusReturned && inst.Status != instStatusCanceled && inst.Status != instStatusWithdrawn {
+		return nil, xerror.New(xerror.CodeParamInvalid, "当前状态不可重新提交 (仅被驳回、已撤回或已撤销)")
 	}
 	if inst.StartUserId != uid {
 		return nil, xerror.New(xerror.CodeForbidden, "仅发起人可重新提交")
@@ -449,7 +566,7 @@ func (s *sFlow) InstanceResubmit(ctx context.Context, in *v1.FlowInstanceResubmi
 		if e := lockInstanceRow(ctx, tx, inst.Id); e != nil {
 			return e
 		}
-		if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusReturned, instStatusCanceled); e != nil {
+		if e := ensureInstanceStatus(ctx, tx, inst.Id, instStatusReturned, instStatusCanceled, instStatusWithdrawn); e != nil {
 			return e
 		}
 		data := g.Map{"status": instStatusRunning, "current_node_ids": ""}
@@ -859,18 +976,20 @@ func instItem(r *entity.WfInstance, task *entity.WfTask, currentNodes string) *v
 // taskItem 任务转 API 条目。
 func taskItem(t *entity.WfTask) *v1.FlowTaskItem {
 	return &v1.FlowTaskItem{
-		Id:           t.Id,
-		InstanceId:   t.InstanceId,
-		NodeId:       t.NodeId,
-		NodeName:     t.NodeName,
-		NodeType:     t.NodeType,
-		SignType:     t.SignType,
-		AssigneeId:   t.AssigneeId,
-		AssigneeName: t.AssigneeName,
-		Status:       t.Status,
-		Comment:      t.Comment,
-		ReceiveTime:  t.ReceiveTime,
-		ActedAt:      t.ActedAt,
+		Id:             t.Id,
+		InstanceId:     t.InstanceId,
+		NodeId:         t.NodeId,
+		NodeName:       t.NodeName,
+		NodeType:       t.NodeType,
+		SignType:       t.SignType,
+		AssigneeId:     t.AssigneeId,
+		AssigneeName:   t.AssigneeName,
+		DelegateFromId: t.DelegateFromId,
+		Status:         t.Status,
+		Comment:        t.Comment,
+		ReceiveTime:    t.ReceiveTime,
+		DueTime:        t.DueTime,
+		ActedAt:        t.ActedAt,
 	}
 }
 
