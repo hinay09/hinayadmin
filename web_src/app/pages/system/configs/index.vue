@@ -95,6 +95,9 @@ const rules = computed(() => ({
   name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
 }))
 
+// 敏感配置(如 ai.api_key / wechat.app_secret)后端返回的是脱敏值, 提示不要误改
+const isMaskedValue = computed(() => form.configValue.includes('***'))
+
 function resetForm() {
   Object.assign(form, {
     id: 0, configKey: '', configValue: '', configType: 0,
@@ -262,6 +265,9 @@ onMounted(() => loadList())
             :rows="form.configType === 3 ? 4 : 1"
             :placeholder="form.configType === 2 ? 'true / false' : '请输入配置值'"
           />
+          <div v-if="isMaskedValue" class="masked-tip">
+            敏感配置已脱敏显示；不修改请保持原样提交，后端不会用脱敏值覆盖真实值
+          </div>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="form.sort" :min="0" />
@@ -283,3 +289,12 @@ onMounted(() => loadList())
     </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.masked-tip {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+  width: 100%;
+}
+</style>
