@@ -39,6 +39,24 @@
 - AI 智能对话: OpenAI 兼容接口 (langchaingo), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
 - 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
 
+## 界面截图
+
+| 登录 | 仪表盘 |
+| --- | --- |
+| ![登录](docs/images/login.png) | ![仪表盘](docs/images/dashboard.png) |
+
+| 菜单管理 | API管理 |
+| --- | --- |
+| ![菜单管理](docs/images/menus.png) | ![API管理](docs/images/sys_apis.png) |
+
+| 个人中心 | 流程定义 |
+| --- | --- |
+| ![个人中心](docs/images/profile.png) | ![流程定义](docs/images/flow_definitions.png) |
+
+| 实例管理 | 智能对话 |
+| --- | --- |
+| ![实例管理](docs/images/flow_instances.png) | ![智能对话](docs/images/ai_chat.png) |
+
 ## 目录结构
 
 ```
