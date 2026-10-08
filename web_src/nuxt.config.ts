@@ -33,6 +33,16 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8000/upload',
         changeOrigin: true,
       },
+      // 接口文档: GoFrame 内置 Redoc 页面与 OpenAPI 描述文件 (系统工具-接口文档 iframe 内嵌)
+      // 生产部署需在 nginx 将 /swagger 与 /api.json 反代到后端 (与 /api 同理)
+      '/swagger': {
+        target: 'http://127.0.0.1:8000/swagger',
+        changeOrigin: true,
+      },
+      '/api.json': {
+        target: 'http://127.0.0.1:8000/api.json',
+        changeOrigin: true,
+      },
     },
   },
 

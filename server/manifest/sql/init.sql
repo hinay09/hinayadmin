@@ -773,7 +773,7 @@ INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 -- 菜单: 服务器监控 (路径走 /system 前缀, 复用前端 /system 路由守卫;
 -- 权限双层: 种子只给 admin 角色授权 + 逻辑层 contextx.IsAdmin 硬校验)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (21, 2, '服务器监控', 2, '/system/monitor', 'system/monitor/index', 'Cpu', 'monitor:server:list', 5, 1, 1);
+  (22, 2, '服务器监控', 2, '/system/monitor', 'system/monitor/index', 'Cpu', 'monitor:server:list', 5, 1, 1);
 
 -- API 资源 (纯查看页, 无按钮权限)
 INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
@@ -783,7 +783,21 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: 仅 admin 角色授予菜单 (API 侧 admin 已有 /api/v1/* 通配策略)
 INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:21', 'access', '', '', '');
+  ('p', '1', 'menu:22', 'access', '', '', '');
+
+-- ============================================================
+-- 接口文档 Swagger (挂在系统工具目录下, 仅超管可见)
+-- 页面为内嵌 iframe, 实际文档由后端 GoFrame 内置提供 (/swagger + /api.json);
+-- 前端 dev 由 nitro.devProxy 转发, 生产部署需在 nginx 将 /swagger 与
+-- /api.json 反代到后端 (与 /api 同理), 或在 config.yaml 关闭 swaggerPath。
+-- ============================================================
+
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (23, 3, '接口文档', 2, '/system/swagger', 'system/swagger/index', 'Document', 'system:swagger:list', 2, 1, 1);
+
+-- Casbin: 仅 admin 角色授予菜单
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', '1', 'menu:23', 'access', '', '', '');
 
 -- ============================================================
 -- Excel 导入导出 (用户模块示例)
