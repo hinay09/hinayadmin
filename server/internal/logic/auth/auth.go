@@ -112,6 +112,13 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	}
 
 	// 解密密码(一次性私钥), 解密失败不计入密码错误次数 (协议层错误, 非登录尝试, 不记录)
+	// 图形验证码校验 (sys.captcha_enable 开启时): 置于解密/bcrypt 等昂贵操作之前,
+	// 机器人请求在此即被拦下; 验证码错误不计入登录失败计数 —— 该计数面向"真人多次试错",
+	// 被脚本刷错验证码不应把真实用户锁在门外 (审计仍由 OperationLog 中间件记录)。
+	if captchaEnabled(ctx) && !verifyCaptcha(req.CaptchaId, req.CaptchaCode) {
+		return nil, xerror.New(xerror.CodeCaptchaInvalid)
+	}
+
 	plainPassword, derr := decryptPassword(ctx, req.KeyId, req.Password)
 	if derr != nil {
 		return nil, derr

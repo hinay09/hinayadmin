@@ -18,14 +18,19 @@ export function useAuthApi() {
   return {
     publicKey: () =>
       r.get<{ keyId: string; publicKey: string }>('/auth/public-key'),
-    login: (username: string, password: string, keyId: string) =>
-      r.post<LoginResult>('/auth/login', { username, password, keyId }),
+    /** 获取图形验证码 (公开接口, 一次调用同时探测 sys.captcha_enable 开关与取图; silent 失败不弹提示) */
+    captcha: () =>
+      r.get<{ captchaEnabled: boolean; captchaId: string; image: string }>(
+        '/auth/captcha', undefined, { silent: true },
+      ),
+    login: (username: string, password: string, keyId: string, captchaId?: string, captchaCode?: string) =>
+      r.post<LoginResult>('/auth/login', { username, password, keyId, captchaId, captchaCode }),
     /** 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口; silent 失败不弹提示) */
     registerStatus: () =>
       r.get<{ allowRegister: boolean }>('/auth/register/status', undefined, { silent: true }),
     /** 用户注册 (密码须用 publicKey 返回的公钥加密后提交, 注册成功后跳登录页) */
-    register: (username: string, password: string, keyId: string, nickname?: string) =>
-      r.post<void>('/auth/register', { username, password, keyId, nickname }),
+    register: (username: string, password: string, keyId: string, nickname?: string, captchaId?: string, captchaCode?: string) =>
+      r.post<void>('/auth/register', { username, password, keyId, nickname, captchaId, captchaCode }),
     /** 两步验证登录第二步: 票据 + 动态码换 token */
     loginTotp: (ticket: string, code: string) =>
       r.post<{ token: string; expireAt: number; userInfo: LoginUser }>(

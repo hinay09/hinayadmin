@@ -17,6 +17,10 @@ type (
 		// 每次调用生成全新 RSA 密钥对, 私钥存 Redis 并设置 TTL, 用后即毁;
 		// 按 IP 限流防止匿名端点被刷导致密钥生成 DoS。
 		PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.PublicKeyRes, err error)
+		// Captcha 生成图形验证码 (公开接口)。
+		// 全局配置 sys.captcha_enable 关闭时仅返回开关状态; 答案存 Redis 一次性消费,
+		// 登录/注册提交时经校验; 按 IP 限流防图片渲染 DoS。
+		Captcha(ctx context.Context, req *v1.CaptchaReq) (res *v1.CaptchaRes, err error)
 		// Login 用户名密码登录。
 		// 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
 		// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。

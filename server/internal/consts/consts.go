@@ -66,6 +66,18 @@ const (
 	PubKeyMaxPerMin = 20
 )
 
+// 图形验证码 (登录/注册公开入口的人机挑战, 开源库 base64Captcha) 配置。
+const (
+	// CaptchaPrefix Redis 中验证码答案 Key 前缀 (值为答案, GETDEL 一次性消费)。
+	CaptchaPrefix = "hinay:captcha:"
+	// CaptchaLimitPrefix 验证码图片接口单 IP 限流计数 Key 前缀。
+	CaptchaLimitPrefix = "hinay:captcha:limit:"
+	// CaptchaTTLSec 验证码存活时间(秒): 获取图片到提交登录/注册的时间窗。
+	CaptchaTTLSec = 300
+	// CaptchaMaxPerMin 验证码图片接口单 IP 每分钟最大请求次数(防图片渲染 DoS)。
+	CaptchaMaxPerMin = 30
+)
+
 // TOTP 两步验证配置。
 const (
 	// TotpTicketPrefix Redis 中两步验证登录票据 Key 前缀 (值=用户ID)。

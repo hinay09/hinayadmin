@@ -214,6 +214,7 @@ func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode
 var publicPaths = map[string]struct{}{
 	"/api/v1/auth/login":           {},
 	"/api/v1/auth/public-key":      {},
+	"/api/v1/auth/captcha":         {},
 	"/api/v1/auth/login/totp":      {},
 	"/api/v1/auth/register":        {},
 	"/api/v1/auth/register/status": {},

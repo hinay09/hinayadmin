@@ -53,6 +53,12 @@ func (s *sAuth) Register(ctx context.Context, req *v1.RegisterReq) (res *v1.Regi
 		return nil, xerror.New(xerror.CodeBusinessError, "注册功能未开放")
 	}
 
+	// 图形验证码校验 (sys.captcha_enable 开启时): 注册同为公开入口,
+	// 防脚本批量开户灌脏数据。
+	if captchaEnabled(ctx) && !verifyCaptcha(req.CaptchaId, req.CaptchaCode) {
+		return nil, xerror.New(xerror.CodeCaptchaInvalid)
+	}
+
 	// 与登录同通道: 一次性公钥加密, 解密失败不落任何痕迹
 	plainPassword, derr := decryptPassword(ctx, req.KeyId, req.Password)
 	if derr != nil {

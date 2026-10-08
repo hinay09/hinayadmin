@@ -19,14 +19,32 @@ type PublicKeyRes struct {
 	PublicKey string `json:"publicKey" dc:"RSA 公钥(PEM), 用于加密登录密码"`
 }
 
+// CaptchaReq 获取图形验证码 (公开接口)。
+type CaptchaReq struct {
+	g.Meta `path:"/auth/captcha" tags:"Auth" method:"get" summary:"获取图形验证码"`
+}
+
+// CaptchaRes 图形验证码响应。
+// 全局配置 sys.captcha_enable 关闭时仅返回 captchaEnabled=false, 不渲染图片;
+// 登录页/注册页据此决定是否展示验证码输入框 (一次调用同时完成开关探测与取图)。
+type CaptchaRes struct {
+	CaptchaEnabled bool   `json:"captchaEnabled" dc:"验证码开关(sys.captcha_enable)"`
+	CaptchaId      string `json:"captchaId"      dc:"验证码标识, 提交登录/注册时随答案一并提交"`
+	Image          string `json:"image"          dc:"验证码图片(data:image/png;base64)"`
+}
+
 // LoginReq 登录请求。
 // 密码须先用 PublicKey 接口返回的公钥加密(RSA PKCS#1 v1.5, base64),
 // 每个密钥对仅可使用一次, 过期或已使用需重新获取。
+// 验证码: sys.captcha_enable 开启时 captchaId/captchaCode 必填且须正确
+// (验证码答案一次性消费, 校验失败须重新取图)。
 type LoginReq struct {
-	g.Meta   `path:"/auth/login" tags:"Auth" method:"post" summary:"登录"`
-	Username string `v:"required#请输入账号" json:"username" dc:"账号"`
-	Password string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
-	KeyId    string `v:"required#缺少加密密钥标识" json:"keyId" dc:"公钥标识"`
+	g.Meta      `path:"/auth/login" tags:"Auth" method:"post" summary:"登录"`
+	Username    string `v:"required#请输入账号" json:"username" dc:"账号"`
+	Password    string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
+	KeyId       string `v:"required#缺少加密密钥标识" json:"keyId" dc:"公钥标识"`
+	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
+	CaptchaCode string `json:"captchaCode" dc:"验证码答案(开启 sys.captcha_enable 时必填)"`
 }
 
 // LoginRes 登录响应。
@@ -45,12 +63,15 @@ type LoginRes struct {
 // RegisterReq 用户注册请求 (受全局配置 sys.allow_register 开关控制)。
 // 密码与登录一致: 须先用 PublicKey 接口返回的公钥加密(RSA PKCS#1 v1.5, base64)后提交。
 // 注册成功不自动登录, 前端引导用户走正常登录流程 (含两步验证)。
+// 验证码: sys.captcha_enable 开启时 captchaId/captchaCode 必填且须正确。
 type RegisterReq struct {
-	g.Meta   `path:"/auth/register" tags:"Auth" method:"post" summary:"用户注册"`
-	Username string `v:"required|length:2,32#请输入账号|用户名长度 2-32 个字符" json:"username" dc:"账号"`
-	Password string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
-	KeyId    string `v:"required#缺少加密密钥标识" json:"keyId"   dc:"公钥标识"`
-	Nickname string `v:"length:0,32#昵称最长 32 个字符" json:"nickname" dc:"昵称, 空则默认取账号"`
+	g.Meta      `path:"/auth/register" tags:"Auth" method:"post" summary:"用户注册"`
+	Username    string `v:"required|length:2,32#请输入账号|用户名长度 2-32 个字符" json:"username" dc:"账号"`
+	Password    string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
+	KeyId       string `v:"required#缺少加密密钥标识" json:"keyId"   dc:"公钥标识"`
+	Nickname    string `v:"length:0,32#昵称最长 32 个字符" json:"nickname" dc:"昵称, 空则默认取账号"`
+	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
+	CaptchaCode string `json:"captchaCode" dc:"验证码答案(开启 sys.captcha_enable 时必填)"`
 }
 
 // RegisterRes 注册响应。

@@ -290,6 +290,7 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/auth/profile',   'GET',  '认证', '个人中心详情'),
   ('/api/v1/auth/profile',   'PUT',  '认证', '修改个人资料'),
   ('/api/v1/auth/password',  'PUT',  '认证', '修改密码'),
+  ('/api/v1/auth/captcha',         'GET',  '认证', '获取图形验证码(公开)'),
   ('/api/v1/auth/register',        'POST', '认证', '用户注册(公开, 受 sys.allow_register 开关控制)'),
   ('/api/v1/auth/register/status', 'GET',  '认证', '查询注册开关(公开)'),
   -- 用户管理
@@ -575,7 +576,8 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `n
   ('sys.name',        'Hinay Admin',        0, '系统名称',   '显示在登录页和浏览器标题', 1),
   ('sys.logo',        '',                   0, '系统Logo',   'Logo图片URL',              2),
   ('sys.copyright',   '© 2026 Hinay',       0, '版权信息',   '页脚版权文字',              3),
-  ('sys.allow_register', 'false',           2, '开放注册',   '是否允许新用户自行注册',    4);
+  ('sys.allow_register', 'false',           2, '开放注册',   '是否允许新用户自行注册',    4),
+  ('sys.captcha_enable', 'true',            2, '登录验证码', '登录/注册页图形验证码开关', 5);
 
 -- 菜单: 全局配置 (挂在系统管理目录下, id=1)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES

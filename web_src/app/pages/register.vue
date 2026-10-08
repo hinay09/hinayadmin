@@ -4,11 +4,12 @@
  * - 受全局配置 sys.allow_register 开关控制: 进入页面先查 /auth/register/status,
  *   未开放时展示关闭提示, 开放时展示注册表单。
  * - 密码与登录同通道: 取一次性 RSA 公钥加密后提交, 明文不出本机。
+ * - 图形验证码与登录同机制 (sys.captcha_enable 开启时展示)。
  * - 注册成功不自动登录, 跳转登录页由用户自行登录 (完整走两步验证等流程)。
  */
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Lock, EditPen, Right, Back } from '@element-plus/icons-vue'
+import { User, Lock, EditPen, Right, Back, RefreshRight } from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
 import { storeToRefs } from 'pinia'
 import { useConfigStore } from '~/stores/config'
@@ -24,11 +25,34 @@ const api = useAuthApi()
 /** RSA_CODE_KEY_INVALID 后端一次性密钥失效的错误码, 此时静默换新密钥重试一次 */
 const RSA_CODE_KEY_INVALID = 50005
 
+/* ---- 图形验证码 (sys.captcha_enable 开启时展示, 与登录页同机制) ---- */
+const captchaEnabled = ref(false)
+const captchaId = ref('')
+const captchaImage = ref('')
+
+/** 拉取验证码: 同时探测开关与取图, 每次调用换新图并清空已输入的答案 */
+async function loadCaptcha() {
+  try {
+    const res = await api.captcha()
+    captchaEnabled.value = !!res.captchaEnabled
+    captchaId.value = res.captchaId || ''
+    captchaImage.value = res.image || ''
+  }
+  catch {
+    // 静默失败: 不展示验证码框, 提交侧后端仍会强校验
+    captchaEnabled.value = false
+    captchaId.value = ''
+    captchaImage.value = ''
+  }
+  form.captchaCode = ''
+}
+
 /* ---- 注册开关 ---- */
 const allowRegister = ref<boolean | null>(null) // null = 查询中
 
 onMounted(async () => {
   configStore.restore()
+  loadCaptcha()
   try {
     const res = await api.registerStatus()
     allowRegister.value = !!res.allowRegister
@@ -47,6 +71,7 @@ const form = reactive({
   nickname: '',
   password: '',
   confirmPassword: '',
+  captchaCode: '',
 })
 
 const rules: FormRules = {
@@ -68,6 +93,15 @@ const rules: FormRules = {
       trigger: 'blur',
     },
   ],
+  captchaCode: [
+    {
+      validator: (_rule: any, value: string, callback: (e?: Error) => void) => {
+        if (captchaEnabled.value && !value) callback(new Error('请输入验证码'))
+        else callback()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 /** 取一次性公钥并加密密码, 返回密文与 keyId */
@@ -82,7 +116,11 @@ async function encryptPassword(plain: string) {
 
 async function doRegister() {
   const { keyId, cipher } = await encryptPassword(form.password)
-  return api.register(form.username, cipher, keyId, form.nickname || undefined)
+  return api.register(
+    form.username, cipher, keyId,
+    form.nickname || undefined,
+    captchaId.value, form.captchaCode,
+  )
 }
 
 async function handleSubmit() {
@@ -95,14 +133,19 @@ async function handleSubmit() {
       await doRegister()
     }
     catch (err: any) {
-      // 一次性密钥过期/已用: 换新密钥重试一次, 仍失败则正常抛出
-      if (err?.code !== RSA_CODE_KEY_INVALID) throw err
+      // 一次性密钥过期/已用: 换新密钥重试一次, 仍失败则正常抛出。
+      // 验证码开启时不自动重试 —— 后端校验顺序是验证码在解密之前,
+      // 首次请求已把验证码一次性消费掉, 重试必然失败, 交给外层刷新后由用户重试
+      if (err?.code !== RSA_CODE_KEY_INVALID || captchaEnabled.value) throw err
       await doRegister()
     }
     ElMessage.success('注册成功, 请登录')
     router.replace('/login')
   }
-  catch {}
+  catch {
+    // 到达后端的注册尝试都已消费验证码 (无论失败原因), 换新图重新输入
+    if (captchaEnabled.value) loadCaptcha()
+  }
   finally {
     loading.value = false
   }
@@ -170,6 +213,33 @@ async function handleSubmit() {
               placeholder="再次输入密码"
               :prefix-icon="Lock"
             />
+          </el-form-item>
+          <!-- 图形验证码 (sys.captcha_enable 开启时展示), 点击图片换一张 -->
+          <el-form-item v-if="captchaEnabled" label="验证码" prop="captchaCode">
+            <div class="captcha-row">
+              <el-input
+                v-model="form.captchaCode"
+                size="large"
+                maxlength="8"
+                placeholder="计算结果"
+                :prefix-icon="EditPen"
+              />
+              <img
+                v-if="captchaImage"
+                :src="captchaImage"
+                class="captcha-img"
+                alt="验证码, 点击刷新"
+                title="点击刷新"
+                @click="loadCaptcha"
+              >
+              <el-button
+                v-else
+                size="large"
+                class="captcha-refresh"
+                :icon="RefreshRight"
+                @click="loadCaptcha"
+              />
+            </div>
           </el-form-item>
           <el-button
             type="primary"
@@ -268,5 +338,32 @@ async function handleSubmit() {
   text-align: center;
   font-size: 13px;
   color: #909399;
+}
+
+/* 验证码行: 输入框 + 图片, 图片与输入框等高圆角, 点击刷新 */
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  align-items: center;
+}
+.captcha-row .el-input {
+  flex: 1;
+}
+.captcha-img {
+  height: 40px;
+  width: 128px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color);
+  cursor: pointer;
+  user-select: none;
+  object-fit: cover;
+}
+.captcha-refresh {
+  width: 128px;
+  flex-shrink: 0;
+  height: 40px;
+  border-radius: 6px;
 }
 </style>

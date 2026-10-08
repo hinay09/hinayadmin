@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * 登录页
- * - 第一步: 用户名 + 密码 (RSA 加密传输)
+ * - 第一步: 用户名 + 密码 (RSA 加密传输) + 图形验证码 (sys.captcha_enable 开启时)
  * - 第二步: 开启了两步验证 (TOTP) 的用户, 输入验证器 App 的 6 位动态码
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Lock, Histogram, Right, Back, Iphone, CircleCheckFilled } from '@element-plus/icons-vue'
+import { User, Lock, Histogram, Right, Back, Iphone, CircleCheckFilled, RefreshRight } from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
 import { storeToRefs } from 'pinia'
 import { useUserStore, safeRedirect } from '~/stores/user'
@@ -29,10 +29,33 @@ const allowRegister = ref(false)
 onMounted(() => {
   configStore.restore()
   startCountUp()
+  loadCaptcha()
   api.registerStatus()
     .then(res => (allowRegister.value = !!res.allowRegister))
     .catch(() => (allowRegister.value = false))
 })
+
+/* ---- 图形验证码 (sys.captcha_enable 开启时展示) ---- */
+const captchaEnabled = ref(false)
+const captchaId = ref('')
+const captchaImage = ref('')
+
+/** 拉取验证码: 同时探测开关与取图, 每次调用换新图并清空已输入的答案 */
+async function loadCaptcha() {
+  try {
+    const res = await api.captcha()
+    captchaEnabled.value = !!res.captchaEnabled
+    captchaId.value = res.captchaId || ''
+    captchaImage.value = res.image || ''
+  }
+  catch {
+    // 静默失败: 不展示验证码框, 提交侧后端仍会强校验
+    captchaEnabled.value = false
+    captchaId.value = ''
+    captchaImage.value = ''
+  }
+  form.captchaCode = ''
+}
 
 /* ---- 品牌区插画: "今日登录"数字滚动计数 ---- */
 const statNum = ref(0)
@@ -65,10 +88,20 @@ const showDefaultHint = import.meta.dev
 const form = reactive({
   username: '',
   password: '',
+  captchaCode: '',
 })
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  captchaCode: [
+    {
+      validator: (_rule: any, value: string, callback: (e?: Error) => void) => {
+        if (captchaEnabled.value && !value) callback(new Error('请输入验证码'))
+        else callback()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 /* ---- 两步验证 (TOTP) 第二步 ---- */
@@ -100,7 +133,7 @@ async function encryptPassword(plain: string) {
 
 async function doLogin() {
   const { keyId, cipher } = await encryptPassword(form.password)
-  return api.login(form.username, cipher, keyId)
+  return api.login(form.username, cipher, keyId, captchaId.value, form.captchaCode)
 }
 
 /** 登录收尾: 存 token / 用户信息 / 菜单并跳转 */
@@ -126,8 +159,10 @@ async function handleSubmit() {
       res = await doLogin()
     }
     catch (err: any) {
-      // 一次性密钥过期/已用: 换新密钥重试一次, 仍失败则正常抛出
-      if (err?.code !== RSA_CODE_KEY_INVALID) throw err
+      // 一次性密钥过期/已用: 换新密钥重试一次, 仍失败则正常抛出。
+      // 验证码开启时不自动重试 —— 后端校验顺序是验证码在解密之前,
+      // 首次请求已把验证码一次性消费掉, 重试必然失败, 交给外层刷新后由用户重试
+      if (err?.code !== RSA_CODE_KEY_INVALID || captchaEnabled.value) throw err
       res = await doLogin()
     }
     // 开启两步验证: 不发 token, 携带票据进入动态码输入步骤
@@ -144,7 +179,10 @@ async function handleSubmit() {
     }
     await finishLogin(res.token, res.expireAt!, res.userInfo)
   }
-  catch {}
+  catch {
+    // 到达后端的登录尝试都已消费验证码 (无论失败原因), 换新图重新输入
+    if (captchaEnabled.value) loadCaptcha()
+  }
   finally {
     loading.value = false
   }
@@ -172,11 +210,12 @@ async function handleTotpSubmit() {
   }
 }
 
-/** 返回密码登录第一步 */
+/** 返回密码登录第一步 (验证码已在第一步提交时消费, 换新图) */
 function backToPassword() {
   totpTicket.value = ''
   totpForm.code = ''
   step.value = 'password'
+  loadCaptcha()
 }
 </script>
 
@@ -295,6 +334,33 @@ function backToPassword() {
                 placeholder="密码"
                 :prefix-icon="Lock"
               />
+            </el-form-item>
+            <!-- 图形验证码 (sys.captcha_enable 开启时展示), 点击图片换一张 -->
+            <el-form-item v-if="captchaEnabled" label="验证码" prop="captchaCode">
+              <div class="captcha-row">
+                <el-input
+                  v-model="form.captchaCode"
+                  size="large"
+                  maxlength="8"
+                  placeholder="计算结果"
+                  :prefix-icon="Histogram"
+                />
+                <img
+                  v-if="captchaImage"
+                  :src="captchaImage"
+                  class="captcha-img"
+                  alt="验证码, 点击刷新"
+                  title="点击刷新"
+                  @click="loadCaptcha"
+                >
+                <el-button
+                  v-else
+                  size="large"
+                  class="captcha-refresh"
+                  :icon="RefreshRight"
+                  @click="loadCaptcha"
+                />
+              </div>
             </el-form-item>
             <el-button
               type="primary"
@@ -788,6 +854,33 @@ function backToPassword() {
   letter-spacing: 8px;
   font-size: 20px;
   text-align: center;
+}
+
+/* 验证码行: 输入框 + 图片, 图片与输入框等高圆角, 点击刷新 */
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  align-items: center;
+}
+.captcha-row .el-input {
+  flex: 1;
+}
+.captcha-img {
+  height: 40px;
+  width: 128px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color);
+  cursor: pointer;
+  user-select: none;
+  object-fit: cover;
+}
+.captcha-refresh {
+  width: 128px;
+  flex-shrink: 0;
+  height: 40px;
+  border-radius: 10px;
 }
 .tips {
   margin-top: 16px;

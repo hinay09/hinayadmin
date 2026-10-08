@@ -29,6 +29,8 @@ var (
 	CodeTotpInvalid = gcode.New(50020, "动态验证码错误或已失效", nil)
 	// CodeTotpTicketInvalid 两步验证登录票据缺失/过期/失败次数超限, 前端应回到密码登录重试。
 	CodeTotpTicketInvalid = gcode.New(50021, "两步验证会话已过期, 请重新登录", nil)
+	// CodeCaptchaInvalid 图形验证码缺失/错误/已过期(一次性消费后即失效), 前端应刷新验证码后重试。
+	CodeCaptchaInvalid = gcode.New(50022, "验证码错误或已失效", nil)
 )
 
 // New 构造业务错误。

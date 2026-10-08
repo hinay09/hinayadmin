@@ -12,6 +12,7 @@
 
 - 完整的 RBAC 权限模型 (用户 / 角色 / 菜单 / API 资源 四套件)
 - JWT 登录鉴权 + Token 自动续签 (401 静默刷新) + Redis 黑名单退出
+- 登录图形验证码: 登录/注册公开入口人机挑战 (base64Captcha 数学算式, 答案存 Redis 一次性消费, 单 IP 限流; `sys.captcha_enable` 全局配置开关)
 - Casbin **双维度** 权限校验 (菜单维度 `menu:<id>` + API 维度 `path/method`)
 - 全局限流: 按客户端 IP 的内存令牌桶 (`ratelimit.*` 配置, 默认 100 req/s + 200 突发), 超限 429
 - 动态侧边栏菜单 + 前端 `v-permission` 按钮级权限
@@ -78,7 +79,7 @@ hinay-admin/
 │   │   │   └── system                   #   系统管理全模块
 │   │   ├── service/                     # 业务接口层 (IAuth/IMessage/IUser/IRole/IMenu/IApi/IDict/IFile/IConfig/IAuditLog)
 │   │   ├── logic/                       # 业务实现层 (sXxx + init 注册到 service)
-│   │   │   ├── auth                     #   登录/登出/菜单树/个人资料/改密/头像
+│   │   │   ├── auth                     #   登录/登出/菜单树/个人资料/改密/头像 + 图形验证码 (Redis 存储/一次性消费/sys.captcha_enable 开关)
 │   │   │   ├── system                   #   用户/角色/菜单/API/字典/文件/配置/审计日志/登录日志
 │   │   │   ├── message                  #   消息通知 (含收件箱权限路由)
 │   │   │   ├── online                   #   在线会话 (Redis 注册/心跳/强制下线)
