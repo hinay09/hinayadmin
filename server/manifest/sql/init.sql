@@ -767,6 +767,25 @@ INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   ('p', '1', 'menu:206', 'access', '', '', '');
 
 -- ============================================================
+-- 服务器监控 (挂在系统监控目录下, 仅超管可见)
+-- ============================================================
+
+-- 菜单: 服务器监控 (路径走 /system 前缀, 复用前端 /system 路由守卫;
+-- 权限双层: 种子只给 admin 角色授权 + 逻辑层 contextx.IsAdmin 硬校验)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (21, 2, '服务器监控', 2, '/system/monitor', 'system/monitor/index', 'Cpu', 'monitor:server:list', 5, 1, 1);
+
+-- API 资源 (纯查看页, 无按钮权限)
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/monitor/server', 'GET', '服务器监控', '服务器指标(CPU/内存/磁盘/Go运行时, 仅超管)'),
+  ('/api/v1/system/monitor/mysql',  'GET', '服务器监控', 'MySQL运行状态(仅超管)'),
+  ('/api/v1/system/monitor/redis',  'GET', '服务器监控', 'Redis运行状态(仅超管)');
+
+-- Casbin: 仅 admin 角色授予菜单 (API 侧 admin 已有 /api/v1/* 通配策略)
+INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
+  ('p', '1', 'menu:21', 'access', '', '', '');
+
+-- ============================================================
 -- Excel 导入导出 (用户模块示例)
 -- ============================================================
 INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES

@@ -14,6 +14,7 @@ import (
 	_ "hinay.cn/admin/internal/logic/job"
 	_ "hinay.cn/admin/internal/logic/leave"
 	_ "hinay.cn/admin/internal/logic/message"
+	_ "hinay.cn/admin/internal/logic/monitor"
 	_ "hinay.cn/admin/internal/logic/notify"
 	_ "hinay.cn/admin/internal/logic/online"
 	_ "hinay.cn/admin/internal/logic/ormfill"
