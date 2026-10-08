@@ -20,6 +20,7 @@ import (
 	"hinay.cn/admin/internal/logic/pwdpolicy"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/internal/storage"
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/excelx"
@@ -97,7 +98,7 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 			Id:        u.Id,
 			Username:  u.Username,
 			Nickname:  u.Nickname,
-			Avatar:    u.Avatar,
+			Avatar:    storage.ViewURL(ctx, u.Avatar),
 			Email:     u.Email,
 			Phone:     u.Phone,
 			OrgId:     u.OrgId,
@@ -136,7 +137,7 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 		Id:        u.Id,
 		Username:  u.Username,
 		Nickname:  u.Nickname,
-		Avatar:    u.Avatar,
+		Avatar:    storage.ViewURL(ctx, u.Avatar),
 		Email:     u.Email,
 		Phone:     u.Phone,
 		OrgId:     u.OrgId,

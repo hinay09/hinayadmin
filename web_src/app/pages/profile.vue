@@ -303,31 +303,33 @@ async function handleChangePassword() {
   }
 }
 
-async function handleAvatarChange(uploadFile: any) {
-  const file = uploadFile.raw || uploadFile.file || uploadFile
-  if (!file || !(file instanceof File)) return
+// 头像上传通道 (FileUploader 的 uploadFn): 前端预校验 + 复用 /auth/avatar 接口
+async function uploadAvatar(file: File) {
   const isImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)
   if (!isImage) {
     ElMessage.warning('仅支持 JPG / PNG / GIF / WEBP 格式')
-    return
+    throw new Error('仅支持 JPG / PNG / GIF / WEBP 格式')
   }
   if (file.size > 2 * 1024 * 1024) {
     ElMessage.warning('头像大小不能超过 2MB')
-    return
+    throw new Error('头像大小不能超过 2MB')
   }
   avatarUploading.value = true
   try {
-    const res = await api.uploadAvatar(file)
-    profile.avatar = res.url
-    if (userStore.userInfo) {
-      userStore.setUserInfo({ ...userStore.userInfo, avatar: res.url })
-    }
-    ElMessage.success('头像更新成功')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '头像上传失败')
-  } finally {
+    return await api.uploadAvatar(file)
+  }
+  finally {
     avatarUploading.value = false
   }
+}
+
+// 头像上传成功: 同步本地资料与全局用户信息
+function onAvatarUploaded(res: any) {
+  profile.avatar = res.url
+  if (userStore.userInfo) {
+    userStore.setUserInfo({ ...userStore.userInfo, avatar: res.url })
+  }
+  ElMessage.success('头像更新成功')
 }
 
 onMounted(() => {
@@ -341,12 +343,11 @@ onMounted(() => {
       <el-col :xs="24" :sm="24" :md="8" :lg="7" :xl="6">
         <el-card class="info-card">
           <div class="avatar-wrap">
-            <el-upload
+            <FileUploader
               class="avatar-uploader"
-              :show-file-list="false"
-              :before-upload="() => false"
-              :on-change="handleAvatarChange"
               accept="image/jpeg,image/png,image/gif,image/webp"
+              :upload-fn="uploadAvatar"
+              @success="onAvatarUploaded"
             >
               <el-avatar :size="96" :src="profile.avatar" class="avatar clickable">
                 {{ profile.nickname?.charAt(0) || profile.username?.charAt(0) || 'U' }}
@@ -355,7 +356,7 @@ onMounted(() => {
                 <el-icon :size="20"><UploadFilled /></el-icon>
                 <span>更换头像</span>
               </div>
-            </el-upload>
+            </FileUploader>
             <el-progress
               v-if="avatarUploading"
               :percentage="100"
@@ -437,17 +438,16 @@ onMounted(() => {
                 </el-form-item>
                 <el-form-item label="头像">
                   <div class="form-avatar-row">
-                    <el-upload
+                    <FileUploader
                       class="form-avatar-uploader"
-                      :show-file-list="false"
-                      :before-upload="() => false"
-                      :on-change="handleAvatarChange"
                       accept="image/jpeg,image/png,image/gif,image/webp"
+                      :upload-fn="uploadAvatar"
+                      @success="onAvatarUploaded"
                     >
                       <el-avatar :size="64" :src="profile.avatar" class="clickable">
                         {{ profile.nickname?.charAt(0) || profile.username?.charAt(0) || 'U' }}
                       </el-avatar>
-                    </el-upload>
+                    </FileUploader>
                     <div class="form-avatar-tip">
                       <el-button size="small" :loading="avatarUploading">
                         <el-icon style="margin-right:4px"><UploadFilled /></el-icon> 上传新头像

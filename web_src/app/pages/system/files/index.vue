@@ -22,9 +22,6 @@ const query = reactive({
   pageSize: 10,
 })
 
-const uploadVisible = ref(false)
-const uploading = ref(false)
-
 // 格式化文件大小
 function formatSize(bytes: number): string {
   if (!bytes) return '0 B'
@@ -58,25 +55,10 @@ async function loadList() {
   }
 }
 
-async function handleUpload() {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.onchange = async () => {
-    const file = input.files?.[0]
-    if (!file) return
-
-    uploading.value = true
-    try {
-      const res = await api.upload(file)
-      ElMessage.success(`上传成功: ${res.originalName}`)
-      loadList()
-    }
-    catch {}
-    finally {
-      uploading.value = false
-    }
-  }
-  input.click()
+// 上传成功回调 (通道与 uploading 状态由 FileUploader 内置)
+function handleUploaded(res: any) {
+  ElMessage.success(`上传成功: ${res.originalName}`)
+  loadList()
 }
 
 async function handleDelete(row: any) {
@@ -130,7 +112,9 @@ onMounted(loadList)
           </el-form-item>
           <el-form-item>
             <el-button type="primary" :icon="Search" @click="() => { query.page = 1; loadList() }">查询</el-button>
-            <el-button type="success" :icon="Upload" :loading="uploading" @click="handleUpload">上传</el-button>
+            <FileUploader multiple @success="handleUploaded">
+              <el-button type="success" :icon="Upload">上传</el-button>
+            </FileUploader>
           </el-form-item>
         </el-form>
       </div>

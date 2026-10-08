@@ -33,7 +33,8 @@
 - 登录两步验证 (TOTP 2FA): 个人中心扫码/手输密钥绑定, 解绑须校验动态码; 登录密码通过后签发一次性票据换取动态码二次验证 (票据 5 分钟有效 + 单票据 5 次失败上限 + 时间步防重放), 演示模式下禁止绑定/解绑 (`logic/twofactor`)
 - 字典管理 (类型 + 数据项, 支持批量排序)
 - 文件管理 (上传 / 列表 / MIME 过滤)
-- 文件存储抽象 (`internal/storage`): 本地磁盘 (默认) / S3 兼容对象存储 (MinIO / AWS S3 / 阿里云 OSS / 腾讯云 COS, AWS SDK 统一接入), 存储类型与连接参数走 `sys_config` (`file.storage.*`), 修改后自动生效; S3 模式下上传默认预签名 PUT 直传 (文件不经应用服务器), 下载为带有效期的预签名 GET URL (非图片强制附件下载), `/upload` 静态服务仅本地存储注册 (切换存储类型需重启)
+- 文件存储抽象 (`internal/storage`): 本地磁盘 (默认) / S3 兼容对象存储 (MinIO / AWS S3 / 阿里云 OSS / 腾讯云 COS, AWS SDK 统一接入), 存储类型与连接参数走 `sys_config` (`file.storage.*`), 修改后自动生效; S3 模式下上传默认预签名 PUT 直传 (文件不经应用服务器), 下载为带有效期的预签名 GET URL (非图片强制附件下载), `/upload` 静态服务仅本地存储注册 (切换存储类型需重启); 用户头像同走该抽象, S3 模式下 login/userinfo/用户管理等出口经 `storage.ViewURL` 自动改写为可渲染地址
+- 前端公共 `FileUploader` 组件 (`app/components/FileUploader.vue`): 包装 el-upload 仅作选择器, 内置 `useFileApi().upload` (预签名直传优先, 失败回落中转), `uploadFn` 可替换上传通道 (如头像), 文件管理 / 个人中心 / 审批表单图片附件统一使用
 - 全局配置 (键值对, 多类型支持: 文本 / 数字 / 布尔 / JSON)
 - 配置驱动界面: 站点名称 / Logo / 页脚版权取自 `sys_config`, 作用于侧边栏品牌区 / 登录页 / 浏览器标题 / 仪表盘, 配置管理页修改后即时生效
 - 操作日志 (自动记录 POST/PUT/DELETE)

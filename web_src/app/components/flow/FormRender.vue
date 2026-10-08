@@ -5,10 +5,8 @@
  * 图片/附件字段值统一存 FlowFileItem[] (JSON 数组), 上传走系统文件接口。
  */
 import { CircleCloseFilled, Delete, Plus, UploadFilled } from '@element-plus/icons-vue'
-import type { UploadFile } from 'element-plus'
 import type { FlowFileItem, FlowFormField } from '~/composables/useApi/flow'
 import { parseFileItems } from '~/composables/useApi/flow'
-import { useFileApi } from '~/composables/useApi/file'
 
 const props = defineProps<{
   fields: FlowFormField[]
@@ -16,9 +14,6 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: Record<string, any>): void }>()
-
-const fileApi = useFileApi()
-const uploading = ref(false)
 
 function set(key: string, v: any) {
   emit('update:modelValue', { ...props.modelValue, [key]: v })
@@ -31,16 +26,10 @@ function filesOf(key: string): FlowFileItem[] {
   return parseFileItems(props.modelValue?.[key])
 }
 
-/** 选中文件后立即上传并追加到字段值 */
-async function onPick(key: string, f: UploadFile) {
-  const raw = (f as any).raw as File | undefined
-  if (!raw) return
-  uploading.value = true
-  try {
-    const res = await fileApi.upload(raw)
-    const item: FlowFileItem = { name: res.originalName || res.name || raw.name, url: res.url }
-    set(key, [...filesOf(key), item])
-  } catch {} finally { uploading.value = false }
+/** 上传成功后追加到字段值 (通道与重试逻辑由 FileUploader 内置) */
+function onUploaded(key: string, res: any) {
+  const item: FlowFileItem = { name: res.originalName || res.name, url: res.url }
+  set(key, [...filesOf(key), item])
 }
 
 function removeFile(key: string, i: number) {
@@ -89,10 +78,11 @@ function removeFile(key: string, i: number) {
                 :preview-src-list="filesOf(f.key).map(x => x.url)" :initial-index="i" preview-teleported />
               <el-icon class="fr-imgs__del" @click="removeFile(f.key, i)"><CircleCloseFilled /></el-icon>
             </div>
-            <el-upload :show-file-list="false" accept="image/*" multiple :auto-upload="false"
-              :disabled="uploading" @change="(f2: any) => onPick(f.key, f2)">
-              <div v-loading="uploading" class="fr-imgs__add"><el-icon><Plus /></el-icon></div>
-            </el-upload>
+            <FileUploader accept="image/*" multiple :disabled="disabled" @success="(res: any) => onUploaded(f.key, res)">
+              <template #default="{ uploading }">
+                <div v-loading="uploading" class="fr-imgs__add"><el-icon><Plus /></el-icon></div>
+              </template>
+            </FileUploader>
           </div>
         </template>
 
@@ -103,10 +93,11 @@ function removeFile(key: string, i: number) {
               <el-link type="primary" :href="it.url" target="_blank">{{ it.name }}</el-link>
               <el-icon class="fr-files__del" @click="removeFile(f.key, i)"><Delete /></el-icon>
             </div>
-            <el-upload :show-file-list="false" multiple :auto-upload="false" :disabled="uploading"
-              @change="(f2: any) => onPick(f.key, f2)">
-              <el-button size="small" plain :icon="UploadFilled" :loading="uploading">上传附件</el-button>
-            </el-upload>
+            <FileUploader multiple :disabled="disabled" @success="(res: any) => onUploaded(f.key, res)">
+              <template #default="{ uploading }">
+                <el-button size="small" plain :icon="UploadFilled" :loading="uploading">上传附件</el-button>
+              </template>
+            </FileUploader>
           </div>
         </template>
 

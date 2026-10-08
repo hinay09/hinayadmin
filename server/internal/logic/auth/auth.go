@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"hinay.cn/admin/internal/logic/pwdpolicy"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/internal/storage"
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/jwtx"
@@ -292,7 +292,7 @@ func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua stri
 			UserId:        u.Id,
 			Username:      u.Username,
 			Nickname:      u.Nickname,
-			Avatar:        u.Avatar,
+			Avatar:        storage.ViewURL(ctx, u.Avatar),
 			Roles:         roleCodes,
 			RoleNames:     roleNames,
 			IsAdmin:       isAdmin,
@@ -414,7 +414,7 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 		UserId:        u.Id,
 		Username:      u.Username,
 		Nickname:      u.Nickname,
-		Avatar:        u.Avatar,
+		Avatar:        storage.ViewURL(ctx, u.Avatar),
 		Email:         u.Email,
 		Phone:         u.Phone,
 		Roles:         roleCodes,
@@ -538,9 +538,6 @@ func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (
 	return &v1.ChangePasswordRes{}, nil
 }
 
-// avatarUploadDir 头像存储目录。
-const avatarUploadDir = "resource/upload/avatar"
-
 // allowedAvatarExts 允许的头像扩展名(不含 svg: svg 可内嵌脚本, 是存储型 XSS 载体)。
 var allowedAvatarExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
@@ -556,6 +553,9 @@ var allowedAvatarTypes = map[string]bool{
 }
 
 // UploadAvatar 上传并更新当前用户头像。
+// 经 storage 抽象写入: 本地存储仍落 resource/upload/avatar (URL 格式与存量数据
+// 一致); S3 存储写对象存储 avatar/ 前缀, 库中存持久引用 (s3://bucket/key),
+// 出参与 userinfo/login 出口统一改写为可渲染的预签名地址。
 func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res *v1.UploadAvatarRes, err error) {
 	cur := contextx.LoginUser(ctx)
 	if cur == nil {
@@ -576,13 +576,6 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 		return nil, xerror.New(xerror.CodeBusinessError, "头像大小不能超过 2MB")
 	}
 
-	// 保存文件
-	if err = os.MkdirAll(avatarUploadDir, 0755); err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "创建目录失败")
-	}
-	saveName := fmt.Sprintf("%s%s", guid.S(), ext)
-	savePath := filepath.Join(avatarUploadDir, saveName)
-
 	src, err := file.Open()
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "读取文件失败")
@@ -592,34 +585,35 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 	// 内容嗅探: 按文件头识别真实类型, 拒绝伪造扩展名/伪造 Content-Type 的文件
 	head := make([]byte, 512)
 	n, _ := src.Read(head)
-	if detected := mimeutil.Detect(head[:n]); !allowedAvatarTypes[detected] {
+	detected := mimeutil.Detect(head[:n])
+	if !allowedAvatarTypes[detected] {
 		return nil, xerror.New(xerror.CodeBusinessError, "文件内容不是有效的图片")
 	}
 	if _, serr := src.Seek(0, io.SeekStart); serr != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, serr, "读取文件失败")
 	}
 
-	dst, err := os.Create(savePath)
+	st, err := storage.Current(ctx)
 	if err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "保存文件失败")
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "文件存储未就绪")
 	}
-	defer dst.Close()
-
-	if _, err = io.Copy(dst, src); err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "写入文件失败")
+	key := "avatar/" + guid.S() + ext
+	if err = st.Put(ctx, key, src, file.Size, detected); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "保存头像失败")
 	}
-
-	avatarURL := fmt.Sprintf("/upload/avatar/%s", saveName)
+	refURL := st.RefURL(key)
 
 	// 更新数据库
 	if _, err = dao.SysUser.Ctx(ctx).
 		Where("id", cur.UserId).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Data(g.Map{"avatar": avatarURL}).Update(); err != nil {
+		Ctx(ctx).Data(g.Map{"avatar": refURL}).Update(); err != nil {
+		// 落库失败回收已写入对象 (尽力而为)
+		go func() { _ = st.Delete(context.Background(), key) }()
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "更新头像失败")
 	}
 
-	return &v1.UploadAvatarRes{Url: avatarURL}, nil
+	return &v1.UploadAvatarRes{Url: storage.ViewURL(ctx, refURL)}, nil
 }
 
 // MenuTree 当前用户可见菜单树 (排除按钮类型)。

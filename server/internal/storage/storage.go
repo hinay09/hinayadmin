@@ -213,6 +213,24 @@ func ForURL(ctx context.Context, fileURL string) (Storage, error) {
 	return Local(), nil
 }
 
+// ViewURL 将持久引用转换为可直接给浏览器渲染的即时地址 (如头像 <img src>):
+// 本地 /upload/... 原样返回; s3://... 生成内联预签名 GET URL, 失败时原样返回
+// (引用值入库、展示地址出参, 出口处统一调用, 见 auth/user 的 avatar 字段)。
+func ViewURL(ctx context.Context, refURL string) string {
+	if !strings.HasPrefix(refURL, "s3://") {
+		return refURL
+	}
+	st, err := ForURL(ctx, refURL)
+	if err != nil {
+		return refURL
+	}
+	u, err := st.URL(ctx, KeyOfRefURL(refURL), "", true)
+	if err != nil {
+		return refURL
+	}
+	return u
+}
+
 // KeyOfRefURL 从持久引用中提取对象 key ("s3://bucket/key" -> "key"),
 // 本地引用原样返回 (local 实现内部会归一化 resource/upload 前缀)。
 func KeyOfRefURL(fileURL string) string {
