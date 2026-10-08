@@ -418,7 +418,7 @@ onMounted(loadList)
         <el-tab-pane label="接口权限" name="api">
           <div v-loading="apiListLoading" class="perm-pane">
             <div v-for="group in apiGrouped" :key="group.name" style="margin-bottom: 16px">
-              <div style="margin-bottom: 8px; border-bottom: 1px solid #ebeef5; padding-bottom: 6px">
+              <div style="margin-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 6px">
                 <el-checkbox
                   :model-value="isGroupAllChecked(group.apis)"
                   :indeterminate="isGroupIndeterminate(group.apis)"
@@ -437,7 +437,7 @@ onMounted(loadList)
                       {{ api.method }}
                     </el-tag>
                     <span>{{ api.path }}</span>
-                    <span v-if="api.description" style="color: #909399; margin-left: 8px">
+                    <span v-if="api.description" style="color: var(--el-text-color-secondary); margin-left: 8px">
                       {{ api.description }}
                     </span>
                   </el-checkbox>

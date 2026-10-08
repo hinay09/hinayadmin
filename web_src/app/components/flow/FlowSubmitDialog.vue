@@ -137,7 +137,7 @@ async function submit() {
       </el-form-item>
       <el-form-item v-else label="流程">
         <el-tag>{{ currentDef?.name || flowKey }}</el-tag>
-        <span style="margin-left:8px;font-size:12px;color:#909399">v{{ currentDef?.version || '-' }}</span>
+        <span style="margin-left:8px;font-size:12px;color:var(--el-text-color-secondary)">v{{ currentDef?.version || '-' }}</span>
       </el-form-item>
       <el-form-item v-if="showTitle" label="申请标题" required>
         <el-input v-model="form.title" maxlength="120" placeholder="如: 请假 3 天" />

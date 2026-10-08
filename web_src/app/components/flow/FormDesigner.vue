@@ -69,7 +69,7 @@ function move(i: number, dir: -1 | 1) {
           <el-input v-if="row.type === 'select'" :model-value="(row.options || []).join(',')" size="small"
             placeholder="如: 事假,病假,年假"
             @update:model-value="(v: string) => update($index, { options: v.split(',').map(s => s.trim()).filter(Boolean) })" />
-          <span v-else style="color:#999">-</span>
+          <span v-else style="color:var(--el-text-color-secondary)">-</span>
         </template>
       </el-table-column>
       <el-table-column label="必填" width="70" align="center">

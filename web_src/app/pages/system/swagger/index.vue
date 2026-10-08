@@ -76,11 +76,11 @@ onMounted(() => {
 .toolbar-title {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .toolbar-sub {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .toolbar-open {
   margin-left: auto;
@@ -89,8 +89,8 @@ onMounted(() => {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -108,8 +108,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: #fff;
-  color: #909399;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   text-align: center;
   padding: 24px;

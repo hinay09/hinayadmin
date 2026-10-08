@@ -323,7 +323,7 @@ onMounted(() => { loadTypes() })
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top:8px;color:#999;font-size:12px">共 {{ itemTotal }} 条数据项</div>
+      <div style="margin-top:8px;color:var(--el-text-color-secondary);font-size:12px">共 {{ itemTotal }} 条数据项</div>
     </el-dialog>
 
     <!-- 字典数据项 新增/编辑 Drawer -->

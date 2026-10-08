@@ -127,10 +127,10 @@ function fmtNum(n?: number): string {
 }
 /** 用量颜色分档 */
 function pctColor(pct?: number): string {
-  if (pct == null) return '#409eff'
-  if (pct >= 90) return '#f56c6c'
-  if (pct >= 75) return '#e6a23c'
-  return '#409eff'
+  if (pct == null) return 'var(--el-color-primary)'
+  if (pct >= 90) return 'var(--el-color-danger)'
+  if (pct >= 75) return 'var(--el-color-warning)'
+  return 'var(--el-color-primary)'
 }
 const cpuPerCoreMax = computed(() => Math.min(16, server.value?.cpu.perCore?.length || 0))
 
@@ -373,11 +373,11 @@ function cardError(msg: string) {
 .toolbar-title {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .toolbar-sub {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .toolbar-actions {
   margin-left: auto;
@@ -394,7 +394,7 @@ function cardError(msg: string) {
 }
 .card-title {
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .card-head-row {
   display: flex;
@@ -404,7 +404,7 @@ function cardError(msg: string) {
 .card-err {
   padding: 24px 0;
   text-align: center;
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-size: 13px;
 }
 .card-loading {
@@ -423,11 +423,11 @@ function cardError(msg: string) {
 .gauge-num {
   font-size: 18px;
   font-weight: 700;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .gauge-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
 .gauge-side {
@@ -447,17 +447,17 @@ function cardError(msg: string) {
   font-size: 13px;
 }
 .kv > span {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 .kv > b {
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
   text-align: right;
   min-width: 0;
 }
 .kv > b.hot {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .ellipsis {
   overflow: hidden;
@@ -477,7 +477,7 @@ function cardError(msg: string) {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .core-item :deep(.el-progress) {
   flex: 1;
@@ -485,7 +485,7 @@ function cardError(msg: string) {
 .core-name {
   width: 34px;
   text-align: right;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .core-val {
   width: 34px;
@@ -495,7 +495,7 @@ function cardError(msg: string) {
 .core-more {
   margin-top: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   text-align: center;
 }
 
@@ -513,12 +513,12 @@ function cardError(msg: string) {
   font-size: 13px;
 }
 .disk-mount {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 500;
   max-width: 60%;
 }
 .disk-size {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 

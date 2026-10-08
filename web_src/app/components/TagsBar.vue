@@ -113,8 +113,9 @@ function handleCloseAll() {
 <style scoped>
 .tags-bar {
   background: var(--el-bg-color);
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   padding: 3px 12px;
+  flex-shrink: 0;
 }
 
 .tags-scroll {

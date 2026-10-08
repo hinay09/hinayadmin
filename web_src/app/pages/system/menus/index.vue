@@ -270,16 +270,16 @@ onMounted(loadTree)
   transition: background-color 0.15s;
 }
 .icon-picker-item:hover {
-  background-color: #f0f5ff;
+  background-color: var(--el-color-primary-light-9);
 }
 .icon-picker-item.active {
-  background-color: #ecf5ff;
-  color: #409eff;
+  background-color: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 .icon-picker-label {
   margin-top: 4px;
   font-size: 10px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -287,6 +287,6 @@ onMounted(loadTree)
   text-align: center;
 }
 .icon-picker-item.active .icon-picker-label {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 </style>

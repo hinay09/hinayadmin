@@ -10,6 +10,8 @@ export default defineNuxtConfig({
 
   css: [
     '~/assets/styles/global.css',
+    // Element Plus 暗黑模式变量 (<html> 挂 dark 类即生效), 由布局设置的暗黑开关驱动
+    'element-plus/theme-chalk/dark/css-vars.css',
   ],
 
   elementPlus: {
@@ -51,6 +53,13 @@ export default defineNuxtConfig({
       title: 'Hinay Admin',
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      ],
+      script: [
+        {
+          // 暗黑模式防闪白: 水合前读 localStorage 给 <html> 加 dark 类。
+          // 读取的键/字段与 stores/settings.ts 的持久化格式保持一致。
+          innerHTML: `(function(){try{var s=JSON.parse(localStorage.getItem('hinay_layout_setting')||'{}');if(s&&s.isDark){var d=document.documentElement;d.classList.add('dark');d.style.colorScheme='dark';}}catch(e){}})();`,
+        },
       ],
     },
   },

@@ -322,9 +322,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.unread-title { font-weight: 600; color: #303133; }
+.unread-title { font-weight: 600; color: var(--el-text-color-primary); }
 .msg-detail { padding: 0 4px; }
 .content { margin-top: 16px; }
-.content-title { font-weight: 600; margin-bottom: 8px; color: #606266; }
-.content-body { white-space: pre-wrap; line-height: 1.7; padding: 12px; background: #f5f7fa; border-radius: 4px; color: #303133; }
+.content-title { font-weight: 600; margin-bottom: 8px; color: var(--el-text-color-regular); }
+.content-body { white-space: pre-wrap; line-height: 1.7; padding: 12px; background: var(--el-fill-color-light); border-radius: 4px; color: var(--el-text-color-primary); }
 </style>

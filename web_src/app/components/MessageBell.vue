@@ -382,19 +382,19 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: background-color .2s, color .2s;
 }
 .header-action:hover {
-  background-color: #f0f2f5;
-  color: #409eff;
+  background-color: var(--el-fill-color);
+  color: var(--el-color-primary);
 }
 .msg-pop {
   margin: -12px;
 }
 .msg-tabs {
   display: flex;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .msg-tab {
   flex: 1;
@@ -402,14 +402,14 @@ onBeforeUnmount(() => {
   padding: 10px 0;
   cursor: pointer;
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   position: relative;
   transition: color .2s;
 }
 .msg-tab.active {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-weight: 600;
-  border-bottom: 2px solid #409eff;
+  border-bottom: 2px solid var(--el-color-primary);
 }
 .tab-badge {
   margin-left: 4px;
@@ -427,7 +427,7 @@ onBeforeUnmount(() => {
 }
 .empty {
   text-align: center;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   padding: 40px 0;
 }
@@ -438,11 +438,11 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 10px 12px 10px 22px;
   cursor: pointer;
-  border-bottom: 1px solid #f5f7fa;
+  border-bottom: 1px solid var(--el-fill-color-light);
   transition: background-color .2s;
 }
 .msg-item:hover {
-  background-color: #f0f7ff;
+  background-color: var(--el-color-primary-light-9);
 }
 .msg-item:last-child {
   border-bottom: none;
@@ -454,7 +454,7 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f56c6c;
+  background: var(--el-color-danger);
   box-shadow: 0 0 0 2px rgba(245, 108, 108, .15);
 }
 .msg-item-main {
@@ -469,7 +469,7 @@ onBeforeUnmount(() => {
 }
 .msg-title {
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 500;
   flex: 1;
   overflow: hidden;
@@ -480,12 +480,12 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .msg-footer {
   display: flex;
   justify-content: space-between;
   padding: 8px 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 </style>

@@ -77,10 +77,10 @@ const end = computed(() => flowEndState(inst.value?.status || 0))
 .fdd-summary__title {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .fdd-summary__meta {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

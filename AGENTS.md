@@ -68,6 +68,7 @@ isAdmin := contextx.IsAdmin(ctx)  // "admin" role check via Casbin
 - Button-level permissions use the `v-permission` directive (`app/plugins/permission.ts`); it waits for `menusLoaded` to avoid SSR hydration mismatch. Admin role bypasses checks.
 - Token persists in `localStorage` (`hinay_token`, `hinay_token_expire`); stores in `app/stores/` (user, tags, config).
 - Site name/logo/footer come from `sys_config` via the config store — don't hardcode.
+- 布局设置 (暗黑模式/主题色/固定头部/Logo/标签栏/水印) 在 `app/stores/settings.ts`, 持久化 localStorage `hinay_layout_setting`; 副作用 (html 的 dark 类、`--el-color-primary-*` 变量) 只在 store action 内应用 — 改设置必须走 `update/toggleDark/setTheme`, 不要直接写 state。`nuxt.config` 的防闪白内联脚本读同一个键。**页面/组件颜色一律用 Element Plus CSS 变量** (`var(--el-bg-color)`、`var(--el-text-color-primary)` 等), 硬编码 hex 会导致暗黑模式失效。
 
 ## Gotchas
 

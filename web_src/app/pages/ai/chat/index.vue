@@ -629,7 +629,7 @@ onMounted(async () => {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
   user-select: none;
 }
@@ -645,7 +645,7 @@ onMounted(async () => {
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.7;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 260px;
@@ -666,7 +666,7 @@ onMounted(async () => {
   gap: 6px;
   padding: 5px 10px;
   font-size: 12px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
   cursor: pointer;
@@ -849,7 +849,7 @@ onMounted(async () => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #9aa1ac;
+  background: var(--el-text-color-secondary);
   animation: typing 1.4s infinite ease-in-out;
 }
 .typing .dot:nth-child(2) {
@@ -868,7 +868,7 @@ onMounted(async () => {
   font-style: normal;
   animation: blink 0.9s infinite;
   margin-left: 1px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
 }
 .tail-cursor {
   display: inline-block;

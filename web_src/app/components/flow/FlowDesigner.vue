@@ -323,10 +323,10 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
         </el-form-item>
         <el-form-item label="默认分支">
           <el-switch :model-value="cfgBranch.isDefault" @update:model-value="(v: any) => setDefault(v)" />
-          <span style="margin-left:8px;color:#888;font-size:12px">其他分支均未命中时走此分支</span>
+          <span style="margin-left:8px;color:var(--el-text-color-secondary);font-size:12px">其他分支均未命中时走此分支</span>
         </el-form-item>
         <el-divider content-position="left">条件 (同时满足)</el-divider>
-        <div v-if="cfgBranch.isDefault" style="color:#888">默认分支无需配置条件</div>
+        <div v-if="cfgBranch.isDefault" style="color:var(--el-text-color-secondary)">默认分支无需配置条件</div>
         <div v-for="(c, i) in condGroup" :key="i" class="fd-cond-row">
           <el-select v-model="c.field" filterable placeholder="字段" style="width:130px">
             <el-option v-for="f in fields" :key="f.key" :label="f.label" :value="f.key" />
@@ -343,7 +343,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
         <el-button v-if="!cfgBranch.isDefault" style="margin-top:8px" type="primary" plain size="small" :icon="Plus" @click="addCond">
           添加条件
         </el-button>
-        <div style="margin-top:12px;color:#888;font-size:12px">
+        <div style="margin-top:12px;color:var(--el-text-color-secondary);font-size:12px">
           提示: 分支按从左到右顺序求值, 首个命中的分支生效; 大于/小于等按数值比较。
         </div>
       </el-form>
@@ -354,7 +354,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
 <style scoped>
 .flow-designer {
   position: relative;
-  background: #f6f7f9;
+  background: var(--el-fill-color-lighter);
   border-radius: 6px;
 }
 /* 画布滚动容器: 大流程在容器内横向/纵向滚动, 不再撑爆弹窗 */
@@ -364,7 +364,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   min-height: 300px;
   padding: 20px 12px;
   border-radius: 6px;
-  background-image: radial-gradient(#e2e5ea 1px, transparent 1px);
+  background-image: radial-gradient(var(--el-border-color-lighter) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 .fd-canvas {
@@ -381,7 +381,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   display: flex;
   align-items: center;
   gap: 4px;
-  background: #fff;
+  background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 3px 8px;
@@ -411,10 +411,10 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   user-select: none;
 }
 .fd-pill.start {
-  background: #7d8694;
+  background: var(--el-text-color-secondary);
 }
 .fd-pill.end {
-  background: #b8bdc7;
+  background: var(--el-text-color-placeholder);
   margin-top: 0;
 }
 /* FlowNode 尾部连线与结束节点之间留出间距 */
@@ -444,7 +444,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
 .fd-pick-item.cc { border-color: var(--el-color-warning-light-5); }
 .fd-pick-item.condition { border-color: var(--el-color-success-light-5); }
 .fd-pick-title { font-weight: 600; }
-.fd-pick-desc { color: #9aa1ac; font-size: 12px; margin-top: 6px; }
+.fd-pick-desc { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 6px; }
 
 .fd-cond-row {
   display: flex;
@@ -453,7 +453,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   margin-bottom: 8px;
 }
 .fd-tip {
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.6;
   background: var(--el-fill-color-light);
@@ -462,7 +462,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
 }
 .fd-tip-inline {
   margin-left: 8px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

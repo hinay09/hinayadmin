@@ -131,7 +131,7 @@ function removeFile(key: string, i: number) {
   width: 72px;
   height: 72px;
   border-radius: 6px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   display: block;
 }
 .fr-imgs__del {
@@ -139,26 +139,26 @@ function removeFile(key: string, i: number) {
   top: -7px;
   right: -7px;
   font-size: 17px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 50%;
 }
-.fr-imgs__del:hover { color: #f56c6c; }
+.fr-imgs__del:hover { color: var(--el-color-danger); }
 .fr-imgs__add {
   box-sizing: border-box;
   width: 72px;
   height: 72px;
-  border: 1px dashed #c0c4cc;
+  border: 1px dashed var(--el-text-color-disabled);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 20px;
   cursor: pointer;
 }
-.fr-imgs__add:hover { border-color: #409eff; color: #409eff; }
+.fr-imgs__add:hover { border-color: var(--el-color-primary); color: var(--el-color-primary); }
 
 .fr-files {
   display: flex;
@@ -172,9 +172,9 @@ function removeFile(key: string, i: number) {
   max-width: 420px;
 }
 .fr-files__del {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
   flex: none;
 }
-.fr-files__del:hover { color: #f56c6c; }
+.fr-files__del:hover { color: var(--el-color-danger); }
 </style>

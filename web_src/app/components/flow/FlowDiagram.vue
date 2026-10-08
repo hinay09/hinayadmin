@@ -56,7 +56,7 @@ withDefaults(defineProps<{
   gap: 16px;
   justify-content: flex-end;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-bottom: 12px;
 }
 .fdg-legend i {
@@ -70,7 +70,7 @@ withDefaults(defineProps<{
 .fdg-legend .is-done { background: var(--el-color-success); }
 .fdg-legend .is-current { background: var(--el-color-primary); }
 .fdg-legend .is-rejected { background: var(--el-color-danger); }
-.fdg-legend .is-none { background: #fff; border: 1px dashed #c0c4cc; }
+.fdg-legend .is-none { background: var(--el-bg-color); border: 1px dashed var(--el-text-color-disabled); }
 
 .fdg-scroll { overflow-x: auto; }
 .fdg-tree {
@@ -91,9 +91,9 @@ withDefaults(defineProps<{
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
-  background: #f5f7fa;
-  color: #606266;
-  border: 1px solid #e4e7ed;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  border: 1px solid var(--el-border-color-light);
 }
 .fdg-pill.is-done {
   background: var(--el-color-success-light-9);
@@ -110,7 +110,7 @@ withDefaults(defineProps<{
   color: var(--el-color-warning);
   border-color: var(--el-color-warning-light-5);
 }
-.fdg-pill.is-voided { background: #f4f4f5; color: #909399; }
-.fdg-pill.is-wait { border-style: dashed; color: #a8abb2; background: #fff; }
+.fdg-pill.is-voided { background: var(--el-fill-color-dark); color: var(--el-text-color-secondary); }
+.fdg-pill.is-wait { border-style: dashed; color: var(--el-text-color-placeholder); background: var(--el-bg-color); }
 .fdg-pill__user { font-weight: 400; opacity: 0.85; }
 </style>

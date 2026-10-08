@@ -657,12 +657,12 @@ onMounted(() => {
   margin-top: 12px;
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .info-username {
   margin-top: 4px;
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .info-roles {
   margin-top: 10px;
@@ -678,15 +678,15 @@ onMounted(() => {
   gap: 8px;
   padding: 8px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .info-list li .info-key {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   width: 56px;
   flex-shrink: 0;
 }
 .info-list li .info-val {
-  color: #303133;
+  color: var(--el-text-color-primary);
   word-break: break-all;
 }
 .tab-label {
@@ -748,7 +748,7 @@ onMounted(() => {
 .form-avatar-tip .tip-text {
   margin-top: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>
 
@@ -777,12 +777,12 @@ onMounted(() => {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .security-desc {
   margin-top: 6px;
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.6;
 }
 .qr-wrap {
@@ -807,7 +807,7 @@ onMounted(() => {
   font-family: monospace;
   font-size: 14px;
   letter-spacing: 1px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   user-select: all;
 }
 .totp-code-input :deep(.el-input__inner) {

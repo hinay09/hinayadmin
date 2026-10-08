@@ -75,7 +75,7 @@ const fd: any = inject('flowDesigner')
   position: relative;
   width: 2px;
   height: 34px;
-  background: #d5d9e0;
+  background: var(--el-border-color-dark);
   margin: 0 auto;
   cursor: pointer;
 }
@@ -87,9 +87,9 @@ const fd: any = inject('flowDesigner')
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #fff;
-  border: 1px solid #c9ced8;
-  color: #8f97a3;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-dark);
+  color: var(--el-text-color-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,7 +110,7 @@ const fd: any = inject('flowDesigner')
   display: flex;
   align-items: stretch;
   width: 252px;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(31, 41, 55, 0.1);
   cursor: pointer;
@@ -142,11 +142,11 @@ const fd: any = inject('flowDesigner')
 .fd-card-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .fd-card-desc {
   font-size: 12px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,10 +188,10 @@ const fd: any = inject('flowDesigner')
 .fd-cols {
   display: flex;
   align-items: stretch;
-  border-top: 2px solid #d5d9e0;
-  border-bottom: 2px solid #d5d9e0;
-  border-left: 2px solid #d5d9e0;
-  border-right: 2px solid #d5d9e0;
+  border-top: 2px solid var(--el-border-color-dark);
+  border-bottom: 2px solid var(--el-border-color-dark);
+  border-left: 2px solid var(--el-border-color-dark);
+  border-right: 2px solid var(--el-border-color-dark);
   border-radius: 2px;
 }
 .fd-col {
@@ -202,7 +202,7 @@ const fd: any = inject('flowDesigner')
   min-width: 256px;
 }
 .fd-col + .fd-col {
-  border-left: 2px solid #d5d9e0;
+  border-left: 2px solid var(--el-border-color-dark);
 }
 .fd-col-add {
   justify-content: flex-start;
@@ -223,7 +223,7 @@ const fd: any = inject('flowDesigner')
 }
 .fd-def {
   margin-left: 4px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
 }
 .fd-chip-del {
   display: inline-flex;

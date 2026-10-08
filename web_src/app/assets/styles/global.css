@@ -7,8 +7,9 @@ html, body, #__nuxt, #__layout {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   font-size: 14px;
-  background: #f0f2f5;
-  color: #303133;
+  /* 暗黑模式: <html> 挂 dark 类后 Element Plus 变量整体切换 (见 nuxt.config 引入的 dark/css-vars.css) */
+  background: var(--el-bg-color-page);
+  color: var(--el-text-color-primary);
 }
 
 /* 选中文字用浅蓝, 与全局主色呼应 */
@@ -55,7 +56,7 @@ a { color: inherit; text-decoration: none; }
   gap: 8px;
   font-weight: 600;
   font-size: 16px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 /* 全局卡片圆角与阴影微调 */
@@ -80,9 +81,9 @@ a { color: inherit; text-decoration: none; }
   margin-left: 4px;
 }
 
-/* 表格表头背景轻微发白, 增强层次 */
+/* 表格表头背景轻微发白, 增强层次 (暗黑走 EP 填充色变量) */
 .el-table th.el-table__cell {
-  background-color: #fafbfc;
+  background-color: var(--el-fill-color-lighter);
 }
 
 /* 页面切换过渡 (app.vue Transition name="page") */
@@ -105,11 +106,11 @@ a { color: inherit; text-decoration: none; }
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c8d0dc;
+  background: var(--el-border-color);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #aab4c2;
+  background: var(--el-border-color-dark);
 }
 ::-webkit-scrollbar-track {
   background: transparent;

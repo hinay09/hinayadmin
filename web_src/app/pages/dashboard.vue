@@ -69,13 +69,13 @@ const trendOption = computed(() => ({
     type: 'category',
     boundaryGap: false,
     data: last7Days,
-    axisLine: { lineStyle: { color: '#dcdfe6' } },
-    axisLabel: { color: '#909399' },
+    axisLine: { lineStyle: { color: 'var(--el-border-color)' } },
+    axisLabel: { color: 'var(--el-text-color-secondary)' },
   },
   yAxis: {
     type: 'value',
-    splitLine: { lineStyle: { color: '#f0f2f5' } },
-    axisLabel: { color: '#909399' },
+    splitLine: { lineStyle: { color: 'var(--el-fill-color)' } },
+    axisLabel: { color: 'var(--el-text-color-secondary)' },
   },
   series: [
     {
@@ -156,13 +156,13 @@ const moduleOption = computed(() => ({
   xAxis: {
     type: 'category',
     data: ['用户', '角色', '菜单', 'API', '公告'],
-    axisLine: { lineStyle: { color: '#dcdfe6' } },
-    axisLabel: { color: '#909399' },
+    axisLine: { lineStyle: { color: 'var(--el-border-color)' } },
+    axisLabel: { color: 'var(--el-text-color-secondary)' },
   },
   yAxis: {
     type: 'value',
-    splitLine: { lineStyle: { color: '#f0f2f5' } },
-    axisLabel: { color: '#909399' },
+    splitLine: { lineStyle: { color: 'var(--el-fill-color)' } },
+    axisLabel: { color: 'var(--el-text-color-secondary)' },
   },
   series: [
     {
@@ -173,7 +173,7 @@ const moduleOption = computed(() => ({
         { value: 1820, itemStyle: { color: '#409EFF', borderRadius: [6, 6, 0, 0] } },
         { value: 642, itemStyle: { color: '#67C23A', borderRadius: [6, 6, 0, 0] } },
         { value: 318, itemStyle: { color: '#E6A23C', borderRadius: [6, 6, 0, 0] } },
-        { value: 2410, itemStyle: { color: '#909399', borderRadius: [6, 6, 0, 0] } },
+        { value: 2410, itemStyle: { color: 'var(--el-text-color-secondary)', borderRadius: [6, 6, 0, 0] } },
         { value: 580, itemStyle: { color: '#F56C6C', borderRadius: [6, 6, 0, 0] } },
       ],
     },
@@ -373,12 +373,12 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
 }
 .kpi-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .kpi-value {
   font-size: 26px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin: 6px 0 4px;
   line-height: 1.2;
 }
@@ -389,13 +389,13 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
   font-size: 12px;
 }
 .kpi-delta.up {
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 .kpi-delta.down {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .kpi-delta .delta-tip {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-left: 4px;
 }
 .kpi-icon {
@@ -420,10 +420,10 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .chart-header-icon {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 16px;
 }
 .chart-loading {
@@ -431,7 +431,7 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 /* 公告列表 */
@@ -445,7 +445,7 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
   align-items: center;
   gap: 8px;
   padding: 10px 0;
-  border-bottom: 1px dashed #ebeef5;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
 }
 .notice-item:last-child {
   border-bottom: none;
@@ -456,14 +456,14 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
 .notice-title {
   flex: 1;
   font-size: 14px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notice-time {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 

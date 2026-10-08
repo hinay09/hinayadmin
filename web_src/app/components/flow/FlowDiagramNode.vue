@@ -91,21 +91,21 @@ function stateTag(n: FNode) {
 .fdg-line {
   width: 2px;
   height: 28px;
-  background: #dcdfe6;
+  background: var(--el-border-color);
   flex: none;
 }
 .fdg-line.is-done { background: var(--el-color-success-light-5); }
 .fdg-line.is-current { background: var(--el-color-primary-light-5); }
 .fdg-line.is-rejected { background: var(--el-color-danger-light-5); }
-.fdg-line.is-voided { background: #dcdfe6; }
+.fdg-line.is-voided { background: var(--el-border-color); }
 
 /* ---- 审批/抄送卡片 ---- */
 .fdg-card {
   display: flex;
   align-items: stretch;
   width: 268px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   box-shadow: 0 1px 3px rgba(31, 41, 55, 0.06);
 }
@@ -121,8 +121,8 @@ function stateTag(n: FNode) {
   align-items: center;
   justify-content: center;
   border-radius: 6px 0 0 6px;
-  background: #f5f7fa;
-  color: #909399;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
 }
 .fdg-card.approver.is-none .fdg-card-icon {
   background: var(--el-color-primary-light-9);
@@ -141,8 +141,8 @@ function stateTag(n: FNode) {
 .fdg-card.is-current .fdg-card-icon { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .fdg-card.is-rejected { border-color: var(--el-color-danger-light-5); }
 .fdg-card.is-rejected .fdg-card-icon { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
-.fdg-card.is-voided { border-color: #e4e7ed; }
-.fdg-card.is-voided .fdg-card-icon { background: #f4f4f5; color: #909399; }
+.fdg-card.is-voided { border-color: var(--el-border-color-light); }
+.fdg-card.is-voided .fdg-card-icon { background: var(--el-fill-color-dark); color: var(--el-text-color-secondary); }
 .fdg-card-main {
   flex: 1;
   min-width: 0;
@@ -157,14 +157,14 @@ function stateTag(n: FNode) {
 .fdg-card-name {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .fdg-card-desc {
   font-size: 12px;
-  color: #9aa1ac;
+  color: var(--el-text-color-secondary);
   margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -176,10 +176,10 @@ function stateTag(n: FNode) {
 .fdg-cols {
   display: flex;
   align-items: stretch;
-  border-top: 2px solid #dcdfe6;
-  border-bottom: 2px solid #dcdfe6;
-  border-left: 2px solid #dcdfe6;
-  border-right: 2px solid #dcdfe6;
+  border-top: 2px solid var(--el-border-color);
+  border-bottom: 2px solid var(--el-border-color);
+  border-left: 2px solid var(--el-border-color);
+  border-right: 2px solid var(--el-border-color);
   border-radius: 2px;
 }
 .fdg-col {
@@ -189,7 +189,7 @@ function stateTag(n: FNode) {
   padding: 8px 14px;
   min-width: 272px;
 }
-.fdg-col + .fdg-col { border-left: 2px solid #dcdfe6; }
+.fdg-col + .fdg-col { border-left: 2px solid var(--el-border-color); }
 .fdg-chip {
   font-size: 12px;
   color: var(--el-color-success);
@@ -207,5 +207,5 @@ function stateTag(n: FNode) {
   color: #fff;
   font-weight: 600;
 }
-.fdg-def { margin-left: 4px; color: #9aa1ac; }
+.fdg-def { margin-left: 4px; color: var(--el-text-color-secondary); }
 </style>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
  * 默认布局: el-container + 侧边栏菜单 + 顶部用户信息 + 面包屑。
+ * 布局设置 (stores/settings) 驱动: 固定头部 / 侧边栏 Logo / 多标签页 / 全屏水印,
+ * 顶栏齿轮 (SettingDrawer) 可切换暗黑模式与主题色。
  */
 import { computed, ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -18,6 +20,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useUserStore } from '~/stores/user'
 import { useConfigStore } from '~/stores/config'
+import { useSettingsStore } from '~/stores/settings'
 import { useAuthApi } from '~/composables/useApi'
 import { markSessionDead } from '~/composables/useRequest'
 import { filterDisplayMenus } from '~/utils/router'
@@ -27,6 +30,8 @@ const userStore = useUserStore()
 const { userInfo, menus } = storeToRefs(userStore)
 const configStore = useConfigStore()
 const { siteName, siteLogo, copyright } = storeToRefs(configStore)
+const settingsStore = useSettingsStore()
+const { fixedHeader, showLogo, showTags } = storeToRefs(settingsStore)
 const route = useRoute()
 const router = useRouter()
 const api = useAuthApi()
@@ -104,7 +109,7 @@ function handleFullscreen() {
 <template>
   <el-container class="app-layout">
     <el-aside :width="collapse ? '64px' : '220px'" class="app-aside">
-      <div class="logo">
+      <div v-if="showLogo" class="logo">
         <div class="logo-badge">
           <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
           <el-icon v-else :size="17" class="logo-icon"><Histogram /></el-icon>
@@ -117,9 +122,6 @@ function handleFullscreen() {
         router
         unique-opened
         class="app-menu"
-        background-color="#ffffff"
-        text-color="#4e5f7a"
-        active-text-color="#409eff"
       >
         <template v-for="m in menuTree" :key="m.id">
           <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
@@ -143,7 +145,7 @@ function handleFullscreen() {
         </template>
       </el-menu>
     </el-aside>
-    <el-container>
+    <el-container class="app-body" :class="{ 'app-body--scroll': !fixedHeader }">
       <el-header class="app-header">
         <div class="header-left">
           <el-tooltip :content="collapse ? '展开菜单' : '收起菜单'" placement="bottom">
@@ -168,6 +170,7 @@ function handleFullscreen() {
           <el-tooltip content="全屏" placement="bottom">
             <el-icon class="header-action" @click="handleFullscreen"><FullScreen /></el-icon>
           </el-tooltip>
+          <SettingDrawer />
           <MessageBell />
           <el-divider direction="vertical" />
           <el-dropdown @command="handleDropdown">
@@ -189,12 +192,14 @@ function handleFullscreen() {
           </el-dropdown>
         </div>
       </el-header>
-      <TagsBar />
+      <TagsBar v-if="showTags" />
       <el-main class="app-main">
         <slot />
       </el-main>
       <el-footer v-if="copyright" class="app-footer" height="36px">{{ copyright }}</el-footer>
     </el-container>
+    <!-- 全屏防泄密水印 (布局设置开关, 默认关闭) -->
+    <AppWatermark />
   </el-container>
 </template>
 
@@ -202,8 +207,18 @@ function handleFullscreen() {
 .app-layout {
   height: 100vh;
 }
+/* 右列: 默认固定头部 (内容区独立滚动); 关闭固定头部后整列滚动, 头部随内容滚走 */
+.app-body {
+  overflow: hidden;
+}
+.app-body--scroll {
+  overflow-y: auto;
+}
+.app-body--scroll .app-main {
+  overflow: visible;
+}
 .app-aside {
-  background: #fff;
+  background: var(--el-bg-color);
   transition: width .2s;
   display: flex;
   flex-direction: column;
@@ -217,8 +232,8 @@ function handleFullscreen() {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #1f2d3d;
-  border-bottom: 1px solid #eef2f8;
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   user-select: none;
 }
 .logo-badge {
@@ -229,7 +244,7 @@ function handleFullscreen() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #55a3ff, #2f6fd8);
+  background: linear-gradient(135deg, var(--el-color-primary-light-3), var(--el-color-primary));
   box-shadow: 0 4px 10px rgba(47, 111, 216, 0.28);
   transition: transform .25s;
 }
@@ -259,7 +274,9 @@ function handleFullscreen() {
   border-right: none;
   padding: 8px 10px 16px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(31, 45, 61, 0.18) transparent;
+  scrollbar-color: var(--el-border-color-light) transparent;
+  /* 暗黑下菜单背景走 EP 变量, 这里显式跟随避免 aside/菜单出现色差 */
+  background: transparent;
 }
 .app-menu.el-menu--collapse {
   padding: 8px 5px 16px;
@@ -268,13 +285,13 @@ function handleFullscreen() {
   width: 5px;
 }
 .app-menu::-webkit-scrollbar-thumb {
-  background: rgba(31, 45, 61, 0.18);
+  background: var(--el-border-color-light);
   border-radius: 3px;
 }
 .app-menu:not(.el-menu--collapse) {
   width: 220px;
 }
-/* 菜单项胶囊化: 圆角 + 悬浮高亮; 激活态 = 浅蓝底 + 蓝色刻度条 + 蓝色图标 */
+/* 菜单项胶囊化: 圆角 + 悬浮高亮; 激活态 = 浅主色底 + 主色刻度条 + 主色图标 */
 .app-menu :deep(.el-menu-item),
 .app-menu :deep(.el-sub-menu__title) {
   height: 44px;
@@ -285,8 +302,8 @@ function handleFullscreen() {
 }
 .app-menu :deep(.el-menu-item:hover),
 .app-menu :deep(.el-sub-menu__title:hover) {
-  color: #409eff;
-  background: #f3f8ff;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 /* 悬浮时图标染主色, 与激活态呼应 */
 .app-menu :deep(.el-menu-item .el-icon),
@@ -295,12 +312,12 @@ function handleFullscreen() {
 }
 .app-menu :deep(.el-menu-item:hover .el-icon),
 .app-menu :deep(.el-sub-menu__title:hover .el-icon) {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .app-menu :deep(.el-menu-item.is-active) {
   position: relative;
-  background: #e8f3ff;
-  color: #409eff;
+  background: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 .app-menu :deep(.el-menu-item.is-active)::before {
@@ -312,15 +329,16 @@ function handleFullscreen() {
   width: 3px;
   height: 18px;
   border-radius: 2px;
-  background: linear-gradient(180deg, #66aaff, #2f7ce0);
+  background: var(--el-color-primary);
   box-shadow: 0 0 8px rgba(64, 158, 255, 0.4);
 }
 .app-menu :deep(.el-menu-item.is-active .el-icon) {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .app-header {
   height: 60px;
-  background: #fff;
+  flex-shrink: 0;
+  background: var(--el-bg-color);
   border-bottom: none;
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06);
   display: flex;
@@ -339,7 +357,7 @@ function handleFullscreen() {
   font-size: 14px;
 }
 .app-breadcrumb :deep(.el-breadcrumb__item .el-breadcrumb__inner) {
-  color: #606266;
+  color: var(--el-text-color-regular);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -348,7 +366,7 @@ function handleFullscreen() {
   font-size: 14px;
 }
 .bc-current {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 500;
 }
 .header-right {
@@ -365,12 +383,12 @@ function handleFullscreen() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: background-color .2s, color .2s;
 }
 .header-action:hover {
-  background-color: #f0f2f5;
-  color: #409eff;
+  background-color: var(--el-fill-color);
+  color: var(--el-color-primary);
 }
 .user-info {
   display: flex;
@@ -383,7 +401,7 @@ function handleFullscreen() {
   transition: background-color .2s;
 }
 .user-info:hover {
-  background-color: #f0f2f5;
+  background-color: var(--el-fill-color);
 }
 .avatar-wrap {
   position: relative;
@@ -399,10 +417,10 @@ function handleFullscreen() {
   height: 9px;
   border-radius: 50%;
   background: #2fbf71;
-  border: 2px solid #fff;
+  border: 2px solid var(--el-bg-color);
 }
 .user-avatar {
-  background: linear-gradient(135deg, #55a3ff, #2f6fd8);
+  background: linear-gradient(135deg, var(--el-color-primary-light-3), var(--el-color-primary));
   color: #fff;
   font-weight: 600;
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18);
@@ -410,24 +428,25 @@ function handleFullscreen() {
 .username {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .caret {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .app-main {
-  background: #f5f7fa;
+  background: var(--el-bg-color-page);
   padding: 16px;
 }
 .app-footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f7fa;
-  border-top: 1px solid #eef1f6;
-  color: #909399;
+  background: var(--el-bg-color-page);
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   padding: 0;
+  flex-shrink: 0;
 }
 </style>

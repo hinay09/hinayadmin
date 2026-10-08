@@ -281,15 +281,15 @@ onMounted(loadList)
   word-break: break-all;
 }
 .slow-warn {
-  color: #e6a23c;
+  color: var(--el-color-warning);
   font-weight: 600;
 }
 .fail-msg {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .ua-text {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   word-break: break-all;
 }
 .drawer-title {
@@ -304,14 +304,14 @@ onMounted(loadList)
 .detail-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 8px;
 }
 .detail-json {
   margin: 0;
   padding: 12px;
-  background: #f5f7fa;
-  border: 1px solid #ebeef5;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;
