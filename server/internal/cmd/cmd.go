@@ -21,6 +21,7 @@ import (
 	"hinay.cn/admin/internal/logic/casbinx"
 	"hinay.cn/admin/internal/middleware"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/internal/storage"
 )
 
 // Main 启动 HTTP 服务。
@@ -80,10 +81,17 @@ var Main = gcmd.Command{
 			service.Wechat().Callback(r)
 		})
 
-		// 上传文件静态服务(替代 AddStaticPath, 以便附加安全响应头)。
-		// 上传侧已做扩展名白名单与内容嗅探拦截(见 logic/system/file.go), 此处再加
-		// nosniff + 非图片强制下载, 纵深防御浏览器将上传内容当页面执行(存储型 XSS)。
-		s.BindHandler("/upload/*path", serveUploadFile)
+		// 上传文件静态服务(替代 AddStaticPath, 以便附加安全响应头): 仅本地存储注册。
+		// S3 兼容存储模式下文件在对象存储, 访问走预签名 URL 直连, 本路由无意义;
+		// 配置在 sys_config (file.storage.type), 启动时读取一次, 切换存储类型后需重启生效。
+		if st, serr := storage.Current(ctx); serr != nil {
+			g.Log().Warningf(ctx, "resolve file storage failed, fallback to local static serve: %v", serr)
+			s.BindHandler("/upload/*path", serveUploadFile)
+		} else if st.Type() == storage.TypeLocal {
+			// 上传侧已做扩展名白名单与内容嗅探拦截(见 logic/system/file.go), 此处再加
+			// nosniff + 非图片强制下载, 纵深防御浏览器将上传内容当页面执行(存储型 XSS)。
+			s.BindHandler("/upload/*path", serveUploadFile)
+		}
 
 		s.Run()
 		return nil
@@ -92,11 +100,6 @@ var Main = gcmd.Command{
 
 // uploadRoot 上传文件物理根目录。
 const uploadRoot = "resource/upload"
-
-// inlineUploadExts 允许浏览器直接内联展示的扩展名; 其余类型一律作为附件下载。
-var inlineUploadExts = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true, ".ico": true,
-}
 
 // serveUploadFile 带安全头的上传文件静态服务。
 // 安全约束: 路径清洗后必须仍位于 uploadRoot 之下, 阻止 ../ 路径穿越。
@@ -122,7 +125,7 @@ func serveUploadFile(r *ghttp.Request) {
 	h := r.Response.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "public, max-age=86400")
-	if inlineUploadExts[strings.ToLower(filepath.Ext(full))] {
+	if storage.IsInlineExt(filepath.Ext(full)) {
 		h.Set("Content-Disposition", "inline")
 	} else {
 		h.Set("Content-Disposition", "attachment")

@@ -533,9 +533,11 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   -- 兼容: 全量字典数据
   ('/api/v1/system/dicts/all',     'GET',    '字典管理', '字典全量(按类型分组)'),
   -- 文件管理
-  ('/api/v1/system/files',         'GET',    '文件管理', '文件列表'),
-  ('/api/v1/system/files/upload',  'POST',   '文件管理', '上传文件'),
-  ('/api/v1/system/files/:id',     'DELETE', '文件管理', '删除文件');
+  ('/api/v1/system/files',               'GET',    '文件管理', '文件列表'),
+  ('/api/v1/system/files/upload',        'POST',   '文件管理', '上传文件(服务端中转)'),
+  ('/api/v1/system/files/presign',       'POST',   '文件管理', '获取预签名上传地址(S3存储)'),
+  ('/api/v1/system/files/presign/confirm','POST',  '文件管理', '预签名上传确认'),
+  ('/api/v1/system/files/:id',           'DELETE', '文件管理', '删除文件');
 
 -- Casbin: admin 角色新菜单权限
 INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
@@ -578,6 +580,20 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `n
   ('sys.copyright',   '© 2026 Hinay',       0, '版权信息',   '页脚版权文字',              3),
   ('sys.allow_register', 'false',           2, '开放注册',   '是否允许新用户自行注册',    4),
   ('sys.captcha_enable', 'true',            2, '登录验证码', '登录/注册页图形验证码开关', 5);
+
+-- 文件存储配置 (internal/storage): local=本地磁盘(默认, /upload 静态服务),
+-- s3=S3兼容对象存储(MinIO/AWS S3/阿里云OSS/腾讯云COS, AWS SDK 统一接入)。
+-- s3 模式下上传/下载默认走预签名接口: 文件直传对象存储不经应用服务器,
+-- 下载地址为带有效期的预签名 GET URL; 切换存储类型后需重启应用生效。
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('file.storage.type',           'local',    0, '文件存储类型',     'local=本地磁盘, s3=S3兼容对象存储(MinIO/S3/OSS/COS)', 10),
+  ('file.storage.bucket',         '',         0, '对象存储Bucket',  'S3模式的桶名',                            11),
+  ('file.storage.endpoint',       '',         0, '对象存储Endpoint', '如 http://minio:9000 或 https://s3.apsoutheast-1.amazonaws.com, 留空用SDK默认', 12),
+  ('file.storage.region',         'us-east-1',0, '对象存储Region',  'MinIO 默认 us-east-1',                     13),
+  ('file.storage.access_key',     '',         0, '对象存储AccessKey', '访问密钥ID(出参自动脱敏)',               14),
+  ('file.storage.secret_key',     '',         0, '对象存储SecretKey', '访问密钥Secret(出参自动脱敏)',           15),
+  ('file.storage.path_style',     'true',     2, '路径风格寻址',     'MinIO/OSS/COS 需开启; AWS S3 官方Endpoint可关闭', 16),
+  ('file.storage.presign_expire', '60',       1, '预签名有效期(分)', 'S3模式下载/预览链接的有效期(分钟)',        17);
 
 -- 菜单: 全局配置 (挂在系统管理目录下, id=1)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES

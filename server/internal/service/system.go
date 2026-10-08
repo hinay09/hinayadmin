@@ -71,9 +71,15 @@ type (
 	IFile interface {
 		// List 分页列表。
 		List(ctx context.Context, req *v1.FileListReq) (res *v1.FileListRes, err error)
-		// Upload 上传文件。
+		// Upload 上传文件 (服务端中转: 本地存储写磁盘, S3 存储走 SDK 上传)。
 		// 校验链: 扩展名白名单 -> 大小上限 -> 文件头内容嗅探(拒绝页面/脚本类真实内容)。
 		Upload(ctx context.Context, file multipart.File, header *multipart.FileHeader) (res *v1.FileUploadRes, err error)
+		// Presign 获取预签名直传地址 (S3 存储模式; 本地存储返回 mode=server)。
+		// 校验链: 扩展名白名单 -> 大小上限 -> 声明的Content-Type黑名单 (直传不经过
+		// 服务端, 无法内容嗅探, 由签名约束 Content-Type + 确认时 HeadObject 校验补偿)。
+		Presign(ctx context.Context, req *v1.FilePresignReq) (res *v1.FilePresignRes, err error)
+		// PresignConfirm 预签名直传完成后的确认: HeadObject 校验对象存在/大小上限后落库。
+		PresignConfirm(ctx context.Context, req *v1.FilePresignConfirmReq) (res *v1.FilePresignConfirmRes, err error)
 		// Delete 删除文件（软删记录）。
 		Delete(ctx context.Context, req *v1.FileDeleteReq) (res *v1.FileDeleteRes, err error)
 	}
