@@ -556,6 +556,18 @@ var allowedAvatarTypes = map[string]bool{
 // 经 storage 抽象写入: 本地存储仍落 resource/upload/avatar (URL 格式与存量数据
 // 一致); S3 存储写对象存储 avatar/ 前缀, 库中存持久引用 (s3://bucket/key),
 // 出参与 userinfo/login 出口统一改写为可渲染的预签名地址。
+//
+// [已知挂起问题] S3 私有桶模式下预签名 URL 受 file.storage.presign_expire 限制
+// (默认 60 分钟): SPA 缓存的 userinfo 头像地址过期后裂图; 同根因, FormRender
+// (审批表单) 把上传返回的 url 持久化进业务 JSON, 历史单据的图片/附件链接会
+// 整体失效且刷新不可恢复。本地存储 (当前默认) 不受影响, 切换 S3 前须先解决。
+// 候选解法二选一:
+//
+//	a) 新增 /view/avatar 与 /view/file 稳定代理路由 (Storage 接口补 Open 流式
+//	   读, key 格式白名单 + 非图片强制下载, 安全水位与 /upload 公开一致);
+//	b) 对象存储 avatar/ 等前缀设公开读 + 新增 file.storage.public_base 配置,
+//	   ViewURL 改拼稳定公共 URL (注意: 只把桶设公开而不加 public_base, 出口
+//	   仍走预签名, 过期问题不会消失)。
 func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res *v1.UploadAvatarRes, err error) {
 	cur := contextx.LoginUser(ctx)
 	if cur == nil {
