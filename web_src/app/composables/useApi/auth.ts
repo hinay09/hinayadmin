@@ -23,8 +23,9 @@ export function useAuthApi() {
       r.get<{ captchaEnabled: boolean; captchaId: string; image: string }>(
         '/auth/captcha', undefined, { silent: true },
       ),
-    login: (username: string, password: string, keyId: string, captchaId?: string, captchaCode?: string) =>
-      r.post<LoginResult>('/auth/login', { username, password, keyId, captchaId, captchaCode }),
+    /** 登录 (账号支持用户名或手机号; 密码须用 publicKey 返回的公钥加密后提交) */
+    login: (account: string, password: string, keyId: string, captchaId?: string, captchaCode?: string) =>
+      r.post<LoginResult>('/auth/login', { username: account, password, keyId, captchaId, captchaCode }),
     /** 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口; silent 失败不弹提示) */
     registerStatus: () =>
       r.get<{ allowRegister: boolean }>('/auth/register/status', undefined, { silent: true }),

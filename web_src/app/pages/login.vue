@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 登录页
- * - 第一步: 用户名 + 密码 (RSA 加密传输) + 图形验证码 (sys.captcha_enable 开启时)
+ * - 第一步: 账号 (用户名或手机号) + 密码 (RSA 加密传输) + 图形验证码 (sys.captcha_enable 开启时)
  * - 第二步: 开启了两步验证 (TOTP) 的用户, 输入验证器 App 的 6 位动态码
  */
 import { ref, reactive, computed, onMounted } from 'vue'
@@ -91,7 +91,7 @@ const form = reactive({
   captchaCode: '',
 })
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
   captchaCode: [
     {
@@ -322,8 +322,8 @@ function backToPassword() {
             label-position="top"
             @keyup.enter="handleSubmit"
           >
-            <el-form-item label="用户名" prop="username">
-              <el-input v-model="form.username" size="large" placeholder="用户名" :prefix-icon="User" />
+            <el-form-item label="账号" prop="username">
+              <el-input v-model="form.username" size="large" placeholder="用户名 / 手机号" :prefix-icon="User" />
             </el-form-item>
             <el-form-item label="密码" prop="password">
               <el-input

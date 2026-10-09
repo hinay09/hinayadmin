@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -96,9 +97,50 @@ func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.Pu
 	return &v1.PublicKeyRes{KeyId: kp.KeyId, PublicKey: kp.PublicPem}, nil
 }
 
-// Login 用户名密码登录。
+// mobilePattern 大陆手机号格式, 作为登录账号按手机号匹配的前置判断:
+// 仅当输入完整匹配手机号格式才走 phone 列查询, 避免任意字符串都扫手机号。
+var mobilePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
+
+// findLoginUser 按登录账号装载用户: 用户名(唯一键 uk_username)优先,
+// 未命中且输入为大陆手机号格式时再按手机号匹配。
+// phone 列无唯一约束 (用户管理不强制手机号唯一), 同一手机号对应多个
+// 账号时无法确定登录对象, 返回业务错误引导改用用户名登录。
+// 未匹配到任何用户时返回 (nil, nil), 由调用方走防用户名枚举的等时分支。
+func findLoginUser(ctx context.Context, account string) (*model.SysUser, error) {
+	var u *model.SysUser
+	if err := dao.SysUser.Ctx(ctx).
+		Where("username", account).
+		Where("deleted_at IS NULL").
+		Ctx(ctx).Scan(&u); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询用户失败")
+	}
+	if u != nil {
+		return u, nil
+	}
+	if !mobilePattern.MatchString(account) {
+		return nil, nil
+	}
+	var rows []*model.SysUser
+	if err := dao.SysUser.Ctx(ctx).
+		Where("phone", account).
+		Where("deleted_at IS NULL").
+		Order("id ASC").
+		Ctx(ctx).Scan(&rows); err != nil {
+		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询用户失败")
+	}
+	switch len(rows) {
+	case 0:
+		return nil, nil
+	case 1:
+		return rows[0], nil
+	default:
+		return nil, xerror.New(xerror.CodeBusinessError, "该手机号对应多个账号, 请使用用户名登录")
+	}
+}
+
+// Login 账号密码登录 (账号支持用户名或手机号)。
 // 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
-// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
+// 带 IP+账号 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
 	failKey := consts.LoginFailPrefix + clientIp(ctx) + ":" + req.Username
 	ip, ua := clientIp(ctx), requestUserAgent(ctx)
@@ -127,13 +169,15 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		return nil, xerror.New(xerror.CodeParamInvalid, "密码长度 6-32")
 	}
 
-	var u *model.SysUser
-	err = dao.SysUser.Ctx(ctx).
-		Where("username", req.Username).
-		Where("deleted_at IS NULL").
-		Ctx(ctx).Scan(&u)
-	if err != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询用户失败")
+	// 账号匹配: 用户名优先, 其次手机号 (匹配规则与一号多户的处理见 findLoginUser)
+	u, uerr := findLoginUser(ctx, req.Username)
+	if uerr != nil {
+		// 一号多户等账号歧义: 密码尚未校验, 不计入失败锁定, 仅记登录日志
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			Username: req.Username, Status: consts.LoginLogStatusFail,
+			Message: "账号无法唯一匹配", Ip: ip, UserAgent: ua,
+		})
+		return nil, uerr
 	}
 	if u == nil {
 		// 与"密码错误"走相同 bcrypt 计算与错误码, 抹平时间差与提示差异, 防用户名枚举

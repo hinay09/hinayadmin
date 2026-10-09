@@ -34,13 +34,15 @@ type CaptchaRes struct {
 }
 
 // LoginReq 登录请求。
+// 账号支持用户名或手机号: 用户名(唯一键)优先匹配, 未命中且为大陆手机号
+// 格式时按手机号匹配 (手机号对应多个账号时拒绝, 详见 logic/auth)。
 // 密码须先用 PublicKey 接口返回的公钥加密(RSA PKCS#1 v1.5, base64),
 // 每个密钥对仅可使用一次, 过期或已使用需重新获取。
 // 验证码: sys.captcha_enable 开启时 captchaId/captchaCode 必填且须正确
 // (验证码答案一次性消费, 校验失败须重新取图)。
 type LoginReq struct {
 	g.Meta      `path:"/auth/login" tags:"Auth" method:"post" summary:"登录"`
-	Username    string `v:"required#请输入账号" json:"username" dc:"账号"`
+	Username    string `v:"required#请输入账号" json:"username" dc:"账号(用户名或手机号)"`
 	Password    string `v:"required#请输入密码" json:"password" dc:"RSA 加密后的密码密文(base64)"`
 	KeyId       string `v:"required#缺少加密密钥标识" json:"keyId" dc:"公钥标识"`
 	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
