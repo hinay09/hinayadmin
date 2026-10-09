@@ -11,7 +11,7 @@ services:
       # docker-entrypoint-initdb.d 按文件名字母序执行: 先基座表, 后审批流/岗位/AI 模块 (modules_init 幂等)
       - ./server/manifest/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./server/manifest/sql/upgrade-modules/modules_init.sql:/docker-entrypoint-initdb.d/02-modules_init.sql:ro
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
     healthcheck:
       # 使用镜像内置 healthcheck.sh, 避免密码出现在进程列表中
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]

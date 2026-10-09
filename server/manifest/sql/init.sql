@@ -13,11 +13,11 @@
 
 -- 强制设置当前会话字符集为 utf8mb4，防止因 Docker 容器 locale
 -- 导致 mysql 客户端默认 latin1 而引发中文乱码
-SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;
 
 CREATE DATABASE IF NOT EXISTS `hinay_admin`
   DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_unicode_ci;
+  DEFAULT COLLATE utf8mb4_general_ci;
 
 USE `hinay_admin`;
 
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统用户';
 
 -- ------------------------------------------------------------
 -- 组织机构表(无限级树形)
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_parent` (`parent_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组织机构';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='组织机构';
 
 -- ------------------------------------------------------------
 -- 角色表
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS `sys_role` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_code` (`code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统角色';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统角色';
 
 -- ------------------------------------------------------------
 -- 角色自定义数据范围 <-> 组织 绑定表
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS `sys_role_org` (
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_role_org` (`role_id`, `org_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色自定义数据范围组织绑定';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='角色自定义数据范围组织绑定';
 
 -- ------------------------------------------------------------
 -- 菜单表(目录/菜单/按钮)
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS `sys_menu` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_parent` (`parent_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统菜单';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统菜单';
 
 -- ------------------------------------------------------------
 -- API接口资源表
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS `sys_api` (
   `updated_at`  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`  DATETIME DEFAULT NULL COMMENT '删除时间(软删)',
   UNIQUE KEY `uk_path_method` (`path`, `method`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API接口资源表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='API接口资源表';
 
 -- ------------------------------------------------------------
 -- Casbin 策略表 (兼容标准 casbin gorm-adapter 字段布局)
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS `casbin_rule` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`),
   KEY `idx_ptype` (`ptype`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Casbin 策略';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Casbin 策略';
 
 -- ------------------------------------------------------------
 -- 消息通知: 主表 (系统通知 + 私信共用)
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS `biz_message` (
   PRIMARY KEY (`id`),
   KEY `idx_type_receiver` (`type`,`receiver_id`),
   KEY `idx_sender` (`sender_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息通知';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='消息通知';
 
 -- ------------------------------------------------------------
 -- 消息通知: 系统通知定向目标 (target_scope=2/3 时使用)
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS `biz_message_target` (
   PRIMARY KEY (`id`),
   KEY `idx_msg` (`message_id`),
   KEY `idx_tgt` (`target_type`,`target_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息通知定向目标';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='消息通知定向目标';
 
 -- ------------------------------------------------------------
 -- 消息通知: 已读关系 (按用户独立记录)
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS `biz_message_read` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_msg_user` (`message_id`,`user_id`),
   KEY `idx_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息已读关系';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='消息已读关系';
 
 -- ------------------------------------------------------------
 -- (公告模块已移除, 由「消息通知」中的「系统通知(全员)」覆盖其使用场景)
@@ -432,7 +432,7 @@ CREATE TABLE IF NOT EXISTS `sys_audit_log` (
   KEY `idx_resource` (`resource`),
   KEY `idx_created` (`created_at`),
   KEY `idx_code` (`code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='操作日志';
 
 -- ------------------------------------------------------------
 -- 字典类型主表
@@ -451,7 +451,7 @@ CREATE TABLE IF NOT EXISTS `sys_dict_type` (
   `deleted_at` DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_type_code` (`type_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字典类型';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='字典类型';
 
 -- ------------------------------------------------------------
 -- 字典数据子表
@@ -473,7 +473,7 @@ CREATE TABLE IF NOT EXISTS `sys_dict_data` (
   PRIMARY KEY (`id`),
   KEY `idx_type` (`type_id`),
   KEY `idx_sort` (`sort`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字典数据';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='字典数据';
 
 -- ------------------------------------------------------------
 -- 文件管理
@@ -496,7 +496,7 @@ CREATE TABLE IF NOT EXISTS `sys_file` (
   PRIMARY KEY (`id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_ext` (`extension`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文件管理';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='文件管理';
 
 -- ------------------------------------------------------------
 -- 新模块种子数据: 字典管理 / 文件管理 / 操作日志
@@ -571,7 +571,7 @@ CREATE TABLE IF NOT EXISTS `sys_config` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_config_key` (`config_key`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局配置';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='全局配置';
 
 -- 初始种子数据
 INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
@@ -668,7 +668,7 @@ CREATE TABLE IF NOT EXISTS `sys_login_log` (
   KEY `idx_username` (`username`),
   KEY `idx_status` (`status`),
   KEY `idx_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='登录日志';
 
 -- 菜单: 登录日志 (挂在系统监控目录下, id=2)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -730,7 +730,7 @@ CREATE TABLE IF NOT EXISTS `sys_job` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='定时任务';
 
 DROP TABLE IF EXISTS `sys_job_log`;
 CREATE TABLE IF NOT EXISTS `sys_job_log` (
@@ -746,7 +746,7 @@ CREATE TABLE IF NOT EXISTS `sys_job_log` (
   PRIMARY KEY (`id`),
   KEY `idx_job` (`job_id`),
   KEY `idx_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务执行日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='定时任务执行日志';
 
 -- 菜单: 定时任务 (挂在系统监控目录下, id=2)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -878,7 +878,7 @@ CREATE TABLE IF NOT EXISTS `sys_user_totp` (
   `deleted_at` DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户TOTP两步验证';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户TOTP两步验证';
 -- 说明: 本表无 create_id/update_id 审计列(行为人即 user_id 本身), 不纳入 ormfill 白名单;
 -- 解绑走物理删除(Unscoped), 避免 uk_user_id 与软删残留行冲突。
 
@@ -917,7 +917,7 @@ CREATE TABLE IF NOT EXISTS `wf_definition` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_flow_key` (`flow_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流程定义';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批流程定义';
 
 -- ------------------------------------------------------------
 -- 流程实例 (引用具体定义版本行, 定义后续发布新版本不影响在途实例)
@@ -947,7 +947,7 @@ CREATE TABLE IF NOT EXISTS `wf_instance` (
   KEY `idx_definition` (`definition_id`),
   KEY `idx_start_user` (`start_user_id`),
   KEY `idx_biz` (`flow_key`, `biz_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流程实例';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批流程实例';
 
 -- ------------------------------------------------------------
 -- 审批任务 (会签/或签按"节点×审批人"一人一行; 抄送为待阅行)
@@ -973,7 +973,7 @@ CREATE TABLE IF NOT EXISTS `wf_task` (
   KEY `idx_instance` (`instance_id`),
   KEY `idx_assignee` (`assignee_id`, `status`),
   KEY `idx_status_due` (`status`, `due_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批任务';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批任务';
 
 -- ------------------------------------------------------------
 -- 流转记录 (只追加时间线, 含系统动作; operator=0 表示系统)
@@ -992,7 +992,7 @@ CREATE TABLE IF NOT EXISTS `wf_record` (
   `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_instance` (`instance_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='审批流转记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批流转记录';
 
 -- ------------------------------------------------------------
 -- 岗位管理: 审批人解析依据 (指定岗位 / 部门主管岗)
@@ -1012,7 +1012,7 @@ CREATE TABLE IF NOT EXISTS `sys_post` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_post_code` (`post_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='岗位管理';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='岗位管理';
 
 -- 用户挂岗 (谁在哪个组织担任什么岗位; 纯关联表, 物理删除, 无审计列)
 CREATE TABLE IF NOT EXISTS `sys_user_post` (
@@ -1026,7 +1026,7 @@ CREATE TABLE IF NOT EXISTS `sys_user_post` (
   UNIQUE KEY `uk_user_post_org` (`user_id`, `post_id`, `org_id`),
   KEY `idx_post` (`post_id`),
   KEY `idx_org` (`org_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户岗位关联';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户岗位关联';
 
 -- 内置两个常用岗位 (原 p002 种子)
 INSERT IGNORE INTO `sys_post` (`post_code`,`post_name`,`post_kind`,`sort`,`status`,`remark`) VALUES
@@ -1126,7 +1126,7 @@ CREATE TABLE IF NOT EXISTS `ai_conversation` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`),
   KEY `idx_user_updated` (`user_id`,`updated_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI会话';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI会话';
 
 CREATE TABLE IF NOT EXISTS `ai_chat_message` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1141,7 +1141,7 @@ CREATE TABLE IF NOT EXISTS `ai_chat_message` (
   `deleted_at`      DATETIME     DEFAULT NULL               COMMENT '未使用(保留列对齐代码生成器约定)',
   PRIMARY KEY (`id`),
   KEY `idx_conversation` (`conversation_id`,`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI会话消息';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI会话消息';
 
 -- 菜单 (9100 号段: AI 助手)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -1202,7 +1202,7 @@ CREATE TABLE IF NOT EXISTS `biz_leave` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_create` (`create_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请假申请(业务审批Demo)';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='请假申请(业务审批Demo)';
 
 -- 菜单 (9200 号段: 业务审批)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES

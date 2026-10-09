@@ -22,6 +22,9 @@
 -- 清理语句见文件尾部 (默认注释)。
 -- ============================================================
 
+-- 与 init.sql 保持一致: 强制会话字符集, 防止客户端 locale 引发中文乱码
+SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;
+
 -- ------------------------------------------------------------
 -- 1. 请假申请业务表 (单表; 流程状态列由引擎回调写入)
 -- ------------------------------------------------------------
@@ -41,7 +44,7 @@ CREATE TABLE IF NOT EXISTS `biz_leave` (
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
   KEY `idx_create` (`create_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请假申请(业务审批Demo)';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='请假申请(业务审批Demo)';
 
 -- ------------------------------------------------------------
 -- 2. 菜单 (9200 号段: 业务审批)

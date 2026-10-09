@@ -23,7 +23,7 @@ database:
     pass:    "${MYSQL_ROOT_PASSWORD}"
     name:    "hinay_admin"
     charset: "utf8mb4"
-    extra:  "collation=utf8mb4_unicode_ci"
+    extra:  "collation=utf8mb4_general_ci"
     debug:   false
 
 redis:

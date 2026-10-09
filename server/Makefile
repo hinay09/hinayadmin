@@ -25,7 +25,7 @@ DB_PORT ?= 3306
 .PHONY: initdb
 initdb:
 	@echo ">> 确保数据库 $(DB_NAME) 存在"
-	@mysql -u$(DB_USER) -p'$(DB_PASS)' -h$(DB_HOST) -P$(DB_PORT) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+	@mysql -u$(DB_USER) -p'$(DB_PASS)' -h$(DB_HOST) -P$(DB_PORT) -e "CREATE DATABASE IF NOT EXISTS $(DB_NAME) DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;"
 	@echo ">> 执行 manifest/sql/init.sql"
 	@mysql -u$(DB_USER) -p'$(DB_PASS)' -h$(DB_HOST) -P$(DB_PORT) $(DB_NAME) < manifest/sql/init.sql
 	@echo ">> 数据库初始化完成"
