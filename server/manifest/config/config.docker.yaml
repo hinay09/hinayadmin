@@ -14,21 +14,23 @@ logger:
   stdout: true
   ctxKeys: ["RequestId"]
 
+# 数据库/Redis 连接参数为占位符, 由 entrypoint.sh 启动时以环境变量替换:
+# 内置容器 (bundled 模式) 用默认值 mysql:3306 / redis:6379, 外部服务经 .env 覆盖
 database:
   default:
     type:    "mysql"
-    host:    "mysql"
-    port:    "3306"
-    user:    "root"
-    pass:    "${MYSQL_ROOT_PASSWORD}"
-    name:    "hinay_admin"
+    host:    "${MYSQL_HOST}"
+    port:    "${MYSQL_PORT}"
+    user:    "${MYSQL_USER}"
+    pass:    "${MYSQL_PASSWORD}"
+    name:    "${MYSQL_DATABASE}"
     charset: "utf8mb4"
     extra:  "collation=utf8mb4_general_ci"
     debug:   false
 
 redis:
   default:
-    address: "redis:6379"
+    address: "${REDIS_HOST}:${REDIS_PORT}"
     db:      0
 
 # CORS 跨域来源白名单: 容器内由 nginx 同源反代, 无跨域需求, 保持为空

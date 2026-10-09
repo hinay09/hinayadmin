@@ -12,20 +12,36 @@ if [ -z "$JWT_SECRET" ]; then
     echo "ERROR: JWT_SECRET 环境变量未设置, 拒绝启动 (生成: openssl rand -hex 32)" >&2
     exit 1
 fi
-if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-    echo "ERROR: MYSQL_ROOT_PASSWORD 环境变量未设置, 拒绝启动" >&2
+if [ -z "$MYSQL_PASSWORD" ]; then
+    echo "ERROR: MYSQL_PASSWORD 环境变量未设置, 拒绝启动 (compose 部署由 .env 的 MYSQL_ROOT_PASSWORD 注入)" >&2
     exit 1
 fi
 
+# 连接参数默认值与 docker-compose 内置服务一致; 使用外部 MySQL/Redis 时经环境变量覆盖
+MYSQL_HOST="${MYSQL_HOST:-mysql}"
+MYSQL_PORT="${MYSQL_PORT:-3306}"
+MYSQL_USER="${MYSQL_USER:-root}"
+MYSQL_DATABASE="${MYSQL_DATABASE:-hinay_admin}"
+REDIS_HOST="${REDIS_HOST:-redis}"
+REDIS_PORT="${REDIS_PORT:-6379}"
+DEMO_MODE="${DEMO_MODE:-false}"
+
 if [ -f "$CONFIG_FILE" ]; then
-    # 替换数据库密码占位符
-    sed -i "s|\${MYSQL_ROOT_PASSWORD}|${MYSQL_ROOT_PASSWORD}|g" "$CONFIG_FILE"
+    # 数据库连接
+    sed -i "s|\${MYSQL_HOST}|${MYSQL_HOST}|g" "$CONFIG_FILE"
+    sed -i "s|\${MYSQL_PORT}|${MYSQL_PORT}|g" "$CONFIG_FILE"
+    sed -i "s|\${MYSQL_USER}|${MYSQL_USER}|g" "$CONFIG_FILE"
+    sed -i "s|\${MYSQL_DATABASE}|${MYSQL_DATABASE}|g" "$CONFIG_FILE"
+    sed -i "s|\${MYSQL_PASSWORD}|${MYSQL_PASSWORD}|g" "$CONFIG_FILE"
+
+    # Redis 连接
+    sed -i "s|\${REDIS_HOST}|${REDIS_HOST}|g" "$CONFIG_FILE"
+    sed -i "s|\${REDIS_PORT}|${REDIS_PORT}|g" "$CONFIG_FILE"
 
     # 替换 JWT 密钥占位符
     sed -i "s|\${JWT_SECRET}|${JWT_SECRET}|g" "$CONFIG_FILE"
 
-    # 替换演示模式开关占位符 (可选, 默认 false: 全局禁止修改/重置密码)
-    DEMO_MODE="${DEMO_MODE:-false}"
+    # 替换演示模式开关占位符
     sed -i "s|\${DEMO_MODE}|${DEMO_MODE}|g" "$CONFIG_FILE"
 fi
 

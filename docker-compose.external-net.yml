@@ -1,0 +1,34 @@
+# 外部容器网络接入覆盖文件 (可选, 仅外部模式需要)
+#
+# 适用: 外部 MySQL/Redis 以容器方式运行, 且未把端口发布到宿主机 (-p 3306:3306)。
+# Docker 的容器名 DNS 只在同一 user-defined 网络内生效, 跨网络互相隔离;
+# 本文件让 server 容器额外加入外部容器所在的网络, 之后即可用容器名/网络别名直连。
+# (若外部容器已发布端口到宿主机, 无需本文件: .env 里 MYSQL_HOST=host.docker.internal 即可)
+#
+# 用法:
+#   1) 准备网络 (二选一):
+#        docker network create shared-db              # 新建共享网络
+#        docker network inspect <已有网络名>           # 或复用外部容器 compose 项目的网络
+#   2) 外部容器接入该网络:
+#        docker run:   启动时加 --network <网络名> (或 docker network connect <网络名> <容器名>)
+#        外部 compose: 在其服务下声明 networks: [<网络名>]
+#   3) 本项目 .env 中设置:
+#        EXTERNAL_NETWORK=<网络名>
+#        COMPOSE_FILE=docker-compose.yml:docker-compose.external-net.yml
+#        MYSQL_HOST=<外部 MySQL 容器名/网络别名>
+#        REDIS_HOST=<外部 Redis 容器名/网络别名>
+#   4) docker compose up -d --build
+#
+# 注意: 网络必须已存在 (external: true, compose 只引用不创建);
+#       COMPOSE_FILE 在 Linux/macOS 用 ":" 分隔, Windows 用 ";"。
+
+services:
+  server:
+    networks:
+      - default
+      - external_net
+
+networks:
+  external_net:
+    external: true
+    name: ${EXTERNAL_NETWORK:?请在 .env 中设置 EXTERNAL_NETWORK (已存在的外部网络名)}

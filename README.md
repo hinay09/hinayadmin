@@ -240,7 +240,13 @@ yarn dev
 
 ## Docker Compose 部署
 
-一键启动 MySQL、Redis、Go 后端、Nuxt 前端四个服务, 无需手动安装依赖。
+支持两种模式, 由 `.env` 中的 `COMPOSE_PROFILES` 切换:
+
+- **外部服务模式 (默认)**: 仅启动 Go 后端 + Nuxt 前端两个容器, MySQL/Redis 使用外部实例 (自建/云托管均可);
+- **内置模式**: 在 `.env` 设置 `COMPOSE_PROFILES=bundled`, 额外启动 MariaDB + Redis 容器, 一键全套。
+
+> 从旧版本升级的注意: 内置 MySQL/Redis 的存量部署, 升级后需在 `.env` 中加上 `COMPOSE_PROFILES=bundled`,
+> 否则 compose 不再启动 mysql/redis 服务。
 
 ### 1. 准备环境变量
 
@@ -251,23 +257,43 @@ cp .env.example .env
 按需修改 `.env` 中的密码和密钥:
 
 ```bash
-MYSQL_ROOT_PASSWORD=<强密码>                    # MySQL root 密码
-MYSQL_DATABASE=hinay_admin                      # 数据库名
-JWT_SECRET=<openssl rand -hex 32 生成>           # JWT 密钥, 必填且至少 32 位随机字符
-DEMO_MODE=false                                 # 演示模式: true 时全局禁止修改/重置密码
+JWT_SECRET=<openssl rand -hex 32 生成>        # JWT 密钥, 必填且至少 32 位随机字符
+MYSQL_ROOT_PASSWORD=<强密码>                  # 数据库密码: 内置模式=root 密码; 外部模式=MYSQL_USER 账号密码
+MYSQL_DATABASE=hinay_admin                    # 数据库名 (默认 hinay_admin)
+
+# 内置模式启用 (默认注释 = 外部服务模式)
+# COMPOSE_PROFILES=bundled
+
+# 外部模式: 连接信息覆盖 (默认指向内置服务 mysql:3306 / redis:6379)
+# MYSQL_HOST=host.docker.internal             # 宿主机上的库 (server 容器已配 host-gateway 映射); 远程库填实际地址
+# MYSQL_USER=root
+# MYSQL_PORT=3306
+# REDIS_HOST=host.docker.internal
+# REDIS_PORT=6379
 ```
+
+> 外部 MySQL/Redis **以容器方式运行**时, 能否直接用容器名作 `MYSQL_HOST` 取决于网络:
+> Docker 的容器名 DNS 只在同一 user-defined 网络内生效, 跨网络相互隔离。分两种情况:
+> - 已把端口发布到宿主机 (`-p 3306:3306`): 无需额外配置, `MYSQL_HOST=host.docker.internal` + 端口即可;
+> - 未发布端口: 需让 server 加入外部容器所在网络 —— 参考 `docker-compose.external-net.yml` 头部说明,
+>   `.env` 中设置 `EXTERNAL_NETWORK=<网络名>` 与 `COMPOSE_FILE=docker-compose.yml:docker-compose.external-net.yml`,
+>   之后 `MYSQL_HOST`/`REDIS_HOST` 直接填容器名/网络别名。
+
+> 外部模式的数据库需先执行基线初始化 (建表+种子):
+> `cd server && make initdb DB_HOST=<库地址> DB_USER=<账号> DB_PASS=<密码> DB_NAME=hinay_admin`
 
 ### 2. 构建并启动
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build                          # 外部服务模式 (server + web)
+COMPOSE_PROFILES=bundled docker compose up -d --build # 内置模式 (含 MariaDB + Redis)
 ```
 
 首次启动会自动:
-- 拉取 MySQL 8.0、Redis 7、Node.js 22、Go 1.26 等基础镜像
+- 拉取 MariaDB 11、Redis 8、Node.js、Go 等基础镜像 (内置模式)
 - 编译 Go 后端二进制
 - 构建 Nuxt 前端产物
-- 初始化数据库 (执行全量基线 `init.sql`, 创建表和种子数据)
+- 初始化数据库 (执行全量基线 `init.sql`, 创建表和种子数据; 仅内置模式, 外部模式见上方 make initdb)
 
 ### 3. 访问
 
@@ -275,8 +301,7 @@ docker compose up -d --build
 | --- | --- | --- |
 | 前端 | http://localhost | Nginx 反向代理入口 |
 | 后端 API | http://127.0.0.1:8000/api/v1 | Go API 服务 (仅绑定回环, 供本机调试) |
-| MySQL | localhost:3306 | 数据库 |
-| Redis | localhost:6379 | 缓存 |
+| MySQL / Redis | localhost:3306 / localhost:6379 | 仅内置模式; 外部模式使用你自己的实例 |
 
 默认账号: `admin` / `123456` — 首次登录会被强制要求修改密码 (密码策略内置保护, 见「密码策略」)
 
@@ -312,10 +337,10 @@ docker compose up -d server
 
 | 文件 | 说明 |
 | --- | --- |
-| `docker-compose.yml` | 服务编排, 定义四个服务及依赖关系 |
-| `.env` / `.env.example` | 环境变量 (密码、密钥等) |
+| `docker-compose.yml` | 服务编排 (server/web 常驻; mysql/redis 属 `bundled` profile, 按需启用) |
+| `.env` / `.env.example` | 环境变量 (部署模式、密码、密钥、外部 MySQL/Redis 连接等) |
 | `server/Dockerfile` | Go 后端多阶段构建 |
-| `server/manifest/config/config.docker.yaml` | Docker 环境专用配置 (host 为容器名, 密码通过环境变量注入) |
+| `server/manifest/config/config.docker.yaml` | Docker 环境专用配置 (连接参数为占位符, 由 entrypoint.sh 环境变量替换注入) |
 | `web_src/Dockerfile` | Nuxt 前端多阶段构建 (Node + Nginx) |
 | `web_src/nginx.conf` | Nginx 配置, `/api` 和 `/upload` 转发到后端 |
 

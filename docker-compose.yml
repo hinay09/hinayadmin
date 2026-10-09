@@ -1,6 +1,10 @@
 services:
+  # ===== 内置数据服务 (可选, 默认不启动) =====
+  # 不设 COMPOSE_PROFILES 时仅启动 server + web, 使用外部 MySQL/Redis (.env 配置连接);
+  # 启用内置: .env 中设置 COMPOSE_PROFILES=bundled
   mysql:
     image: mariadb:11.8.8
+    profiles: ["bundled"]
     restart: unless-stopped
     environment:
       # 密码必填(从 .env 读取), 不提供弱默认回退值, 避免带公开已知口令部署
@@ -20,6 +24,7 @@ services:
 
   redis:
     image: redis:8.10.0
+    profiles: ["bundled"]
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -38,16 +43,30 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      # 数据库/Redis 连接: 默认指向内置服务 (bundled 模式), 使用外部服务时在 .env 覆盖
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER:-root}
+      # 密码统一取 MYSQL_ROOT_PASSWORD: 内置模式=root 密码; 外部模式=MYSQL_USER 账号的密码
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hinay_admin}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET (openssl rand -hex 32)}
       # 演示模式: true 时全局禁止修改/重置密码 (演示环境部署时在 .env 中开启)
       DEMO_MODE: ${DEMO_MODE:-false}
       GF_GCFG_FILE: config.docker.yaml
+    # 容器内可用 host.docker.internal 访问宿主机上的 MySQL/Redis (Linux 由 host-gateway 映射)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
+      # required:false —— 外部模式 (未启用 bundled profile) 时自动跳过
       mysql:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
+        required: false
 
   web:
     build:
