@@ -1,4 +1,4 @@
-// Package ai AI 助手 (OpenAI 兼容接口, 基于 langchaingo)。
+// Package ai AI 助手 (OpenAI 兼容接口, 基于 eino react agent)。
 package ai
 
 import (

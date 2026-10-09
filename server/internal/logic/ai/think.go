@@ -2,7 +2,7 @@
 //
 // 背景: 推理模型的思考过程有两类到达方式——
 //  1. 独立字段 reasoning_content (DeepSeek-R1 官方 API / DashScope 兼容模式等): 由
-//     langchaingo 的 WithStreamingReasoningFunc 直接回调, 无需本拆分器;
+//     eino 映射到 msg.ReasoningContent 直接读取, 无需本拆分器;
 //  2. 内联在 content 里的 <think>...</think> 标签 (vLLM/SGLang 自部署 R1 系常见):
 //     需要把标签内文本路由到思考通道。
 //

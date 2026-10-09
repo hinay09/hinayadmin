@@ -12,6 +12,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/gogf/gf/v2/database/gdb"
@@ -253,4 +254,30 @@ func isDupEntry(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "Duplicate entry") || strings.Contains(msg, "Error 1062")
+}
+
+// parseToolStep 解析落库的工具步骤 JSON (role=tool 行); 坏行返回 nil 由调用方丢弃。
+func parseToolStep(content string) *v1.AiToolStep {
+	var s v1.AiToolStep
+	if json.Unmarshal([]byte(content), &s) != nil || s.Name == "" {
+		return nil
+	}
+	return &s
+}
+
+// stepContextText 工具步骤 → 上下文回放文本: 以 AI 消息注入, 让模型跨轮记得自己调用过什么、拿到过什么。
+// 不回放原生 tool 消息: 严格校验 tool 角色必须紧跟 assistant(tool_calls) 的网关会在截断边界处整轮报错。
+func stepContextText(step *v1.AiToolStep) string {
+	if step.Error != "" {
+		return fmt.Sprintf("[调用工具 %s(%s) 失败: %s]", step.Name, step.Args, clipRunes(step.Error, 300))
+	}
+	return fmt.Sprintf("[调用工具 %s(%s) → 结果: %s]", step.Name, step.Args, clipRunes(step.Result, 2000))
+}
+
+// clipRunes 按字符截断 (错误提示兜底, 防超长参数刷屏)。
+func clipRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
 }

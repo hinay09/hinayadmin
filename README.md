@@ -47,7 +47,7 @@
 - 自由审批流: 表单/流程可视化设计器, 发起/撤回/撤销/审批/驳回/转办/委派/加签/减签/中止/催办, 会签与或签, 审批人支持指定岗位与部门主管解析, 审批中心 (我的审批 / 实例管理); 业务审批标准模板见 `docs/flow-template.md` (内置请假申请 Demo)
 - 审批流高级动作: 撤回 `POST /flow/instances/{id}/withdraw` (尚无审批人同意时收回修改后重提, 区别于撤销终态)、委派 `POST /flow/tasks/{id}/delegate` 与委派处理 `POST /flow/tasks/{id}/delegateResolve` (被委托人提交意见后回到原审批人终审, 区别于转办换人)、节点超时处理 (审批节点配置办理期限与策略: 逾期提醒 / 自动转办 / 自动通过, 由定时任务 `flow.timeoutScan` 扫描执行)
 - 岗位管理 (`sys_post`): 用户挂多岗位, 作为审批流「指定岗位」审批人的解析依据
-- AI 智能对话: OpenAI 兼容接口 (langchaingo), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
+- AI 智能对话: OpenAI 兼容接口 (eino react agent), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
 - 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
 
 ## 界面截图

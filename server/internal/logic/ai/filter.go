@@ -13,7 +13,6 @@
 package ai
 
 import (
-	"encoding/json"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -84,29 +83,4 @@ func (f *streamFilter) flush() string {
 	out := f.buf
 	f.buf = ""
 	return out
-}
-
-// isToolCallChunk 判定一段流式增量是否是 langchaingo 转发的工具调用增量。
-//
-// 背景: openai 适配层在流式模式下把 tool_call delta 序列化为 JSON 数组塞进 StreamingFunc
-// 正文通道 —— 首帧 [{"id":..,"type":"function","function":{"name":..,"arguments":""}}],
-// 后续帧 [{"type":"","function":{"name":"","arguments":"{"}}] 逐段拼 arguments。
-// 这类增量不是正文, 必须整段拦下, 否则 JSON 碎片会被渲染给用户、写入落库内容并混入下一轮上下文。
-//
-// 判定从严: 必须整体是一个非空 JSON 数组, 且每个元素都带 function 键 —— 正常正文不会长这样。
-func isToolCallChunk(s string) bool {
-	s = strings.TrimSpace(s)
-	if len(s) < 3 || s[0] != '[' || s[len(s)-1] != ']' {
-		return false
-	}
-	var arr []map[string]json.RawMessage
-	if json.Unmarshal([]byte(s), &arr) != nil || len(arr) == 0 {
-		return false
-	}
-	for _, el := range arr {
-		if _, ok := el["function"]; !ok {
-			return false
-		}
-	}
-	return true
 }
