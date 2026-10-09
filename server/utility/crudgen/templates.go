@@ -640,7 +640,7 @@ onMounted(loadList)
 `
 
 const sqlTmpl = `-- ============================================================
--- {{.Title}} (crudgen 生成: 菜单/按钮/API/Casbin 种子)
+-- {{.Title}} (crudgen 生成: 菜单/按钮/API 种子)
 -- 表: {{.Table}}
 -- ============================================================
 
@@ -661,10 +661,6 @@ INSERT INTO sys_api (path, method, group_name, description) VALUES
   ('/api/v1/{{.Mod}}/:id', 'PUT',    '{{.Title}}', '修改{{.Title}}'),
   ('/api/v1/{{.Mod}}/:id', 'DELETE', '{{.Title}}', '删除{{.Title}}');
 
--- Casbin: admin 角色 (内置超管角色 id=1, p 行 v0 为角色ID)
-INSERT INTO casbin_rule (ptype, v0, v1, v2, v3, v4, v5) VALUES
-  ('p', '1', 'menu:{{.MenuId}}', 'access', '', '', ''),
-  ('p', '1', 'menu:{{.ButtonBase}}', 'access', '', '', ''),
-  ('p', '1', 'menu:{{add1 .ButtonBase}}', 'access', '', '', ''),
-  ('p', '1', 'menu:{{add1 (add1 .ButtonBase)}}', 'access', '', '', '');
+-- Casbin: 内置超管角色(id=1) 不种 p 策略 (API 中间件全放行 + 菜单全量下发),
+-- 新菜单默认仅超管可见, 其他角色在「角色管理-分配权限」中按需勾选。
 `

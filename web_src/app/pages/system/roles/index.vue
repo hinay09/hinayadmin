@@ -222,6 +222,11 @@ async function handleDelete(row: any) {
 }
 
 async function openAssignPerm(row: any) {
+  // 内置超管角色 (id=1) 默认拥有全部权限, 后端拒绝为其配置; 按钮已禁用, 此处兜底拦截
+  if (row.id === 1) {
+    ElMessage.info('内置超级管理员默认拥有全部权限, 无需配置')
+    return
+  }
   currentRole.value = row
   permDialogTitle.value = `权限分配 - ${row.name}`
   activeTab.value = 'menu'
@@ -318,7 +323,11 @@ onMounted(loadList)
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'system:role:update'" link type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>
-            <el-button v-permission="'system:role:assign'" link type="warning" :icon="Key" @click="openAssignPerm(row)">分配权限</el-button>
+            <!-- 内置超管角色 (id=1) 默认拥有全部权限, 后端拒绝为其配置, 按钮同步禁用 -->
+            <el-tooltip v-if="row.id === 1" content="内置超级管理员默认拥有全部权限, 无需配置" placement="top">
+              <span><el-button v-permission="'system:role:assign'" link type="warning" :icon="Key" disabled>分配权限</el-button></span>
+            </el-tooltip>
+            <el-button v-else v-permission="'system:role:assign'" link type="warning" :icon="Key" @click="openAssignPerm(row)">分配权限</el-button>
             <el-button v-permission="'system:role:delete'" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>

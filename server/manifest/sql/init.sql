@@ -349,42 +349,11 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 
 -- Casbin: 角色继承(g) + 策略(p)
 -- g: 用户ID-角色ID 映射, p: 角色ID-资源-操作 策略 (关联键均为ID)
+-- 内置超管角色(id=1) 不种 p 策略, 仅保留 g 映射用于超管判定:
+-- API 侧 Casbin 中间件对超管全放行, 菜单侧 /auth/menus 对超管返回全量启用菜单。
 INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   -- g 策略: 用户1(admin) 属于角色1(admin, 内置超管)
   ('g', '1', '1', '', '', '', ''),
-  -- p 策略: admin 角色菜单权限(所有菜单含按钮)
-  ('p', '1', 'menu:30',  'access', '', '', ''),
-  ('p', '1', 'menu:40',  'access', '', '', ''),
-  ('p', '1', 'menu:1',   'access', '', '', ''),
-  ('p', '1', 'menu:2',   'access', '', '', ''),
-  ('p', '1', 'menu:3',   'access', '', '', ''),
-  ('p', '1', 'menu:10',  'access', '', '', ''),
-  ('p', '1', 'menu:11',  'access', '', '', ''),
-  ('p', '1', 'menu:12',  'access', '', '', ''),
-  ('p', '1', 'menu:13',  'access', '', '', ''),
-  ('p', '1', 'menu:101', 'access', '', '', ''),
-  ('p', '1', 'menu:102', 'access', '', '', ''),
-  ('p', '1', 'menu:103', 'access', '', '', ''),
-  ('p', '1', 'menu:111', 'access', '', '', ''),
-  ('p', '1', 'menu:112', 'access', '', '', ''),
-  ('p', '1', 'menu:113', 'access', '', '', ''),
-  ('p', '1', 'menu:114', 'access', '', '', ''),
-  ('p', '1', 'menu:121', 'access', '', '', ''),
-  ('p', '1', 'menu:122', 'access', '', '', ''),
-  ('p', '1', 'menu:123', 'access', '', '', ''),
-  ('p', '1', 'menu:131', 'access', '', '', ''),
-  ('p', '1', 'menu:132', 'access', '', '', ''),
-  ('p', '1', 'menu:133', 'access', '', '', ''),
-  -- p 策略: admin 角色API权限(放行所有)
-  ('p', '1', '/api/v1/*', '*', '', '', ''),
-  -- p 策略: admin 消息中心菜单权限
-  ('p', '1', 'menu:50',  'access', '', '', ''),
-  ('p', '1', 'menu:51',  'access', '', '', ''),
-  ('p', '1', 'menu:52',  'access', '', '', ''),
-  ('p', '1', 'menu:511', 'access', '', '', ''),
-  ('p', '1', 'menu:512', 'access', '', '', ''),
-  ('p', '1', 'menu:521', 'access', '', '', ''),
-  ('p', '1', 'menu:522', 'access', '', '', ''),
   -- p 策略: common 角色菜单权限(仪表盘 + 个人中心 + 消息中心)
   ('p', '2', 'menu:30', 'access', '', '', ''),
   ('p', '2', 'menu:40', 'access', '', '', ''),
@@ -539,17 +508,6 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/files/presign/confirm','POST',  '文件管理', '预签名上传确认'),
   ('/api/v1/system/files/:id',           'DELETE', '文件管理', '删除文件');
 
--- Casbin: admin 角色新菜单权限
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:14', 'access', '', '', ''),
-  ('p', '1', 'menu:15', 'access', '', '', ''),
-  ('p', '1', 'menu:16', 'access', '', '', ''),
-  ('p', '1', 'menu:141', 'access', '', '', ''),
-  ('p', '1', 'menu:142', 'access', '', '', ''),
-  ('p', '1', 'menu:143', 'access', '', '', ''),
-  ('p', '1', 'menu:151', 'access', '', '', ''),
-  ('p', '1', 'menu:152', 'access', '', '', '');
-
 -- ============================================================
 -- 全局配置
 -- ============================================================
@@ -613,13 +571,6 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/configs/:id',  'PUT',    '全局配置', '修改配置'),
   ('/api/v1/system/configs/:id',  'DELETE', '全局配置', '删除配置');
 
--- Casbin 权限
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:17',  'access', '', '', ''),
-  ('p', '1', 'menu:171', 'access', '', '', ''),
-  ('p', '1', 'menu:172', 'access', '', '', ''),
-  ('p', '1', 'menu:173', 'access', '', '', '');
-
 -- ============================================================
 -- 组织机构管理
 -- ============================================================
@@ -642,13 +593,6 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/orgs/:id',  'PUT',    '组织机构', '更新组织'),
   ('/api/v1/system/orgs/:id',  'DELETE', '组织机构', '删除组织'),
   ('/api/v1/system/orgs/tree', 'GET',    '组织机构', '组织树');
-
--- Casbin 权限
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:60',  'access', '', '', ''),
-  ('p', '1', 'menu:601', 'access', '', '', ''),
-  ('p', '1', 'menu:602', 'access', '', '', ''),
-  ('p', '1', 'menu:603', 'access', '', '', '');
 
 -- ============================================================
 -- 登录日志
@@ -683,11 +627,6 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/login-logs',      'GET',    '登录日志', '登录日志列表'),
   ('/api/v1/system/login-logs/:id',  'DELETE', '登录日志', '删除登录日志');
 
--- Casbin: admin 角色
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:18',  'access', '', '', ''),
-  ('p', '1', 'menu:181', 'access', '', '', '');
-
 -- ============================================================
 -- 在线用户
 -- ============================================================
@@ -705,11 +644,6 @@ INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`
 INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/online',     'GET',    '在线用户', '在线用户列表'),
   ('/api/v1/system/online/:id', 'DELETE', '在线用户', '强制下线');
-
--- Casbin: admin 角色
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:19',  'access', '', '', ''),
-  ('p', '1', 'menu:191', 'access', '', '', '');
 
 -- ============================================================
 -- 定时任务
@@ -772,22 +706,13 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/jobs/logs',         'GET',    '定时任务', '执行日志列表'),
   ('/api/v1/system/jobs/handlers',     'GET',    '定时任务', '已注册处理器列表');
 
--- Casbin: admin 角色
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:20',  'access', '', '', ''),
-  ('p', '1', 'menu:201', 'access', '', '', ''),
-  ('p', '1', 'menu:202', 'access', '', '', ''),
-  ('p', '1', 'menu:203', 'access', '', '', ''),
-  ('p', '1', 'menu:204', 'access', '', '', ''),
-  ('p', '1', 'menu:205', 'access', '', '', ''),
-  ('p', '1', 'menu:206', 'access', '', '', '');
-
 -- ============================================================
 -- 服务器监控 (挂在系统监控目录下, 仅超管可见)
 -- ============================================================
 
 -- 菜单: 服务器监控 (路径走 /system 前缀, 复用前端 /system 路由守卫;
--- 权限双层: 种子只给 admin 角色授权 + 逻辑层 contextx.IsAdmin 硬校验)
+-- 不种 Casbin 菜单策略: 超管走 IsAdmin 全量菜单路径可见,
+-- API 侧另有 contextx.IsAdmin 硬校验, 非超管即使被分配菜单也调不通接口)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (22, 2, '服务器监控', 2, '/system/monitor', 'system/monitor/index', 'Cpu', 'monitor:server:list', 5, 1, 1);
 
@@ -797,12 +722,8 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/monitor/mysql',  'GET', '服务器监控', 'MySQL运行状态(仅超管)'),
   ('/api/v1/system/monitor/redis',  'GET', '服务器监控', 'Redis运行状态(仅超管)');
 
--- Casbin: 仅 admin 角色授予菜单 (API 侧 admin 已有 /api/v1/* 通配策略)
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:22', 'access', '', '', '');
-
 -- ============================================================
--- 接口文档 Swagger (挂在系统工具目录下, 仅超管可见)
+-- 接口文档 Swagger (挂在系统工具目录下, 默认仅超管可见: 不种 Casbin 菜单策略, 仅超管全量菜单路径可见)
 -- 页面为内嵌 iframe, 实际文档由后端 GoFrame 内置提供 (/swagger + /api.json);
 -- 前端 dev 由 nitro.devProxy 转发, 生产部署需在 nginx 将 /swagger 与
 -- /api.json 反代到后端 (与 /api 同理), 或在 config.yaml 关闭 swaggerPath。
@@ -810,10 +731,6 @@ INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (23, 3, '接口文档', 2, '/system/swagger', 'system/swagger/index', 'Document', 'system:swagger:list', 2, 1, 1);
-
--- Casbin: 仅 admin 角色授予菜单
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:23', 'access', '', '', '');
 
 -- ============================================================
 -- Excel 导入导出 (用户模块示例)
@@ -855,13 +772,6 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/gencode/preview',   'POST', '代码生成', '预览生成代码'),
   ('/api/v1/system/gencode/download',  'GET',  '代码生成', '下载生成代码(zip)'),
   ('/api/v1/system/gencode/write',     'POST', '代码生成', '生成并写入源码树');
-
--- Casbin: admin 角色
-INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  ('p', '1', 'menu:21',  'access', '', '', ''),
-  ('p', '1', 'menu:211', 'access', '', '', ''),
-  ('p', '1', 'menu:212', 'access', '', '', ''),
-  ('p', '1', 'menu:213', 'access', '', '', '');
 
 -- ============================================================
 -- TOTP 两步验证 (2FA)
