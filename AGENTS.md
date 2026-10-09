@@ -68,9 +68,10 @@ isAdmin := contextx.IsAdmin(ctx)  // "admin" role check via Casbin
 
 - All API calls go through `web_src/app/composables/useRequest.ts` — it implements a concurrent-safe 401 refresh queue (first 401 triggers refresh; others queue and retry; failure drains queue → `/login`).
 - Button-level permissions use the `v-permission` directive (`app/plugins/permission.ts`); it waits for `menusLoaded` to avoid SSR hydration mismatch. Admin role bypasses checks.
-- Token persists in `localStorage` (`hinay_token`, `hinay_token_expire`); stores in `app/stores/` (user, tags, config).
+- Token persists in a cookie (`hinay_token`, readable during SSR so hard reloads don't flash to `/login`); stores in `app/stores/` (user, tags, config).
 - Site name/logo/footer come from `sys_config` via the config store — don't hardcode.
 - 布局设置 (暗黑模式/主题色/固定头部/Logo/标签栏/水印) 在 `app/stores/settings.ts`, 持久化 localStorage `hinay_layout_setting`; 副作用 (html 的 dark 类、`--el-color-primary-*` 变量) 只在 store action 内应用 — 改设置必须走 `update/toggleDark/setTheme`, 不要直接写 state。`nuxt.config` 的防闪白内联脚本读同一个键。**页面/组件颜色一律用 Element Plus CSS 变量** (`var(--el-bg-color)`、`var(--el-text-color-primary)` 等), 硬编码 hex 会导致暗黑模式失效。
+- 水合纪律 (防 "Hydration completed but contains mismatches", 生产才易复现: 服务端时区/ICU 与浏览器不同、生产用户有个性化设置): ① 模板不直接渲染 `new Date()` 等随环境变化的值, 改 onMounted 后生成; ② 会话 (菜单/用户信息, `middleware/auth.global.ts`) 与布局设置 (`plugins/settings.client.ts`) 的恢复都推迟到水合完成后 (`app:suspense:resolve`) — 客户端首次导航先于 mount 执行, 水合前写 store 必然与 SSR 的默认态 HTML 不一致; 水合前只允许 DOM 副作用 (dark 类/主题色变量, 不参与 vnode 比对)。
 - File uploads use the shared `FileUploader` component (`app/components/FileUploader.vue`): it wraps el-upload as a mere picker and calls `useFileApi().upload` (presign-first, server fallback). Custom channels (avatar → `/auth/avatar`) use the `uploadFn` prop; error toasts come from `useRequest`, the component stays silent.
 
 ## Gotchas

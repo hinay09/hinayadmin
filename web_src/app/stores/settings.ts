@@ -3,8 +3,10 @@
  * 侧边栏 Logo / 多标签页 / 页面水印, 持久化到 localStorage (键 hinay_layout_setting)。
  *
  * 主题副作用 (DOM class / CSS 变量) 在 action 内即时应用; 启动恢复走
- * plugins/settings.client.ts, nuxt.config 的内联脚本会在更早的水合前加 dark 类防闪白。
- * 注意: 内联脚本读的 JSON 键与本处持久化字段需保持一致。
+ * plugins/settings.client.ts 的两阶段策略: 水合前只应用 DOM 副作用 (暗黑类/主题色变量),
+ * 水合完成后 (app:suspense:resolve) 才把设置写入 store —— fixedHeader/showLogo/showTags
+ * 影响模板结构, SSR 按默认值渲染, 提前写入会导致 hydration mismatch。
+ * nuxt.config 的内联脚本会在更早的水合前加 dark 类防闪白, 读同一持久化格式。
  */
 import { defineStore } from 'pinia'
 import { applyDark, applyTheme, isHexColor } from '~/utils/theme'
@@ -36,7 +38,8 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   watermarkText: '',
 }
 
-const LS_KEY = 'hinay_layout_setting'
+/** localStorage 持久化键 (plugins/settings.client.ts 与 nuxt.config 内联脚本读同一格式) */
+export const SETTINGS_LS_KEY = 'hinay_layout_setting'
 
 export const useSettingsStore = defineStore('appSettings', {
   state: () => ({ ...DEFAULT_LAYOUT }),
@@ -65,7 +68,7 @@ export const useSettingsStore = defineStore('appSettings', {
         applyDark(this.isDark)
         applyTheme(this.theme, this.isDark)
         try {
-          localStorage.setItem(LS_KEY, JSON.stringify({
+          localStorage.setItem(SETTINGS_LS_KEY, JSON.stringify({
             theme: this.theme,
             isDark: this.isDark,
             fixedHeader: this.fixedHeader,
@@ -83,7 +86,7 @@ export const useSettingsStore = defineStore('appSettings', {
     restore() {
       if (!import.meta.client) return
       try {
-        const raw = localStorage.getItem(LS_KEY)
+        const raw = localStorage.getItem(SETTINGS_LS_KEY)
         if (raw) {
           Object.assign(this.$state, { ...DEFAULT_LAYOUT, ...JSON.parse(raw) })
         }

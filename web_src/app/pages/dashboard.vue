@@ -6,7 +6,7 @@
  * - 业务模块调用柱状图 + 最近公告列表
  * 数据来源: 当前为前端 mock; 后续可替换为后端聚合接口。
  */
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   User,
@@ -25,6 +25,13 @@ import { useConfigStore } from '~/stores/config'
 
 definePageMeta({ title: '仪表盘' })
 defineOptions({ name: 'dashboard' })
+
+/* 欢迎条日期: 服务端时钟/时区(Node ICU)与浏览器可能不同, SSR 直渲染会造成水合
+   文本不一致, 改为水合后生成 */
+const todayText = ref('')
+onMounted(() => {
+  todayText.value = new Date().toLocaleDateString('zh-CN')
+})
 
 const userStore = useUserStore()
 const { userInfo } = storeToRefs(userStore)
@@ -211,7 +218,7 @@ const levelTag = (l: number) => (l === 3 ? 'danger' : l === 2 ? 'warning' : 'inf
       <div class="welcome-meta">
         <el-button type="primary" plain :icon="User" size="small" @click="$router.push('/profile')">个人中心</el-button>
         <el-icon class="meta-icon"><Calendar /></el-icon>
-        <span>{{ new Date().toLocaleDateString('zh-CN') }}</span>
+        <span>{{ todayText }}</span>
       </div>
     </div>
 

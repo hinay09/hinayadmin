@@ -5,6 +5,37 @@
 import { useUserStore, safeRedirect } from '~/stores/user'
 import { useAuthApi } from '~/composables/useApi'
 
+/** 拉取会话(用户信息+菜单)并写入 store; 返回是否成功 (失败如 token 失效, 由调用方跳登录页) */
+async function loadSession(): Promise<boolean> {
+  const userStore = useUserStore()
+  try {
+    const api = useAuthApi()
+    const [info, menusRes] = await Promise.all([
+      api.userInfo(),
+      api.menus(),
+    ])
+    userStore.setUserInfo(info)
+    userStore.setMenus(menusRes.menus, menusRes.permissions)
+    return true
+  }
+  catch {
+    // useRequest 的 401 分支通常已 reset+跳转过, 这里再兜底清一次会话
+    userStore.reset()
+    return false
+  }
+}
+
+/* 并发去重: 水合后的首次拉取与期间的路由切换共享同一次请求 */
+let sessionInflight: Promise<boolean> | null = null
+function ensureSession(): Promise<boolean> {
+  if (!sessionInflight) {
+    sessionInflight = loadSession().finally(() => {
+      sessionInflight = null
+    })
+  }
+  return sessionInflight
+}
+
 export default defineNuxtRouteMiddleware(async (to) => {
   const userStore = useUserStore()
   userStore.restore()
@@ -28,20 +59,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/profile', query: { tab: 'password', redirect: to.fullPath } })
   }
 
-  // 已登录但未拉取菜单 -> 拉取
+  // 已登录但未拉取菜单 -> 拉取。
+  // 注意: 客户端首次导航 (app:created 钩子) 先于 mount/水合执行, 若在水合中同步拉取并写入
+  // store, 水合 vdom 将带着菜单/用户名与服务端渲染的空菜单 HTML 不一致 -> hydration mismatch。
+  // 因此水合中的首次导航推迟到水合完成 (app:suspense:resolve) 后再拉取, 挂载完成即填充;
+  // 后续路由切换照常在导航前 await, 路由级权限守卫不受影响。
   if (!userStore.menusLoaded && import.meta.client) {
-    try {
-      const api = useAuthApi()
-      const [info, menusRes] = await Promise.all([
-        api.userInfo(),
-        api.menus(),
-      ])
-      userStore.setUserInfo(info)
-      userStore.setMenus(menusRes.menus, menusRes.permissions)
+    const nuxtApp = useNuxtApp()
+    if (nuxtApp.isHydrating) {
+      // hook 回调经 runWithContext 执行, navigateTo 可直接用
+      nuxtApp.hooks.hookOnce('app:suspense:resolve', async () => {
+        if (!await ensureSession()) await navigateTo('/login')
+      })
     }
-    catch {
-      userStore.reset()
-      return navigateTo('/login')
+    else {
+      if (!await ensureSession()) return navigateTo('/login')
     }
   }
 
