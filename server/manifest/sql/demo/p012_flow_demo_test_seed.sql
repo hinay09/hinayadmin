@@ -41,7 +41,7 @@ INSERT IGNORE INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`,`m
 
 -- ------------------------------------------------------------
 -- 3. Casbin 授权: 用户→角色 (g) + 角色→菜单/API (p)
---    依赖 init.sql 的基础菜单 (30/40/50/52/521/522) 与 modules_init.sql 的审批中心菜单 (9000 段)
+--    依赖 init.sql 的基础菜单 (30/40/50/52/521/522) 与审批中心菜单 (9000 段, 已并入 init.sql)
 -- ------------------------------------------------------------
 INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
   -- g: 五个测试账号加入流程测试角色
