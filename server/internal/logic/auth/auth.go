@@ -102,7 +102,8 @@ func (s *sAuth) PublicKey(ctx context.Context, req *v1.PublicKeyReq) (res *v1.Pu
 // 仅当输入完整匹配手机号格式才走 phone 列查询, 避免任意字符串都扫手机号。
 var mobilePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
-// findLoginUser 按登录账号装载用户: 用户名(唯一键 uk_username)优先,
+// findLoginUser 按登录账号装载用户: 用户名优先 (uk_tenant_username 租户内唯一,
+// 查询经注入器按登录租户收口 —— 关闭态恒限定平台租户, 跨租户同名不会错取),
 // 未命中且输入为大陆手机号格式时再按手机号匹配。
 // phone 列无唯一约束 (用户管理不强制手机号唯一), 同一手机号对应多个
 // 账号时无法确定登录对象, 返回业务错误引导改用用户名登录。

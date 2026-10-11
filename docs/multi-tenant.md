@@ -20,6 +20,20 @@
 **开关**：`config.yaml` → `multiTenant.enable`（默认 `false`）。**关闭时系统行为与单租户完全一致**，
 老部署升级零感知；修改后需重启生效。
 
+**关闭语义（注入层兜底）**：开关关闭时，`tenantorm` 对隔离表**恒定注入平台租户 `tenant_id=1`**，
+即"关闭 = 全部限定平台租户"：单租户数据本就全在平台租户下，行为无感；而关闭前遗留的
+他租户数据将不可见、其用户不可登录（跨租户同名用户名在 `tenant_id=1` 下天然唯一，登录
+不会错取他租户同名列）。因此**从多租户回退单租户前必须先清理**：先在租户管理里删光
+非平台租户，或至少跑预检确认没有与平台用户重名的租户用户——
+
+```sql
+SELECT username FROM sys_user WHERE deleted_at IS NULL AND tenant_id<>1
+  AND username IN (SELECT username FROM sys_user WHERE deleted_at IS NULL AND tenant_id=1);
+```
+
+预检有结果时，先处理这些重名用户（改名或删除所属租户）再关开关重启，否则关闭后这些
+账号将无法登录（安全方向失败，不会串号，但会"凭空消失"）。
+
 **新装**：直接执行 `manifest/sql/init.sql`（已含多租户基线）。
 **存量单租户库升级**：先执行 `manifest/sql/upgrade-multi-tenant.sql`（务必先备份，
 建议直接新装重建），再开开关重启。

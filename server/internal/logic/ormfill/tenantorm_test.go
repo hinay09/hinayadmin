@@ -279,12 +279,19 @@ func TestMaskLiterals(t *testing.T) {
 }
 
 func TestInjectTenantSwitch(t *testing.T) {
-	// 开关关闭 → 一律不注入 (单租户兼容)
+	// 开关关闭 → 恒注入平台租户 (关闭 = 全部限定平台租户):
+	// ctx 即使携带他租户注入标记也被强制收口到 1, 关闭前遗留的他租户行不可见。
 	tenantx.SetEnabledForTest(false)
+	defer tenantx.SetEnabledForTest(true)
 	disabledCtx := context.WithValue(context.Background(), consts.CtxTenantKey,
 		&model.TenantInfo{Id: 3, Code: "t", Inject: true})
-	if _, ok := injectTenant(disabledCtx); ok {
-		t.Fatalf("disabled switch must disable injection")
+	if tid, ok := injectTenant(disabledCtx); !ok || tid != consts.TenantPlatformId {
+		t.Fatalf("disabled switch must force platform tenant %d, got tid=%d ok=%v",
+			consts.TenantPlatformId, tid, ok)
+	}
+	// nil ctx 同样强制平台租户 (注入永不失守)
+	if tid, ok := injectTenant(nil); !ok || tid != consts.TenantPlatformId {
+		t.Fatalf("disabled switch (nil ctx) must force platform tenant, got tid=%d ok=%v", tid, ok)
 	}
 	tenantx.SetEnabledForTest(true)
 	// Inject=false (平台超管未切换) → 不注入

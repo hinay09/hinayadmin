@@ -10,9 +10,12 @@
 //   - UPDATE/DELETE 在 condition 末尾追加 AND `tenant_id` = ? (软删转 UPDATE 天然覆盖);
 //   - SELECT 为"受控改写": 白名单表 + 首关键词门禁 + 字面量遮蔽 + 顶层定位 +
 //     括号内出现白名单表一律 fail-close (宁拒勿漏);
-//   - 平台超管未切换 (Inject=false)、开关关闭、非白名单表 → 原样放行。
+//   - 平台超管未切换 (Inject=false)、非白名单表 → 原样放行;
+//   - 开关关闭 → 恒注入平台租户 (关闭 = 全部限定平台租户): 关闭前遗留的他租户
+//     行不可见、其用户不可登录, 跨租户同名用户名在 tenant_id=1 下天然唯一不再歧义。
 //
-// fail-close 总则: 白名单表 + 开关开启 + 需要注入但无法安全注入 → 返回错误拒绝执行。
+// fail-close 总则: 白名单表 + 需要注入 (开启态租户语境或关闭态平台语境) 但无法安全注入
+// → 返回错误拒绝执行。
 // 新业务表带 tenant_id 列须在 tenantTables 登记 (AGENTS.md 同步更新)。
 package ormfill
 
@@ -58,10 +61,14 @@ var tenantTables = map[string]struct{}{
 
 const tenantColumn = "tenant_id"
 
-// injectTenant 返回当前 ctx 的注入目标租户 (开关开启 + TenantInfo.Inject=true)。
+// injectTenant 返回当前 ctx 的注入目标租户。
+//   - 开启态: ctx 有租户且 Inject=true (普通租户用户 / 平台超管代运维切换后) → 注入该租户;
+//     平台超管未切换 (Inject=false) → 放行;
+//   - 关闭态: 恒注入平台租户 —— 关闭即"全部限定平台租户", 隔离兜底不因关闸而失守
+//     (遗留他租户行不可见/不可写, 其用户登录查询被限定 tenant_id=1 后不再歧义)。
 func injectTenant(ctx context.Context) (uint64, bool) {
 	if ctx == nil || !tenantx.Enabled(ctx) {
-		return 0, false
+		return consts.TenantPlatformId, true
 	}
 	if v := ctx.Value(consts.CtxTenantKey); v != nil {
 		if t, ok := v.(*model.TenantInfo); ok && t != nil && t.Id > 0 && t.Inject {
@@ -232,7 +239,8 @@ func (d *Driver) DoDelete(ctx context.Context, link gdb.Link, table string, cond
 }
 
 // tenantFillInsert INSERT 注入钩子: 白名单表每条 record 无条件写 tenant_id
-// (与 create_id 同点叠加; 平台语境不注入时业务显式写入的 tenant_id 生效)。
+// (与 create_id 同点叠加; 开启态平台语境不注入时业务显式写入的 tenant_id 生效,
+// 关闭态恒定覆盖为平台租户 1)。
 func tenantFillInsert(ctx context.Context, table string, list gdb.List) {
 	if tid, ok := injectTenant(ctx); ok {
 		if _, whitelisted := tenantTables[normalizeTable(table)]; whitelisted {
