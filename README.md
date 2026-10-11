@@ -11,7 +11,7 @@
 ## 版本说明
 
 - **`v1.0`（分支）为稳定版**：多租户改造前的单租户稳定基线，生产使用建议停在该分支；**该分支仅做功能 bug 修复，不会额外新增功能**。
-- **`master` 为最新功能版本**（当前已含多租户功能）：跟进最新能力请使用本分支，**可能会存在 bug 与使用问题**，生产采用请自行充分验证；多租户开关 `multiTenant.enable` 默认关闭，关闭时行为与单租户完全一致。
+- **`master` 为最新功能版本**（当前已含多租户与内容管理 CMS）：跟进最新能力请使用本分支，**可能会存在 bug 与使用问题**，生产采用请自行充分验证；多租户开关 `multiTenant.enable` 默认关闭，关闭时行为与单租户完全一致。
 
 ## 功能特性
 
@@ -83,86 +83,92 @@
 hinay-admin/
 ├── server/                              # Go 后端 (GoFrame v2)
 │   ├── api/                             # API 接口契约 (Req/Res + g.Meta 路由)
-│   │   ├── auth/v1                      #   登录/登出/当前用户/菜单/个人中心
+│   │   ├── auth/v1                      #   登录/登出/当前用户/菜单/个人中心/TOTP
+│   │   ├── system/v1                    #   用户/角色/菜单/API/组织/岗位/字典/文件/配置/日志/在线/定时任务/代码生成/租户
+│   │   ├── flow/v1                      #   自由审批流 (定义/实例/任务)
 │   │   ├── message/v1                   #   消息中心 (系统通知 + 私信 + 收件箱)
-│   │   └── system/v1                    #   用户/角色/菜单/API/字典/文件/配置/操作日志/登录日志/在线用户/定时任务/代码生成
+│   │   ├── leave/v1                     #   请假申请 (业务型流程审批 Demo)
+│   │   ├── post/v1                      #   岗位管理
+│   │   ├── ai/v1                        #   AI 智能对话 (SSE 流式)
+│   │   └── cms/v1                       #   内容管理 (栏目 + 文章)
 │   ├── internal/
 │   │   ├── cmd                          # 启动入口 + 路由分组
-│   │   ├── controller/                  # 控制器层 (单方法薄透传, gf gen ctrl 生成)
-│   │   │   ├── auth                     #   鉴权
-│   │   │   ├── message                  #   消息
-│   │   │   └── system                   #   系统管理全模块
-│   │   ├── service/                     # 业务接口层 (IAuth/IMessage/IUser/IRole/IMenu/IApi/IDict/IFile/IConfig/IAuditLog)
+│   │   ├── controller/                  # 控制器层 (单方法薄透传)
+│   │   │   └── auth/system/message/flow/leave/post/ai/cms
+│   │   ├── service/                     # 业务接口层 (IXxx + RegisterXxx 手动 DI)
 │   │   ├── logic/                       # 业务实现层 (sXxx + init 注册到 service)
-│   │   │   ├── auth                     #   登录/登出/菜单树/个人资料/改密/头像 + 图形验证码 (Redis 存储/一次性消费/sys.captcha_enable 开关)
-│   │   │   ├── system                   #   用户/角色/菜单/API/字典/文件/配置/审计日志/登录日志
+│   │   │   ├── auth                     #   登录/菜单树/个人资料/改密/头像 + 图形验证码
+│   │   │   ├── system                   #   用户/角色/菜单/API/组织/字典/文件/配置/审计日志/登录日志
 │   │   │   ├── message                  #   消息通知 (含收件箱权限路由)
-│   │   │   ├── online                   #   在线会话 (Redis 注册/心跳/强制下线)
+│   │   │   ├── flow                     #   自由审批流引擎 (定义/发起/办理/回调/超时扫描)
+│   │   │   ├── leave                    #   请假申请 (flow.RegisterBizListener 状态回写示范)
+│   │   │   ├── ai                       #   AI 对话 (eino react agent + 工具注册)
+│   │   │   ├── cms                      #   内容管理 (栏目/文章 + 富文本媒体持久引用归一/重写)
+│   │   │   ├── tenant                   #   租户生命周期与应用授权集 (多租户)
+│   │   │   ├── casbinx                  #   Casbin enforcer + 策略读写 (租户域模型)
+│   │   │   ├── configx                  #   配置读取收口 (租户覆盖白名单键)
 │   │   │   ├── job                      #   定时任务调度 (gcron + 执行日志 + 处理器注册表)
+│   │   │   ├── online                   #   在线会话 (Redis 注册/心跳/强制下线)
+│   │   │   ├── monitor                  #   服务器监控
 │   │   │   ├── datascope                #   组织数据权限 (范围并集计算 + 查询注入)
 │   │   │   ├── pwdpolicy                #   密码策略 (配置驱动复杂度/有效期)
 │   │   │   ├── twofactor                #   TOTP 两步验证 (绑定/解绑/登录校验/防重放)
 │   │   │   ├── notify                   #   SSE 推送枢纽 (按用户订阅/发布)
 │   │   │   ├── gencode                  #   网页版代码生成 (表/列/预览/zip/直写)
-│   │   │   ├── ormfill                  #   审计字段自动填充 (重写 mysql 驱动 DoInsert/DoUpdate)
-│   │   │   └── casbinx                  #   Casbin enforcer + 策略读写
-│   │   ├── dao/                         # 数据访问对象 (gf gen dao 自动生成, 禁止手改)
+│   │   │   ├── ormfill                  #   审计字段填充 + 租户行级隔离注入 (重写 mysql 驱动回调)
+│   │   │   └── wechat                   #   微信公众号回调 (验签/Echo)
+│   │   ├── dao/                         # 数据访问对象 (gf gen dao 产物结构, 禁止手改)
 │   │   ├── model/                       # 实体 + DO + 业务 DTO
-│   │   ├── middleware                   # CORS / RequestId / 全局限流 / 安全头 / 操作日志 / Auth / Casbin
+│   │   ├── middleware                   # CORS / RequestId / 限流 / 安全头 / 操作日志 / Auth / Casbin
+│   │   ├── storage                      # 文件存储抽象 (本地 / S3 兼容, 预签名直传)
 │   │   ├── consts                       # 常量与上下文 Key
 │   │   └── packed                       # 注册 MySQL/Redis 驱动
 │   ├── utility/
 │   │   ├── jwtx                         # JWT 签发/校验/黑名单
-│   │   ├── crudgen                      # CRUD 代码生成核心 (DDL 解析/模板/渲染/写盘/zip, CLI 与网页共用)
+│   │   ├── crudgen                      # CRUD 代码生成核心 (DDL 解析/模板, CLI 与网页共用)
 │   │   ├── excelx                       # Excel 通用导入导出
 │   │   ├── password                     # bcrypt
 │   │   ├── rsax                         # 登录密码一次性 RSA 加解密
 │   │   ├── mimeutil                     # 上传文件头内容嗅探
 │   │   ├── response                     # 统一响应 / 分页结构
-│   │   ├── contextx                     # ctx 取登录用户/Token 工具
+│   │   ├── contextx                     # ctx 取登录用户/Token/租户 工具
+│   │   ├── tenantx                      # 多租户开关/请求租户解析
+│   │   ├── demox                        # 演示模式 (全局禁改密)
 │   │   └── xerror                       # 错误码与包装
-│   ├── tools/crudgen/                   # 代码生成 CLI 入口 (make gen-crud)
+│   ├── tools/                           # crudgen / genapi CLI 入口 (make gen-crud / gen-api-sql)
 │   ├── manifest/
-│   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin/ratelimit/gencode)
+│   │   ├── config/config.yaml           # 运行时配置 (server/db/redis/jwt/casbin/ratelimit/multiTenant)
 │   │   └── sql/
-│   │       ├── init.sql                 # 全新安装唯一入口: 基础库 + 全部模块 DDL/种子
+│   │       ├── init.sql                 # 全新安装唯一入口: 基础库 + 全部模块 DDL/种子 (含多租户/CMS)
+│   │       ├── upgrade-multi-tenant.sql # 存量单租户库 → 多租户升级脚本
+│   │       ├── gen/                     # 代码生成器产出的种子 SQL
 │   │       └── demo/                    # 可选演示种子 (流程测试账号/请假Demo演示定义)
-│   └── Makefile                         # run / initdb / vet / fmt / tidy / gen-crud
+│   └── Makefile                         # run / initdb / vet / fmt / tidy / gen-crud / tenant-lint
 └── web_src/                             # Nuxt 4 前端
     ├── app/
     │   ├── app.vue                      # 根组件
     │   ├── layouts/                     # default(主骨架) / blank(登录)
     │   ├── pages/                       # 页面路由
-    │   │   ├── login.vue                #   登录 (blank 布局)
+    │   │   ├── login.vue / register.vue #   登录 / 注册 (blank 布局)
     │   │   ├── dashboard.vue            #   仪表盘
     │   │   ├── profile.vue              #   个人中心 (资料+头像+密码+上次登录)
-    │   │   ├── system/                  #   系统管理
-    │   │   │   ├── users/index.vue      #     用户管理 (含 Excel 导入导出)
-    │   │   │   ├── roles/index.vue      #     角色管理 (含数据范围/自定义组织)
-    │   │   │   ├── orgs/index.vue       #     组织机构
-    │   │   │   ├── menus/index.vue      #     菜单管理 (含图标选择器)
-    │   │   │   ├── apis/index.vue       #     API 管理
-    │   │   │   ├── dicts/index.vue      #     字典管理
-    │   │   │   ├── files/index.vue      #     文件管理
-    │   │   │   ├── configs/index.vue    #     全局配置 (含密码策略 sys.password.*)
-    │   │   │   ├── audit-logs/index.vue #     操作日志
-    │   │   │   ├── login-logs/index.vue #     登录日志
-    │   │   │   ├── online/index.vue     #     在线用户 (强制下线)
-    │   │   │   ├── jobs/index.vue       #     定时任务 (一键启停/立即执行/执行日志)
-    │   │   │   └── gencode/index.vue    #     代码生成 (表选择/列勾选/预览/下载/直写)
-    │   └── message/                     #   消息中心
-    │       ├── system/index.vue         #     系统通知
-    │       └── private/index.vue        #     私信
-    │   ├── stores/                      #   user(会话/菜单/权限) / tags(多标签页) / config(全局配置)
-    │   ├── components/                  #   MessageBell(SSE 消息铃铛) / TagsBar(多标签页)
+    │   │   ├── system/                  #   系统管理: users/roles/orgs/menus/apis/dicts/files/configs/
+    │   │   │                            #     posts/tenants/tenant-configs/audit-logs/login-logs/
+    │   │   │                            #     online/jobs/monitor/gencode/swagger
+    │   │   ├── flow/                    #   审批中心 (definitions/center/instances/detail)
+    │   │   ├── message/                 #   消息中心 (system 系统通知 / private 私信)
+    │   │   ├── ai/chat/                 #   AI 智能对话
+    │   │   ├── biz/leave/               #   请假申请 (业务审批 Demo)
+    │   │   └── cms/                     #   内容管理 (category 栏目 / article 文章 + 整页编辑)
+    │   ├── stores/                      # user(会话/菜单/权限/代运维租户) / tags / config / settings
+    │   ├── components/                  # FileUploader / RichEditor(wangeditor) / TenantSwitcher /
+    │   │                                #   MessageBell / TagsBar / SettingDrawer / CronBuilder /
+    │   │                                #   AppWatermark / flow(流程设计器组件)
     │   ├── composables/
-    │   │   ├── useRequest.ts            # 统一请求封装 (token 注入 / 401 静默续期 / 文件下载)
-    │   │   └── useApi/                  # 按模块拆分的 API hook (auth/user/role/.../gencode)
+    │   │   ├── useRequest.ts            # 统一请求封装 (token 注入 / 401 静默续期 / X-Tenant-Id)
+    │   │   └── useApi/                  # 按模块拆分的 API hook (auth/user/.../tenant/cms)
     │   ├── middleware/auth.global.ts    # 路由守卫 (未登录跳转 / 强制改密锁定改密页)
-    │   └── plugins/
-    │       ├── element-icons.ts         # 全局注册 @element-plus/icons-vue (侧边栏动态图标)
-    │       ├── permission.ts            # v-permission 按钮级权限指令
-    │       └── echarts.client.ts        # ECharts 客户端注册
+    │   └── plugins/                     # element-icons / permission(v-permission) / echarts / settings
     └── nuxt.config.ts                   # modules + nitro.devProxy
 ```
 
@@ -190,8 +196,11 @@ mysql -uroot -p hinay_admin < manifest/sql/init.sql
 
 | 表 | 说明 |
 | --- | --- |
+| `sys_tenant` / `sys_tenant_menu` | 多租户: 租户主表 + 租户应用授权集 (平台专属, 不走租户注入) |
 | `sys_user` | 系统用户 (含 `deleted_at` 软删) |
 | `sys_role` | 系统角色 |
+| `sys_org` | 组织机构 |
+| `sys_role_org` | 角色-自定义组织绑定 (数据权限) |
 | `sys_menu` | 菜单/按钮 (`type` 1=目录 2=菜单 3=按钮) |
 | `sys_api` | API 资源 (用于角色 API 维度授权) |
 | `casbin_rule` | Casbin 策略 (p=权限, g=用户-角色) |
@@ -203,6 +212,9 @@ mysql -uroot -p hinay_admin < manifest/sql/init.sql
 | `sys_dict_data` | 字典数据项 (支持排序) |
 | `sys_file` | 文件管理 |
 | `sys_audit_log` | 操作审计日志 |
+| `sys_login_log` | 登录日志 |
+| `sys_job` / `sys_job_log` | 定时任务与执行日志 |
+| `sys_user_totp` | TOTP 两步验证密钥 |
 | `wf_definition`/`wf_instance`/`wf_task`/`wf_record` | 自由审批流 (定义/实例/任务/流转记录) |
 | `sys_post`/`sys_user_post` | 岗位管理 (审批人解析依据) |
 | `ai_conversation`/`ai_chat_message` | AI 会话与消息 |
@@ -454,6 +466,14 @@ casbin:
 | 消息 | `/api/v1/message/{id}/read` | PUT | 标记单条已读 |
 | 消息 | `/api/v1/message/read-all` | PUT | 全部标记已读 |
 | 消息 | `/api/v1/message/unread-count` | GET | 未读消息数量 |
+| 租户管理 | `/api/v1/system/tenants` (含 `/all`) | GET / POST | 租户列表 / 全量 / 创建向导 (仅平台) |
+| 租户管理 | `/api/v1/system/tenants/{id}` | GET / PUT / DELETE | 租户详情 / 修改 / 删除 |
+| 租户管理 | `/api/v1/system/tenants/{id}/menus` | GET / PUT | 获取 / 设置应用授权集 |
+| 租户管理 | `/api/v1/system/tenants/{id}/configs/reset` | POST | 重置租户覆盖配置 |
+| 租户管理 | `/api/v1/auth/tenant/info` | GET | 公开租户信息 (按 code, 仅显示名, 限流) |
+| 内容管理 | `/api/v1/cms/categories` (含 `/all`) | CRUD | 栏目管理 (code 租户内唯一, 有文章不可删) |
+| 内容管理 | `/api/v1/cms/articles` (含 `/{id}`) | CRUD | 文章管理 (列表瘦身, 详情含富文本正文) |
+| 内容管理 | `/api/v1/cms/articles/{id}/publish` / `offline` | POST | 发布 (幂等) / 下架 |
 
 ## 鉴权与权限模型
 
@@ -475,7 +495,7 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
   - 因此给用户增加角色只会扩大可见/可调用范围, 永不缩小; 收紧权限只能从角色上移除授权或解除用户-角色绑定。
 - **多租户 (multiTenant.enable 开启时)**:
   - Casbin 升级为**域模型** `(sub, dom, obj, act)`, 域 = 租户 ID (`p` 行 `v3`、`g` 行 `v2`), 各租户策略互不可见; 平台超管 (角色 id=1) 仍全放行, 租户管理员 (`tenant_admin` 角色) 在本租户围栏内管理;
-  - 行级隔离: 20 张 A 类表在 ORM 驱动层强制注入 `tenant_id` (业务代码绕不过), 平台超管默认跨租户可见 (可带 `X-Tenant-Id` 头代运维切换到目标租户, 非平台超管携带会被忽略并告警审计);
+  - 行级隔离: 22 张 A 类表在 ORM 驱动层强制注入 `tenant_id` (业务代码绕不过), 平台超管默认跨租户可见 (可带 `X-Tenant-Id` 头代运维切换到目标租户, 非平台超管携带会被忽略并告警审计);
   - 应用授权集: 平台通过 `sys_tenant_menu` 圈定每租户可用菜单/API, 收缩即时清理越界策略、扩张自动授予租户管理员 ("买了就用");
   - 存量库升级执行 `server/manifest/sql/upgrade-multi-tenant.sql` 后开开关 (新装 `init.sql` 已是多租户基线, 默认关闭)。
 
