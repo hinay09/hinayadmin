@@ -28,6 +28,8 @@ type UserVO struct {
 	Phone     string      `json:"phone"`
 	OrgId     uint64      `json:"orgId"`
 	OrgName   string      `json:"orgName"`
+	TenantId  uint64      `json:"tenantId"  dc:"所属租户ID(多租户开启时返回)"`
+	TenantName string     `json:"tenantName" dc:"所属租户名(平台视角/多租户开启时返回)"`
 	Status    int         `json:"status"`
 	Remark    string      `json:"remark"`
 	RoleIds   []uint64    `json:"roleIds"`

@@ -73,6 +73,8 @@ export function useAiApi() {
       headers: {
         'Content-Type': 'application/json',
         ...(userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}),
+        // 平台超管代运维切换: fetchEventSource 手写 headers 不走 useRequest 拦截器, 单独注入
+        ...(userStore.actTenantId > 0 ? { 'X-Tenant-Id': String(userStore.actTenantId) } : {}),
       },
       body: JSON.stringify(data),
       signal: handlers.signal,

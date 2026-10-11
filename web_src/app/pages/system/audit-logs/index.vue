@@ -7,6 +7,12 @@ definePageMeta({ title: '操作日志' })
 defineOptions({ name: 'system-audit-logs' })
 
 const api = useAuditLogApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
+
 const loading = ref(false)
 const list = ref<any[]>([])
 const total = ref(0)
@@ -161,6 +167,7 @@ onMounted(loadList)
             {{ row.username || '匿名' }}
           </template>
         </el-table-column>
+        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
         <el-table-column label="操作" width="90">
           <template #default="{ row }">
             <el-tag size="small" :type="actionTagType(row.action)">

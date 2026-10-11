@@ -13,11 +13,12 @@ import (
 type WfRecord struct {
 	g.Meta       `orm:"table:wf_record, do:true"`
 	Id           any         // 主键ID
+	TenantId     any         // 租户ID(ORM按上下文注入)
 	InstanceId   any         // 实例ID
 	TaskId       any         // 关联任务ID(无则为0)
 	NodeId       any         // 节点ID
 	NodeName     any         // 节点名称
-	Action       any         // 动作:submit/approve/reject/cancel/cc/finish
+	Action       any         // 动作:submit/resubmit/approve/reject/back/cancel/withdraw/cc/finish/transfer/delegate/delegateResolve/terminate/urge/append/reduce/timeoutRemind/timeoutTransfer/timeoutApprove
 	OperatorId   any         // 操作人ID(0=系统)
 	OperatorName any         // 操作人昵称(0=系统)
 	Comment      any         // 备注/意见

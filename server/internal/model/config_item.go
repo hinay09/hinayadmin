@@ -5,6 +5,7 @@ import "github.com/gogf/gf/v2/os/gtime"
 // ConfigItem 全局配置列表 VO。
 type ConfigItem struct {
 	Id          uint64      `json:"id"`
+	TenantId    uint64      `json:"tenantId"   orm:"tenant_id"`
 	ConfigKey   string      `json:"configKey"`
 	ConfigValue string      `json:"configValue"`
 	ConfigType  int         `json:"configType"`

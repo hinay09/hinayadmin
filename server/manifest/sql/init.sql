@@ -2,8 +2,11 @@
 -- Hinay Admin 数据库初始化脚本 (新装唯一入口)
 -- 数据库: hinay_admin (MySQL 8+, utf8mb4)
 --
--- 本文件为全量基线: 基础库 + 全部模块 (审批流/岗位/AI/微信/请假Demo)
+-- 本文件为全量基线: 基础库 + 全部模块 (审批流/岗位/AI/微信/请假Demo/多租户)
 -- 与其种子一次到位, 新装只需执行本文件 (make initdb)。
+-- 多租户基线 (docs/multi-tenant.md): 共享库共享表 + tenant_id 行级隔离,
+-- 开关 multiTenant.enable 默认关闭 —— 新装即多租户就绪, 开关关=单租户行为不变。
+-- 存量单租户库升级见 manifest/sql/upgrade-multi-tenant.sql (一次性, 自担风险)。
 -- 原 upgrade/ (社区版存量增量) 与 upgrade-modules/ (模块增量 p001~p018)
 -- 的最终态均已并入, 目录已移除 —— 项目默认面向新装应用, 不再维护
 -- 存量库迁移脚本。
@@ -22,12 +25,54 @@ CREATE DATABASE IF NOT EXISTS `hinay_admin`
 USE `hinay_admin`;
 
 -- ------------------------------------------------------------
+-- 租户表 (平台表, 无 tenant_id 列不走注入; 管理入口仅平台超管)
+-- code 创建后不可变 (登录入口/子域名/回调命名空间依据);
+-- 软删时事务内原子改写 code 为 {code}#del{unix} 防同码重建撞 uk。
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_tenant`;
+CREATE TABLE IF NOT EXISTS `sys_tenant` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`          VARCHAR(128) NOT NULL              COMMENT '租户名称',
+  `code`          VARCHAR(64)  NOT NULL              COMMENT '租户标识(子域名/登录码, 全局唯一, 创建后不可变)',
+  `contact`       VARCHAR(128) NOT NULL DEFAULT ''   COMMENT '联系人',
+  `plan`          VARCHAR(32)  NOT NULL DEFAULT 'standard' COMMENT '套餐(展示标签, 预留)',
+  `quota_users`   INT NOT NULL DEFAULT 0             COMMENT '用户数配额(0=不限, 预留)',
+  `quota_storage` BIGINT NOT NULL DEFAULT 0          COMMENT '存储配额字节(0=不限, 预留)',
+  `expire_at`     DATETIME DEFAULT NULL              COMMENT '到期时间(NULL=永久)',
+  `status`        TINYINT NOT NULL DEFAULT 1         COMMENT '1=启用 0=禁用',
+  `remark`        VARCHAR(255) NOT NULL DEFAULT ''   COMMENT '备注',
+  `create_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `update_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`    DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='租户';
+
+-- ------------------------------------------------------------
+-- 租户应用授权关系表 (§7.1: 平台管理的租户可用菜单目录/页面级授权集,
+-- 按钮随父页面闭包; 纯关系表全量重写式维护, 不进 ormfill 审计白名单)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `sys_tenant_menu` (
+  `tenant_id`  BIGINT UNSIGNED NOT NULL,
+  `menu_id`    BIGINT UNSIGNED NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`tenant_id`, `menu_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='租户应用授权(目录/页面级, 按钮随父页面闭包)';
+
+-- 平台租户 (id=1): 单租户部署下所有数据挂它; 运行时授权集整体豁免 (全集)
+INSERT IGNORE INTO `sys_tenant` (`id`,`name`,`code`,`contact`,`status`,`remark`) VALUES
+  (1, '平台租户', 'platform', '', 1, '内置平台租户(id=1), 不可禁用/删除');
+
+-- ------------------------------------------------------------
 -- 用户表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_user`;
 CREATE TABLE IF NOT EXISTS `sys_user` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '用户ID',
-  `username`   VARCHAR(64)  NOT NULL                COMMENT '登录账号',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(ORM按上下文注入)',
+  `username`   VARCHAR(64)  NOT NULL                COMMENT '登录账号(租户内唯一)',
   `password`   VARCHAR(128) NOT NULL                COMMENT 'bcrypt 加密密码',
   `nickname`   VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '昵称',
   `avatar`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '头像URL',
@@ -46,15 +91,17 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_username` (`username`)
+  UNIQUE KEY `uk_tenant_username` (`tenant_id`, `username`),
+  KEY `idx_tenant` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统用户';
 
 -- ------------------------------------------------------------
--- 组织机构表(无限级树形)
+-- 组织机构表(无限级树形, 树根 per 租户)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_org`;
 CREATE TABLE IF NOT EXISTS `sys_org` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '组织ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(ORM按上下文注入)',
   `parent_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '父级ID, 0=顶级',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '组织名称',
   `leader`     VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '负责人',
@@ -69,17 +116,19 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  KEY `idx_parent` (`parent_id`)
+  KEY `idx_parent` (`parent_id`),
+  KEY `idx_tenant` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='组织机构';
 
 -- ------------------------------------------------------------
--- 角色表
+-- 角色表 (code 租户内唯一; id=3 为租户管理员模板角色, 创建租户时按域克隆)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_role`;
 CREATE TABLE IF NOT EXISTS `sys_role` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '角色ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(ORM按上下文注入)',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '角色名称',
-  `code`       VARCHAR(64)  NOT NULL                COMMENT '角色编码',
+  `code`       VARCHAR(64)  NOT NULL                COMMENT '角色编码(租户内唯一)',
   `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
   `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '状态:1=启用,0=禁用',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
@@ -90,7 +139,8 @@ CREATE TABLE IF NOT EXISTS `sys_role` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_code` (`code`)
+  UNIQUE KEY `uk_tenant_code` (`tenant_id`, `code`),
+  KEY `idx_tenant` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统角色';
 
 -- ------------------------------------------------------------
@@ -99,13 +149,15 @@ CREATE TABLE IF NOT EXISTS `sys_role` (
 DROP TABLE IF EXISTS `sys_role_org`;
 CREATE TABLE IF NOT EXISTS `sys_role_org` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(ORM按上下文注入)',
   `role_id`    BIGINT UNSIGNED NOT NULL                COMMENT '角色ID',
   `org_id`     BIGINT UNSIGNED NOT NULL                COMMENT '组织ID',
   `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
   `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_role_org` (`role_id`, `org_id`)
+  UNIQUE KEY `uk_role_org` (`role_id`, `org_id`),
+  KEY `idx_tenant` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='角色自定义数据范围组织绑定';
 
 -- ------------------------------------------------------------
@@ -134,7 +186,8 @@ CREATE TABLE IF NOT EXISTS `sys_menu` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统菜单';
 
 -- ------------------------------------------------------------
--- API接口资源表
+-- API接口资源表 (B类平台共享; menu_id 为"API归属菜单"映射, 租户角色可绑
+-- API 的 menu_id 须 ∈ 租户授权集闭包; 0=平台/公共接口, 租户不可绑 —— fail-close)
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_api`;
 CREATE TABLE IF NOT EXISTS `sys_api` (
@@ -143,6 +196,7 @@ CREATE TABLE IF NOT EXISTS `sys_api` (
   `method`      VARCHAR(10)  NOT NULL COMMENT 'HTTP方法(GET/POST/PUT/DELETE)',
   `group_name`  VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '分组名称',
   `description` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '接口描述',
+  `menu_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '归属菜单ID(0=平台/公共, 租户不可绑)',
   `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
   `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
   `created_at`  DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -152,10 +206,11 @@ CREATE TABLE IF NOT EXISTS `sys_api` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='API接口资源表';
 
 -- ------------------------------------------------------------
--- Casbin 策略表 (兼容标准 casbin gorm-adapter 字段布局)
+-- Casbin 策略表 (兼容标准 casbin gorm-adapter 字段布局, 域化多租户模型)
 -- 字段语义 (关联键均为ID, 与用户名/角色code解耦, 改名不影响权限):
---   ptype = p  (策略)        : v0=sub(角色ID), v1=obj(path 或 menu:<菜单ID>), v2=act(method), v3~v5 预留
---   ptype = g  (角色继承/分组): v0=用户ID, v1=角色ID,        v2=domain (可选)
+--   ptype = p  (策略)        : v0=sub(角色ID), v1=obj(path 或 menu:<菜单ID>), v2=act(method), v3=domain(租户ID)
+--   ptype = g  (角色继承/分组): v0=用户ID, v1=角色ID, v2=domain(租户ID)
+-- 域 = 租户ID 十进制字符串 ('1'=平台域); roleId 为 DB 自增跨租户唯一, 域化防撞号放串。
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `casbin_rule`;
 CREATE TABLE IF NOT EXISTS `casbin_rule` (
@@ -163,8 +218,8 @@ CREATE TABLE IF NOT EXISTS `casbin_rule` (
   `ptype` VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '策略类型: p / g / g2 ...',
   `v0`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:sub(角色ID) | g:用户ID',
   `v1`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:obj(path/menu:菜单ID) | g:角色ID',
-  `v2`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:act(method) | g:domain',
-  `v3`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '预留字段',
+  `v2`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:act(method) | g:domain(租户ID)',
+  `v3`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT 'p:domain(租户ID)',
   `v4`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '预留字段',
   `v5`    VARCHAR(100) NOT NULL DEFAULT ''                    COMMENT '预留字段',
   PRIMARY KEY (`id`),
@@ -180,6 +235,7 @@ CREATE TABLE IF NOT EXISTS `casbin_rule` (
 DROP TABLE IF EXISTS `biz_message`;
 CREATE TABLE IF NOT EXISTS `biz_message` (
   `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tenant_id`    BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '租户ID(ORM按上下文注入)',
   `type`         TINYINT      NOT NULL                COMMENT '消息类型:1=系统通知,2=私信',
   `title`        VARCHAR(128) NOT NULL                COMMENT '标题',
   `content`      TEXT         NOT NULL                COMMENT '内容',
@@ -194,6 +250,7 @@ CREATE TABLE IF NOT EXISTS `biz_message` (
   `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at`   DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_type_receiver` (`type`,`receiver_id`),
   KEY `idx_sender` (`sender_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='消息通知';
@@ -241,8 +298,9 @@ INSERT IGNORE INTO `sys_user` (`id`,`username`,`password`,`nickname`,`status`,`m
 VALUES (1, 'admin', '$2a$10$tUEhjYhhbY4OgzKvJRZZWexJRuKuaWFoKFb3U0PRnVjXpSBgvyEDK', '超级管理员', 1, 1);
 
 INSERT IGNORE INTO `sys_role` (`id`,`name`,`code`,`sort`,`status`,`remark`,`data_scope`) VALUES
-  (1, '超级管理员', 'admin',  1, 1, '内置最高权限角色', 1),
-  (2, '普通用户',   'common', 2, 1, '示例普通角色', 5);
+  (1, '超级管理员', 'admin',  1, 1, '内置最高权限角色(平台超管, 仅平台租户可授予)', 1),
+  (2, '普通用户',   'common', 2, 1, '示例普通角色', 5),
+  (3, '租户管理员', 'tenant_admin', 3, 1, '租户管理员模板角色(创建租户时按域克隆, 域1快照即默认授权集)', 1);
 
 -- 菜单(目录 + 仪表盘 + 个人中心 + 系统管理 + 公告)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
@@ -347,31 +405,127 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/roles/all',           'GET',  '角色管理', '全量角色'),
   ('/api/v1/system/users/{id}/password', 'PUT',  '用户管理', '重置密码');
 
--- Casbin: 角色继承(g) + 策略(p)
--- g: 用户ID-角色ID 映射, p: 角色ID-资源-操作 策略 (关联键均为ID)
--- 内置超管角色(id=1) 不种 p 策略, 仅保留 g 映射用于超管判定:
--- API 侧 Casbin 中间件对超管全放行, 菜单侧 /auth/menus 对超管返回全量启用菜单。
+-- Casbin: 角色继承(g) + 策略(p) —— 域化模型 (域 v3/v2 = 租户ID, '1'=平台域)
+-- g: 用户ID-角色ID 映射 (v2=域); p: 角色ID-资源-操作 策略 (v3=域)
+-- 内置超管角色(id=1) 不种 p 策略, 仅保留 g 映射用于平台超管判定:
+-- API 侧 Casbin 中间件对平台超管全放行, 菜单侧 /auth/menus 对平台超管返回全量启用菜单。
+-- 租户管理员模板角色(id=3, 域1): 默认授权集 = 基础协作包闭包, 创建租户时按域克隆换新 roleId。
 INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
-  -- g 策略: 用户1(admin) 属于角色1(admin, 内置超管)
-  ('g', '1', '1', '', '', '', ''),
-  -- p 策略: common 角色菜单权限(仪表盘 + 个人中心 + 消息中心)
-  ('p', '2', 'menu:30', 'access', '', '', ''),
-  ('p', '2', 'menu:40', 'access', '', '', ''),
-  ('p', '2', 'menu:50', 'access', '', '', ''),
-  ('p', '2', 'menu:52', 'access', '', '', ''),
-  ('p', '2', 'menu:521', 'access', '', '', ''),
-  ('p', '2', 'menu:522', 'access', '', '', ''),
-  -- p 策略: common 角色API权限
-  ('p', '2', '/api/v1/auth/*', '*', '', '', ''),
-  -- p 策略: common 消息通知 (收件箱 + 标记已读 + 发送私信 + 个人删除)
-  ('p', '2', '/api/v1/message/inbox',         'GET',    '', '', ''),
-  ('p', '2', '/api/v1/message/inbox/*',       'GET',    '', '', ''),
-  ('p', '2', '/api/v1/message/inbox/*',       'DELETE', '', '', ''),
-  ('p', '2', '/api/v1/message/unread-count',  'GET',    '', '', ''),
-  ('p', '2', '/api/v1/message/read-all',      'PUT',    '', '', ''),
-  ('p', '2', '/api/v1/message/*/read',        'PUT',    '', '', ''),
-  ('p', '2', '/api/v1/system/users',             'GET',    '', '', ''),
-  ('p', '2', '/api/v1/message/private',       'POST',   '', '', '');
+  -- g 策略: 用户1(admin) 属于角色1(admin, 平台超管), 域1
+  ('g', '1', '1', '1', '', '', ''),
+  -- p 策略: common 角色菜单权限(仪表盘 + 个人中心 + 消息中心), 域1
+  ('p', '2', 'menu:30', 'access', '1', '', ''),
+  ('p', '2', 'menu:40', 'access', '1', '', ''),
+  ('p', '2', 'menu:50', 'access', '1', '', ''),
+  ('p', '2', 'menu:52', 'access', '1', '', ''),
+  ('p', '2', 'menu:521', 'access', '1', '', ''),
+  ('p', '2', 'menu:522', 'access', '1', '', ''),
+  -- p 策略: common 角色API权限, 域1
+  ('p', '2', '/api/v1/auth/*', '*', '1', '', ''),
+  -- p 策略: common 消息通知 (收件箱 + 标记已读 + 发送私信 + 个人删除), 域1
+  ('p', '2', '/api/v1/message/inbox',         'GET',    '1', '', ''),
+  ('p', '2', '/api/v1/message/inbox/*',       'GET',    '1', '', ''),
+  ('p', '2', '/api/v1/message/inbox/*',       'DELETE', '1', '', ''),
+  ('p', '2', '/api/v1/message/unread-count',  'GET',    '1', '', ''),
+  ('p', '2', '/api/v1/message/read-all',      'PUT',    '1', '', ''),
+  ('p', '2', '/api/v1/message/*/read',        'PUT',    '1', '', ''),
+  ('p', '2', '/api/v1/system/users',          'GET',    '1', '', ''),
+  ('p', '2', '/api/v1/message/private',       'POST',   '1', '', ''),
+  -- p 策略: tenant_admin 模板角色(id=3)菜单权限 —— 基础协作包闭包 (域1快照):
+  -- 30仪表盘/40个人中心/50消息中心(51,52+按钮)/15文件管理/10用户/11角色/60组织/9040岗位
+  ('p', '3', 'menu:30', 'access', '1', '', ''),
+  ('p', '3', 'menu:40', 'access', '1', '', ''),
+  ('p', '3', 'menu:50', 'access', '1', '', ''),
+  ('p', '3', 'menu:51', 'access', '1', '', ''),
+  ('p', '3', 'menu:52', 'access', '1', '', ''),
+  ('p', '3', 'menu:511', 'access', '1', '', ''),
+  ('p', '3', 'menu:512', 'access', '1', '', ''),
+  ('p', '3', 'menu:521', 'access', '1', '', ''),
+  ('p', '3', 'menu:522', 'access', '1', '', ''),
+  ('p', '3', 'menu:15', 'access', '1', '', ''),
+  ('p', '3', 'menu:151', 'access', '1', '', ''),
+  ('p', '3', 'menu:152', 'access', '1', '', ''),
+  ('p', '3', 'menu:10', 'access', '1', '', ''),
+  ('p', '3', 'menu:101', 'access', '1', '', ''),
+  ('p', '3', 'menu:102', 'access', '1', '', ''),
+  ('p', '3', 'menu:103', 'access', '1', '', ''),
+  ('p', '3', 'menu:11', 'access', '1', '', ''),
+  ('p', '3', 'menu:111', 'access', '1', '', ''),
+  ('p', '3', 'menu:112', 'access', '1', '', ''),
+  ('p', '3', 'menu:113', 'access', '1', '', ''),
+  ('p', '3', 'menu:114', 'access', '1', '', ''),
+  ('p', '3', 'menu:60', 'access', '1', '', ''),
+  ('p', '3', 'menu:601', 'access', '1', '', ''),
+  ('p', '3', 'menu:602', 'access', '1', '', ''),
+  ('p', '3', 'menu:603', 'access', '1', '', ''),
+  ('p', '3', 'menu:9040', 'access', '1', '', ''),
+  ('p', '3', 'menu:9350', 'access', '1', '', ''),
+  ('p', '3', 'menu:9351', 'access', '1', '', ''),
+  ('p', '3', 'menu:9041', 'access', '1', '', ''),
+  ('p', '3', 'menu:9042', 'access', '1', '', ''),
+  ('p', '3', 'menu:9043', 'access', '1', '', ''),
+  -- p 策略: tenant_admin 模板角色 API 权限 (menu_id ∈ 授权集闭包的接口), 域1
+  ('p', '3', '/api/v1/system/users',              'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users',              'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/users/:id',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users/:id',          'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users/:id',          'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/system/users/:id/roles',    'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users/{id}/password','PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users/export',       'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/users/import',       'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/users/import-template', 'GET', '1', '', ''),
+  ('p', '3', '/api/v1/system/roles',              'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles',              'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/all',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id',          'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id',          'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id/menus',    'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id/menus',    'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id/apis',     'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/roles/:id/apis',     'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/menus/tree',        'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/apis/all',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/configs',           'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/configs',           'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/configs/:id',       'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs',               'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs',               'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs/:id',           'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs/:id',           'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs/:id',           'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/system/orgs/tree',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/posts',              'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/all',          'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/posts',              'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/{id}',         'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/{id}',         'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/{id}/members', 'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/{id}/members', 'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/posts/members/{relId}', 'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/system/files',              'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/system/files/upload',       'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/files/presign',      'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/system/files/presign/confirm', 'POST', '1', '', ''),
+  ('p', '3', '/api/v1/system/files/:id',          'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/message',                   'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/message/system',            'POST',   '1', '', ''),
+  ('p', '3', '/api/v1/message/:id',               'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/message/:id',               'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/message/inbox',             'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/message/inbox/:id',         'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/message/inbox/:id',         'DELETE', '1', '', ''),
+  ('p', '3', '/api/v1/message/unread-count',      'GET',    '1', '', ''),
+  ('p', '3', '/api/v1/message/read-all',          'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/message/*/read',            'PUT',    '1', '', ''),
+  ('p', '3', '/api/v1/message/private',           'POST',   '1', '', '');
+
+-- 租户应用授权集种子 (§7.1): 平台租户(id=1)整体豁免, 此处种子为默认模板快照
+-- (基础协作包目录/页面级, 按钮随父闭包), 供创建向导预览与扩缩联动参照。
+INSERT IGNORE INTO `sys_tenant_menu` (`tenant_id`,`menu_id`) VALUES
+  (1, 30), (1, 40), (1, 50), (1, 51), (1, 52),
+  (1, 15), (1, 10), (1, 11), (1, 60), (1, 9040), (1, 9350);
 
 -- ------------------------------------------------------------
 -- 操作日志: 由中间件自动写入, 记录 POST/PUT/DELETE 操作(含成功/失败/未授权)
@@ -379,6 +533,7 @@ INSERT IGNORE INTO `casbin_rule` (`ptype`,`v0`,`v1`,`v2`,`v3`,`v4`,`v5`) VALUES
 DROP TABLE IF EXISTS `sys_audit_log`;
 CREATE TABLE IF NOT EXISTS `sys_audit_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id`   BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(记录归属, 平台可查全量)',
   `user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID',
   `username`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '用户名',
   `action`      VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '操作类型(create/update/delete/upload/login/...)',
@@ -396,6 +551,7 @@ CREATE TABLE IF NOT EXISTS `sys_audit_log` (
   `user_agent`  VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'User-Agent',
   `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_action` (`action`),
   KEY `idx_resource` (`resource`),
@@ -450,6 +606,7 @@ CREATE TABLE IF NOT EXISTS `sys_dict_data` (
 DROP TABLE IF EXISTS `sys_file`;
 CREATE TABLE IF NOT EXISTS `sys_file` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id`     BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
   `name`          VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '存储文件名',
   `original_name` VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '原始文件名',
   `path`          VARCHAR(512) NOT NULL DEFAULT ''        COMMENT '存储路径',
@@ -463,7 +620,7 @@ CREATE TABLE IF NOT EXISTS `sys_file` (
   `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `deleted_at`    DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  KEY `idx_user` (`user_id`),
+  KEY `idx_tenant_user` (`tenant_id`, `user_id`),
   KEY `idx_ext` (`extension`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='文件管理';
 
@@ -514,7 +671,8 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 DROP TABLE IF EXISTS `sys_config`;
 CREATE TABLE IF NOT EXISTS `sys_config` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
-  `config_key`  VARCHAR(128) NOT NULL                   COMMENT '配置键(唯一)',
+  `tenant_id`   BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(平台行=1; 白名单键支持租户覆盖, 读序: 租户>平台)',
+  `config_key`  VARCHAR(128) NOT NULL                   COMMENT '配置键(租户内唯一)',
   `config_value` TEXT         NOT NULL                  COMMENT '配置值',
   `config_type` TINYINT      NOT NULL DEFAULT 0         COMMENT '配置类型:0=文本,1=数字,2=布尔,3=JSON',
   `name`        VARCHAR(128) NOT NULL DEFAULT ''         COMMENT '配置名称(中文说明)',
@@ -527,7 +685,7 @@ CREATE TABLE IF NOT EXISTS `sys_config` (
   `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at`  DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_config_key` (`config_key`),
+  UNIQUE KEY `uk_tenant_key` (`tenant_id`, `config_key`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='全局配置';
 
@@ -600,6 +758,7 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 DROP TABLE IF EXISTS `sys_login_log`;
 CREATE TABLE IF NOT EXISTS `sys_login_log` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(记录归属, 平台可查全量)',
   `user_id`    BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID(登录用户不存在时为0)',
   `username`   VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '登录账号',
   `status`     TINYINT      NOT NULL DEFAULT 0         COMMENT '结果:1=成功,0=失败',
@@ -608,6 +767,7 @@ CREATE TABLE IF NOT EXISTS `sys_login_log` (
   `user_agent` VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'User-Agent',
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_username` (`username`),
   KEY `idx_status` (`status`),
@@ -651,6 +811,7 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 DROP TABLE IF EXISTS `sys_job`;
 CREATE TABLE IF NOT EXISTS `sys_job` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '任务ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(平台级任务=1; 执行时按该列构造租户上下文)',
   `name`       VARCHAR(64)  NOT NULL                COMMENT '任务名称',
   `handler`    VARCHAR(128) NOT NULL                COMMENT '处理器名称(需已注册)',
   `cron_expr`  VARCHAR(64)  NOT NULL                COMMENT 'cron表达式(6位: 秒 分 时 日 月 周)',
@@ -663,12 +824,14 @@ CREATE TABLE IF NOT EXISTS `sys_job` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='定时任务';
 
 DROP TABLE IF EXISTS `sys_job_log`;
 CREATE TABLE IF NOT EXISTS `sys_job_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '日志ID',
+  `tenant_id`   BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(记录归属)',
   `job_id`      BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '任务ID',
   `job_name`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '任务名称(冗余, 删除任务后日志仍可读)',
   `handler`     VARCHAR(128) NOT NULL DEFAULT ''        COMMENT '处理器名称',
@@ -678,6 +841,7 @@ CREATE TABLE IF NOT EXISTS `sys_job_log` (
   `duration_ms` INT          NOT NULL DEFAULT 0         COMMENT '耗时(毫秒)',
   `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_job` (`job_id`),
   KEY `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='定时任务执行日志';
@@ -811,8 +975,10 @@ CREATE TABLE IF NOT EXISTS `sys_user_totp` (
 -- ------------------------------------------------------------
 -- 流程定义 (版本行: version=0 草稿, >=1 已发布版本; 同 flow_key 多版本)
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `wf_definition`;
 CREATE TABLE IF NOT EXISTS `wf_definition` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '租户ID(ORM按上下文注入)',
   `flow_key`   VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '流程标识(同标识共用一组版本, 如 leave)',
   `name`       VARCHAR(128) NOT NULL                COMMENT '流程名称',
   `form_conf`  JSON         NULL                   COMMENT '表单字段定义 JSON [{key,label,type,options,required}]',
@@ -826,14 +992,17 @@ CREATE TABLE IF NOT EXISTS `wf_definition` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_flow_key` (`flow_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批流程定义';
 
 -- ------------------------------------------------------------
 -- 流程实例 (引用具体定义版本行, 定义后续发布新版本不影响在途实例)
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `wf_instance`;
 CREATE TABLE IF NOT EXISTS `wf_instance` (
   `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`         BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '租户ID(ORM按上下文注入)',
   `definition_id`     BIGINT UNSIGNED NOT NULL             COMMENT '定义版本行ID',
   `flow_key`          VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '流程标识(冗余)',
   `flow_name`         VARCHAR(128) NOT NULL DEFAULT ''     COMMENT '流程名称(冗余)',
@@ -854,6 +1023,7 @@ CREATE TABLE IF NOT EXISTS `wf_instance` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_definition` (`definition_id`),
   KEY `idx_start_user` (`start_user_id`),
   KEY `idx_biz` (`flow_key`, `biz_id`)
@@ -862,8 +1032,10 @@ CREATE TABLE IF NOT EXISTS `wf_instance` (
 -- ------------------------------------------------------------
 -- 审批任务 (会签/或签按"节点×审批人"一人一行; 抄送为待阅行)
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `wf_task`;
 CREATE TABLE IF NOT EXISTS `wf_task` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`     BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '租户ID(ORM按上下文注入)',
   `instance_id`   BIGINT UNSIGNED NOT NULL             COMMENT '实例ID',
   `node_id`       VARCHAR(32)  NOT NULL                COMMENT '节点ID(树内唯一)',
   `node_name`     VARCHAR(64)  NOT NULL DEFAULT ''     COMMENT '节点名称(冗余)',
@@ -880,6 +1052,7 @@ CREATE TABLE IF NOT EXISTS `wf_task` (
   `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_instance` (`instance_id`),
   KEY `idx_assignee` (`assignee_id`, `status`),
   KEY `idx_status_due` (`status`, `due_time`)
@@ -888,8 +1061,10 @@ CREATE TABLE IF NOT EXISTS `wf_task` (
 -- ------------------------------------------------------------
 -- 流转记录 (只追加时间线, 含系统动作; operator=0 表示系统)
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `wf_record`;
 CREATE TABLE IF NOT EXISTS `wf_record` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`     BIGINT UNSIGNED NOT NULL DEFAULT 1   COMMENT '租户ID(ORM按上下文注入)',
   `instance_id`   BIGINT UNSIGNED NOT NULL             COMMENT '实例ID',
   `task_id`       BIGINT UNSIGNED NOT NULL DEFAULT 0   COMMENT '关联任务ID(无则为0)',
   `node_id`       VARCHAR(32)  NOT NULL DEFAULT ''     COMMENT '节点ID',
@@ -901,15 +1076,18 @@ CREATE TABLE IF NOT EXISTS `wf_record` (
   `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_instance` (`instance_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='审批流转记录';
 
 -- ------------------------------------------------------------
 -- 岗位管理: 审批人解析依据 (指定岗位 / 部门主管岗)
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_post`;
 CREATE TABLE IF NOT EXISTS `sys_post` (
-  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `post_code`  VARCHAR(32)  NOT NULL                COMMENT '岗位编码(唯一, 如 hr, dept_leader)',
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '岗位ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '租户ID(ORM按上下文注入)',
+  `post_code`  VARCHAR(32)  NOT NULL                COMMENT '岗位编码(租户内唯一, 如 hr, dept_leader)',
   `post_name`  VARCHAR(64)  NOT NULL                COMMENT '岗位名称',
   `post_kind`  TINYINT      NOT NULL DEFAULT 1      COMMENT '岗位类型:1=普通岗,2=主管岗(部门主管解析依据)',
   `sort`       INT          NOT NULL DEFAULT 0      COMMENT '排序',
@@ -921,12 +1099,14 @@ CREATE TABLE IF NOT EXISTS `sys_post` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_post_code` (`post_code`)
+  UNIQUE KEY `uk_tenant_post_code` (`tenant_id`, `post_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='岗位管理';
 
 -- 用户挂岗 (谁在哪个组织担任什么岗位; 纯关联表, 物理删除, 无审计列)
+DROP TABLE IF EXISTS `sys_user_post`;
 CREATE TABLE IF NOT EXISTS `sys_user_post` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
   `user_id`    BIGINT UNSIGNED NOT NULL                COMMENT '用户ID',
   `post_id`    BIGINT UNSIGNED NOT NULL                COMMENT '岗位ID',
   `org_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '组织ID(0=不限定组织)',
@@ -934,6 +1114,7 @@ CREATE TABLE IF NOT EXISTS `sys_user_post` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_post_org` (`user_id`, `post_id`, `org_id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_post` (`post_id`),
   KEY `idx_org` (`org_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户岗位关联';
@@ -1024,9 +1205,11 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
 -- ############################################################
 
 -- 会话与消息表 (原 p007)
+DROP TABLE IF EXISTS `ai_conversation`;
 CREATE TABLE IF NOT EXISTS `ai_conversation` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `session_id`    VARCHAR(64)  NOT NULL                   COMMENT '会话ID(前端生成并保管)',
+  `tenant_id`     BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
+  `session_id`    VARCHAR(64)  NOT NULL                   COMMENT '会话ID(前端生成并保管, 全局唯一)',
   `user_id`       BIGINT UNSIGNED NOT NULL                COMMENT '所属用户ID',
   `title`         VARCHAR(128) NOT NULL DEFAULT ''        COMMENT '会话标题(首条用户消息裁剪)',
   `message_count` INT UNSIGNED NOT NULL DEFAULT 0         COMMENT '累计消息条数(user+assistant)',
@@ -1035,11 +1218,14 @@ CREATE TABLE IF NOT EXISTS `ai_conversation` (
   `deleted_at`    DATETIME     DEFAULT NULL               COMMENT '未使用(保留列对齐代码生成器约定)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_user_updated` (`user_id`,`updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI会话';
 
+DROP TABLE IF EXISTS `ai_chat_message`;
 CREATE TABLE IF NOT EXISTS `ai_chat_message` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`       BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(跟随会话, ORM注入)',
   `conversation_id` BIGINT UNSIGNED NOT NULL               COMMENT '会话ID(ai_conversation.id)',
   `role`            VARCHAR(16)  NOT NULL                  COMMENT '角色:user/assistant/tool(tool=工具调用步骤,内容为步骤JSON)',
   `content`         MEDIUMTEXT   NOT NULL                  COMMENT '消息正文(思考过程不落库)',
@@ -1050,6 +1236,7 @@ CREATE TABLE IF NOT EXISTS `ai_chat_message` (
   `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at`      DATETIME     DEFAULT NULL               COMMENT '未使用(保留列对齐代码生成器约定)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_conversation` (`conversation_id`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI会话消息';
 
@@ -1096,8 +1283,10 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `n
 -- upgrade-modules/p016_biz_leave_demo.sql (可选种子)。
 -- ############################################################
 
+DROP TABLE IF EXISTS `biz_leave`;
 CREATE TABLE IF NOT EXISTS `biz_leave` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`     BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
   `leave_type`    TINYINT      NOT NULL DEFAULT 1         COMMENT '请假类型:1=事假,2=病假,3=年假,4=调休,5=其他',
   `start_date`    DATE         NOT NULL                   COMMENT '开始日期',
   `end_date`      DATE         NOT NULL                   COMMENT '结束日期',
@@ -1111,6 +1300,7 @@ CREATE TABLE IF NOT EXISTS `biz_leave` (
   `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` DATETIME     DEFAULT NULL            COMMENT '删除时间(软删)',
   PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
   KEY `idx_create` (`create_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='请假申请(业务审批Demo)';
 
@@ -1144,3 +1334,77 @@ SELECT '流程超时扫描', 'flow.timeoutScan', '0 */10 * * * *', '', 1,
        '审批任务超时处理: 提醒/自动转办/自动通过 (按审批节点超时配置, 无配置不受影响)'
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `sys_job` WHERE `handler` = 'flow.timeoutScan' AND `deleted_at` IS NULL);
+
+-- ############################################################
+-- 六、多租户 (docs/multi-tenant.md; 开关 multiTenant.enable 默认关闭,
+--    关闭时系统行为与单租户完全一致 —— 租户管理菜单不进任何租户授权集)
+-- 表 (sys_tenant / sys_tenant_menu) 与租户列改造已并入上方基线; 本段为菜单/API 种子。
+-- ############################################################
+
+-- 菜单: 租户管理 (挂在系统管理目录 id=1 下, 平台专属 —— 不进任何租户授权集)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9300, 1, '租户管理', 2, '/system/tenants', 'system/tenants/index', 'OfficeBuilding', 'system:tenant:list', 18, 1, 1);
+
+-- 按钮权限
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9301, 9300, '租户新增', 3, '', '', '', 'system:tenant:create', 1, 0, 1),
+  (9302, 9300, '租户修改', 3, '', '', '', 'system:tenant:update', 2, 0, 1),
+  (9303, 9300, '租户删除', 3, '', '', '', 'system:tenant:delete', 3, 0, 1),
+  (9304, 9300, '应用授权', 3, '', '', '', 'system:tenant:assign', 4, 0, 1),
+  (9305, 9300, '重置租户配置', 3, '', '', '', 'system:tenant:reset', 5, 0, 1);
+
+-- 菜单: 租户设置 (租户管理员维护白名单覆盖配置的入口; 页面复用配置 API,
+-- 但 17 全局配置仍为平台专属 —— 租户侧仅见/仅可建本租户覆盖行且限白名单键)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9350, 1, '租户设置', 2, '/system/tenant-configs', 'system/tenant-configs/index', 'Setting', 'system:tenant-config:list', 19, 1, 1);
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9351, 9350, '配置维护', 3, '', '', '', 'system:tenant-config:update', 1, 0, 1);
+
+-- API 资源 (租户管理 + 公开租户信息)
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/tenants',                      'GET',    '租户管理', '租户分页列表'),
+  ('/api/v1/system/tenants',                      'POST',   '租户管理', '创建租户(向导: 六件套事务)'),
+  ('/api/v1/system/tenants/all',                  'GET',    '租户管理', '启用租户全量(平台切换器)'),
+  ('/api/v1/system/tenants/{id}',                 'GET',    '租户管理', '租户详情'),
+  ('/api/v1/system/tenants/{id}',                 'PUT',    '租户管理', '修改租户(code不可变)'),
+  ('/api/v1/system/tenants/{id}',                 'DELETE', '租户管理', '删除租户(软删+code改写)'),
+  ('/api/v1/system/tenants/{id}/menus',           'GET',    '租户管理', '获取租户应用授权集'),
+  ('/api/v1/system/tenants/{id}/menus',           'PUT',    '租户管理', '设置应用授权集(双向联动casbin)'),
+  ('/api/v1/system/tenants/{id}/configs/reset',   'POST',   '租户管理', '重置租户覆盖配置'),
+  ('/api/v1/auth/tenant/info',                    'GET',    '认证',     '公开租户信息(按code, 仅显示名, 限流)');
+
+-- ============================================================
+-- sys_api.menu_id 归属回填 (§7.1: 平台维护的 API↔菜单映射, 按 group_name 归组;
+-- 0=平台/公共接口 租户不可绑 —— fail-close 安全方向。幂等: 仅回填 menu_id=0 的行)
+-- ============================================================
+UPDATE `sys_api` SET `menu_id`=10  WHERE `group_name`='用户管理'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=11  WHERE `group_name`='角色管理'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=12  WHERE `group_name`='菜单管理'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=13  WHERE `group_name`='API管理'   AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=14  WHERE `group_name`='字典管理'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=15  WHERE `group_name`='文件管理'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=16  WHERE `group_name`='操作日志'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=17  WHERE `group_name`='全局配置'  AND `menu_id`=0;
+-- 配置 CRUD (列表/新增/修改) 归属租户设置(9350): 平台超管免 Casbin 不受影响;
+-- 删除留 17 (租户覆盖行的回收 = 平台"重置配置"干预口)
+UPDATE `sys_api` SET `menu_id`=9350 WHERE `path` IN ('/api/v1/system/configs','/api/v1/system/configs/:id') AND `method` IN ('GET','POST','PUT') AND `menu_id` IN (0,17);
+UPDATE `sys_api` SET `menu_id`=18  WHERE `group_name`='登录日志'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=19  WHERE `group_name`='在线用户'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=20  WHERE `group_name`='定时任务'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=21  WHERE `group_name`='代码生成'  AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=22  WHERE `group_name`='服务器监控' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=60  WHERE `group_name`='组织机构'  AND `menu_id`=0;
+-- 角色授权 UI 支撑接口归属角色管理(11): /system/menus/tree 与 /system/apis/all
+-- 同时服务平台目录维护与租户角色授权弹窗, 挂 11 保证授权了角色管理的租户可绑
+-- (原挂 12/13 平台专属菜单会致租户管理员授权弹窗 403 —— 同 dicts/all 支撑 API 思路)
+UPDATE `sys_api` SET `menu_id`=11 WHERE `path` IN ('/api/v1/system/menus/tree','/api/v1/system/apis/all') AND `menu_id` IN (0,12,13);
+-- 消息通知: 管理面(系统通知发布/消息管理删除) → 51; 收件箱/私信/已读/事件流 → 52
+UPDATE `sys_api` SET `menu_id`=51 WHERE `group_name`='消息通知' AND `menu_id`=0
+  AND `path` IN ('/api/v1/message','/api/v1/message/system','/api/v1/message/:id');
+UPDATE `sys_api` SET `menu_id`=52 WHERE `group_name`='消息通知' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9000 WHERE `group_name`='审批中心' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9040 WHERE `group_name`='岗位管理' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9100 WHERE `group_name`='AI助手'   AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9200 WHERE `group_name`='业务审批' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9300 WHERE `group_name`='租户管理' AND `menu_id`=0;
+-- 认证组 = 会话/公共支撑接口 (authWhitelist 免 Casbin) 与注册公共口: 保持 menu_id=0 (租户不可绑也无需绑)

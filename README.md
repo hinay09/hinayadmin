@@ -8,6 +8,11 @@
 > [!WARNING]
 > ⛔ **合规使用**：使用本软件必须遵守国家法律法规，**不允许用于任何非法项目或用途，由此产生的一切后果由使用者自行承担**❗
 
+## 版本说明
+
+- **`v1.0`（分支）为稳定版**：多租户改造前的单租户稳定基线，生产使用建议停在该分支；**该分支仅做功能 bug 修复，不会额外新增功能**。
+- **`master` 为最新功能版本**（当前已含多租户功能）：跟进最新能力请使用本分支，**可能会存在 bug 与使用问题**，生产采用请自行充分验证；多租户开关 `multiTenant.enable` 默认关闭，关闭时行为与单租户完全一致。
+
 ## 功能特性
 
 - 完整的 RBAC 权限模型 (用户 / 角色 / 菜单 / API 资源 四套件)
@@ -50,6 +55,8 @@
 - 岗位管理 (`sys_post`): 用户挂多岗位, 作为审批流「指定岗位」审批人的解析依据
 - AI 智能对话: OpenAI 兼容接口 (eino react agent), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
 - 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
+- **多租户** (可选, `multiTenant.enable` 开关): 共享库 `tenant_id` 行级隔离 + Casbin 租户域 + 平台/租户管理员双层治理 + 应用授权集 (租户可用模块由平台圈定) + 配置租户覆盖 + 平台超管代运维租户切换; 关闭时行为与单租户完全一致 (开发指南见 [docs/multi-tenant.md](docs/multi-tenant.md))
+
 
 ## 界面截图
 
@@ -463,6 +470,12 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
   - API 维度: casbin model 的 policy_effect 为 `some(where (p.eft == allow))` (OR 语义), 任一角色的 `p` 行命中即通过 (path 用 `keyMatch2` 匹配, act 支持 `*` 通配); 内存未命中时的 DB 兜底查询 (`casbinx.Enforce`) 同为并集语义;
   - 菜单/权限码: `/auth/menus` (`logic/auth/auth.go` 的 `MenuTree`) 逐角色收集菜单 ID 与按钮权限码, 合并去重后返回;
   - 因此给用户增加角色只会扩大可见/可调用范围, 永不缩小; 收紧权限只能从角色上移除授权或解除用户-角色绑定。
+- **多租户 (multiTenant.enable 开启时)**:
+  - Casbin 升级为**域模型** `(sub, dom, obj, act)`, 域 = 租户 ID (`p` 行 `v3`、`g` 行 `v2`), 各租户策略互不可见; 平台超管 (角色 id=1) 仍全放行, 租户管理员 (`tenant_admin` 角色) 在本租户围栏内管理;
+  - 行级隔离: 20 张 A 类表在 ORM 驱动层强制注入 `tenant_id` (业务代码绕不过), 平台超管默认跨租户可见 (可带 `X-Tenant-Id` 头代运维切换到目标租户, 非平台超管携带会被忽略并告警审计);
+  - 应用授权集: 平台通过 `sys_tenant_menu` 圈定每租户可用菜单/API, 收缩即时清理越界策略、扩张自动授予租户管理员 ("买了就用");
+  - 存量库升级执行 `server/manifest/sql/upgrade-multi-tenant.sql` 后开开关 (新装 `init.sql` 已是多租户基线, 默认关闭)。
+
 - **前端**:
   - 登录后调用 `/auth/menus` 拉取 `{ menus, permissions }`
   - 路由按 `menus` 动态注入, 按钮用 `<el-button v-permission="'system:user:create'">`

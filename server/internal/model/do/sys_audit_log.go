@@ -13,6 +13,7 @@ import (
 type SysAuditLog struct {
 	g.Meta     `orm:"table:sys_audit_log, do:true"`
 	Id         any         // ID
+	TenantId   any         // 租户ID(记录归属, 平台可查全量)
 	UserId     any         // 用户ID
 	Username   any         // 用户名
 	Action     any         // 操作类型(create/update/delete/upload/login/...)

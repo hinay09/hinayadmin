@@ -8,6 +8,12 @@ definePageMeta({ title: '登录日志' })
 defineOptions({ name: 'system-login-logs' })
 
 const api = useLoginLogApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
+
 const loading = ref(false)
 const list = ref<any[]>([])
 const total = ref(0)
@@ -124,6 +130,7 @@ onMounted(loadList)
             {{ row.username || '-' }}
           </template>
         </el-table-column>
+        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
         <el-table-column label="失败原因" min-width="150">
           <template #default="{ row }">
             <span :class="{ 'fail-msg': row.status === 0 }">{{ row.message || '-' }}</span>

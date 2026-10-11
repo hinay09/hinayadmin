@@ -13,6 +13,8 @@ import (
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -42,7 +44,9 @@ func (s *sMenu) List(ctx context.Context, req *v1.MenuListReq) (res *v1.MenuList
 	return &v1.MenuListRes{List: list}, nil
 }
 
-// Tree 树形菜单(全部启用菜单, 不按权限过滤, 用于后台维护)。
+// Tree 树形菜单 (角色授权/租户授权树复用; 后台维护入口仅平台超管)。
+// 多租户 (§7.1 可绑列表过滤): 非平台租户用户仅返回本租户授权集闭包内的菜单
+// (平台专属目录天然不可见, 前端只展示可绑项; 后端写入侧校验兜底)。
 func (s *sMenu) Tree(ctx context.Context, _ *v1.MenuTreeReq) (res *v1.MenuTreeRes, err error) {
 	var list []*model.SysMenu
 	if err = dao.SysMenu.Ctx(ctx).
@@ -50,7 +54,31 @@ func (s *sMenu) Tree(ctx context.Context, _ *v1.MenuTreeReq) (res *v1.MenuTreeRe
 		Order("sort ASC, id ASC").Ctx(ctx).Scan(&list); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
+	if tenantx.Enabled(ctx) {
+		if closure, cerr := service.Tenant().EffectiveMenuClosure(ctx, contextx.TenantId(ctx)); cerr == nil && closure != nil {
+			filtered := make([]*model.SysMenu, 0, len(list))
+			for _, m := range list {
+				if _, ok := closure[m.Id]; ok {
+					filtered = append(filtered, m)
+				}
+			}
+			list = filtered
+		}
+	}
 	return &v1.MenuTreeRes{Tree: buildMenuTree(list, 0)}, nil
+}
+
+// guardPlatformCatalog 平台目录维护守卫 (菜单/API/字典目录, docs/multi-tenant.md §2.2:
+// "碰不到平台层功能 —— 菜单API字典目录维护/配置平台行, 永远仅平台超管可进")。
+// 多租户关闭时不拦截 (单租户超管语义不变)。
+func guardPlatformCatalog(ctx context.Context) error {
+	if !tenantx.Enabled(ctx) {
+		return nil
+	}
+	if !contextx.IsPlatformAdmin(ctx) {
+		return xerror.New(xerror.CodeForbidden, "菜单/API/字典目录为平台统一发布, 仅平台超管可维护")
+	}
+	return nil
 }
 
 // buildMenuTree 递归构建后台维护用菜单树: 含全部类型 (目录/菜单/按钮), 不按权限过滤。

@@ -534,7 +534,7 @@ func truncateRunes(s string, max int) string {
 }
 
 // fireEvent 触发业务回调 (尽力而为, panic 保护)。
-func fireEvent(flowKey string, status int, instanceId, bizId uint64) {
+func fireEvent(ctx context.Context, flowKey string, status int, instanceId, bizId uint64) {
 	l, ok := bizListeners[flowKey]
 	if !ok {
 		return
@@ -547,26 +547,26 @@ func fireEvent(flowKey string, status int, instanceId, bizId uint64) {
 	switch status {
 	case instStatusApproved:
 		if l.OnApproved != nil {
-			l.OnApproved(instanceId, bizId)
+			l.OnApproved(ctx, instanceId, bizId)
 		}
 	case instStatusReturned:
 		if l.OnReturned != nil {
-			l.OnReturned(instanceId, bizId)
+			l.OnReturned(ctx, instanceId, bizId)
 		}
 	case instStatusWithdrawn:
 		// 撤回与退回对业务侧同为"可修改重提"; 未注册 OnWithdrawn 的存量业务回退 OnReturned
 		if l.OnWithdrawn != nil {
-			l.OnWithdrawn(instanceId, bizId)
+			l.OnWithdrawn(ctx, instanceId, bizId)
 		} else if l.OnReturned != nil {
-			l.OnReturned(instanceId, bizId)
+			l.OnReturned(ctx, instanceId, bizId)
 		}
 	case instStatusCanceled:
 		if l.OnCanceled != nil {
-			l.OnCanceled(instanceId, bizId)
+			l.OnCanceled(ctx, instanceId, bizId)
 		}
 	case instStatusTerminated:
 		if l.OnTerminated != nil {
-			l.OnTerminated(instanceId, bizId)
+			l.OnTerminated(ctx, instanceId, bizId)
 		}
 	}
 }

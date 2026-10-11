@@ -13,8 +13,9 @@ import (
 type SysRole struct {
 	g.Meta    `orm:"table:sys_role, do:true"`
 	Id        any         // 角色ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
 	Name      any         // 角色名称
-	Code      any         // 角色编码
+	Code      any         // 角色编码(租户内唯一)
 	Sort      any         // 排序
 	Status    any         // 状态:1=启用,0=禁用
 	Remark    any         // 备注

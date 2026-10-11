@@ -13,6 +13,7 @@ import (
 type SysFile struct {
 	g.Meta       `orm:"table:sys_file, do:true"`
 	Id           any         // ID
+	TenantId     any         // 租户ID(ORM按上下文注入)
 	Name         any         // 存储文件名
 	OriginalName any         // 原始文件名
 	Path         any         // 存储路径

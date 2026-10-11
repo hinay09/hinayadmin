@@ -11,6 +11,7 @@ import (
 // BizMessage is the golang structure for table biz_message.
 type BizMessage struct {
 	Id          uint64      `json:"id"          orm:"id"           description:""`                                //
+	TenantId    uint64      `json:"tenantId"    orm:"tenant_id"    description:"租户ID(ORM按上下文注入)"`                 // 租户ID(ORM按上下文注入)
 	Type        int         `json:"type"        orm:"type"         description:"消息类型:1=系统通知,2=私信"`                // 消息类型:1=系统通知,2=私信
 	Title       string      `json:"title"       orm:"title"        description:"标题"`                              // 标题
 	Content     string      `json:"content"     orm:"content"      description:"内容"`                              // 内容

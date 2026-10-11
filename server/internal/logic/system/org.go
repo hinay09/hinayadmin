@@ -13,6 +13,7 @@ import (
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -33,6 +34,13 @@ func (s *sOrg) Tree(ctx context.Context, _ *v1.OrgTreeReq) (res *v1.OrgTreeRes, 
 		Where("deleted_at IS NULL").
 		Order("sort ASC, id ASC").Ctx(ctx).Scan(&list); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	// 多租户: 平台超管未切换时为多租户森林 (树根 per 租户), 节点标注归属租户名 (§8.6)
+	if tenantx.Enabled(ctx) {
+		tnMap := loadTenantNames(ctx)
+		for _, o := range list {
+			o.TenantName = tnMap[o.TenantId]
+		}
 	}
 	return &v1.OrgTreeRes{Tree: buildOrgTree(list, 0)}, nil
 }
@@ -62,6 +70,12 @@ func (s *sOrg) List(ctx context.Context, req *v1.OrgListReq) (res *v1.OrgListRes
 	var list []*model.SysOrg
 	if err = q.Order("sort ASC, id ASC").Ctx(ctx).Scan(&list); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if tenantx.Enabled(ctx) {
+		tnMap := loadTenantNames(ctx)
+		for _, o := range list {
+			o.TenantName = tnMap[o.TenantId]
+		}
 	}
 	return &v1.OrgListRes{List: list}, nil
 }

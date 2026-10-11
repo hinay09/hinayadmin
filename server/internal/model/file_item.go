@@ -5,6 +5,8 @@ import "github.com/gogf/gf/v2/os/gtime"
 // FileItem 文件列表 VO。
 type FileItem struct {
 	Id           uint64      `json:"id"`
+	TenantId   uint64 `json:"tenantId"   orm:"tenant_id"`
+	TenantName string `json:"tenantName" orm:"-"`
 	Name         string      `json:"name"`
 	OriginalName string      `json:"originalName"`
 	Path         string      `json:"path"`

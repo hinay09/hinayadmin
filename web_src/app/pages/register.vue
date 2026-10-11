@@ -9,7 +9,7 @@
  */
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Lock, EditPen, Right, Back, RefreshRight } from '@element-plus/icons-vue'
+import { User, Lock, EditPen, Right, Back, RefreshRight , OfficeBuilding} from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
 import { storeToRefs } from 'pinia'
 import { useConfigStore } from '~/stores/config'
@@ -47,8 +47,10 @@ async function loadCaptcha() {
   form.captchaCode = ''
 }
 
-/* ---- 注册开关 ---- */
+/* ---- 注册开关 + 多租户 ---- */
 const allowRegister = ref<boolean | null>(null) // null = 查询中
+const multiTenant = ref(false)
+const tenantCode = ref('')
 
 onMounted(async () => {
   configStore.restore()
@@ -56,6 +58,7 @@ onMounted(async () => {
   try {
     const res = await api.registerStatus()
     allowRegister.value = !!res.allowRegister
+    multiTenant.value = !!res.multiTenant
   }
   catch {
     // 查询失败按未开放处理 (提交侧后端仍会强校验开关)
@@ -120,6 +123,7 @@ async function doRegister() {
     form.username, cipher, keyId,
     form.nickname || undefined,
     captchaId.value, form.captchaCode,
+    multiTenant.value ? tenantCode.value.trim() : undefined,
   )
 }
 
@@ -188,7 +192,11 @@ async function handleSubmit() {
           label-position="top"
           @keyup.enter="handleSubmit"
         >
-          <el-form-item label="用户名" prop="username">
+                      <!-- 租户码 (多租户开启时展示; 注册受 sys.allow_register 租户覆盖值控制) -->
+            <el-form-item v-if="multiTenant" label="租户标识 (注册到平台可留空)">
+              <el-input v-model="tenantCode" size="large" placeholder="如 acme" :prefix-icon="OfficeBuilding" />
+            </el-form-item>
+<el-form-item label="用户名" prop="username">
             <el-input v-model="form.username" size="large" placeholder="用户名" :prefix-icon="User" maxlength="32" />
           </el-form-item>
           <el-form-item label="昵称" prop="nickname">

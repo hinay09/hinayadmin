@@ -22,7 +22,8 @@ type SysConfigDao struct {
 // SysConfigColumns defines and stores column names for the table sys_config.
 type SysConfigColumns struct {
 	Id          string // ID
-	ConfigKey   string // 配置键(唯一)
+	TenantId    string // 租户ID(平台行=1; 白名单键支持租户覆盖, 读序: 租户>平台)
+	ConfigKey   string // 配置键(租户内唯一)
 	ConfigValue string // 配置值
 	ConfigType  string // 配置类型:0=文本,1=数字,2=布尔,3=JSON
 	Name        string // 配置名称(中文说明)
@@ -39,6 +40,7 @@ type SysConfigColumns struct {
 // sysConfigColumns holds the columns for the table sys_config.
 var sysConfigColumns = SysConfigColumns{
 	Id:          "id",
+	TenantId:    "tenant_id",
 	ConfigKey:   "config_key",
 	ConfigValue: "config_value",
 	ConfigType:  "config_type",

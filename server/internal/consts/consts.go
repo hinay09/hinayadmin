@@ -12,6 +12,9 @@ const (
 	CtxRequestIdKey
 	// CtxJwtTokenKey 请求 JWT 原始 token。
 	CtxJwtTokenKey
+	// CtxTenantKey 上下文中存储租户信息的 key (*model.TenantInfo, 独立于 LoginUser,
+	// job/异步回调可独立构造 —— 见 docs 多租户设计 §2.1)。
+	CtxTenantKey
 )
 
 // CtxUserKeyName 供兼容层使用的字符串 key名 (仅用于 ghttp.Request.SetCtxVar/GetCtxVar 这种需要可迭代 string 的场景)。
@@ -19,6 +22,8 @@ const (
 	CtxUserKeyName     = "ctxLoginUser"
 	CtxRequestIdName   = "RequestId"
 	CtxJwtTokenKeyName = "jwtToken"
+	// CtxTenantName 租户上下文的字符串 key 名 (glog ctxKeys 按此名输出租户ID到日志)。
+	CtxTenantName = "ctxTenant"
 	// CtxAuditUploadName 上传类请求在 ctx 中暂存的文件摘要,
 	// OperationLog defer 阶段读取后作为审计 detail (multipart 不读请求体)。
 	CtxAuditUploadName = "ctxAuditUpload"
@@ -124,9 +129,40 @@ const (
 	MenuTypeButton = 3 // 按钮
 )
 
-// 内置角色ID: 超级管理员角色固定为 1 (种子数据/删除保护/权限配置豁免均按此ID判定,
-// 角色code仅为展示标识, 不参与权限匹配); 普通用户角色固定为 2, 自助注册默认绑定。
+// 多租户相关内置菜单 ID (代码常量恒授/平台专属判定, 不依赖种子):
+// 基础菜单 30 仪表盘 / 40 个人中心 对任何租户恒授; 9300 租户管理为平台专属。
 const (
-	RoleAdminId  uint64 = 1
-	RoleCommonId uint64 = 2
+	MenuDashboard    uint64 = 30
+	MenuProfile      uint64 = 40
+	MenuTenantManage uint64 = 9300
+)
+
+// 内置角色ID: 超级管理员角色固定为 1 (种子数据/删除保护/权限配置豁免均按此ID判定,
+// 角色code仅为展示标识, 不参与权限匹配); 普通用户角色固定为 2, 自助注册默认绑定;
+// 租户管理员模板角色固定为 3 (各租户创建时按域克隆, code=tenant_admin)。
+const (
+	RoleAdminId       uint64 = 1
+	RoleCommonId      uint64 = 2
+	RoleTenantAdminId uint64 = 3
+)
+
+// 多租户 (docs/multi-tenant.md):
+// 平台租户固定 id=1; 租户管理员角色 code; 基础菜单 (30 仪表盘/40 个人中心) 恒授不依赖授权集。
+const (
+	TenantPlatformId    uint64 = 1
+	TenantPlatformCode         = "platform"
+	RoleTenantAdminCode        = "tenant_admin"
+)
+
+// 租户相关请求头: 平台超管代运维切换 (仅 platform:admin 可携带, 非平台超管携带被忽略并告警审计)
+// 与登录页租户标识 (子域名方案由前端从 hostname 提取后塞头)。
+const (
+	HeaderTenantId   = "X-Tenant-Id"
+	HeaderTenantCode = "X-Tenant-Code"
+)
+
+// 公开租户信息接口 (/auth/tenant/info) 单 IP 每分钟限流 (防租户码枚举, 复用 Redis 计数模式)。
+const (
+	TenantInfoLimitPrefix = "hinay:tenant:info:limit:"
+	TenantInfoMaxPerMin   = 30
 )

@@ -11,8 +11,9 @@ import (
 // SysRole is the golang structure for table sys_role.
 type SysRole struct {
 	Id        uint64      `json:"id"        orm:"id"         description:"角色ID"`                                 // 角色ID
+	TenantId  uint64      `json:"tenantId"  orm:"tenant_id"  description:"租户ID(ORM按上下文注入)"`                      // 租户ID(ORM按上下文注入)
 	Name      string      `json:"name"      orm:"name"       description:"角色名称"`                                 // 角色名称
-	Code      string      `json:"code"      orm:"code"       description:"角色编码"`                                 // 角色编码
+	Code      string      `json:"code"      orm:"code"       description:"角色编码(租户内唯一)"`                          // 角色编码(租户内唯一)
 	Sort      int         `json:"sort"      orm:"sort"       description:"排序"`                                   // 排序
 	Status    int         `json:"status"    orm:"status"     description:"状态:1=启用,0=禁用"`                         // 状态:1=启用,0=禁用
 	Remark    string      `json:"remark"    orm:"remark"     description:"备注"`                                   // 备注

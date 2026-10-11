@@ -12,7 +12,9 @@ import (
 
 // PostItem 岗位条目。
 type PostItem struct {
-	Id       uint64      `json:"id"`
+	Id         uint64      `json:"id"`
+	TenantId   uint64      `json:"tenantId"   dc:"所属租户ID(多租户)"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	PostCode string      `json:"postCode" dc:"岗位编码"`
 	PostName string      `json:"postName" dc:"岗位名称"`
 	PostKind int         `json:"postKind"  dc:"1=普通岗,2=主管岗"`

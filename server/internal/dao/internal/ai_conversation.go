@@ -22,7 +22,8 @@ type AiConversationDao struct {
 // AiConversationColumns defines and stores column names for the table ai_conversation.
 type AiConversationColumns struct {
 	Id           string // 主键ID
-	SessionId    string // 会话ID(前端生成并保管)
+	TenantId     string // 租户ID(ORM按上下文注入)
+	SessionId    string // 会话ID(前端生成并保管, 全局唯一)
 	UserId       string // 所属用户ID
 	Title        string // 会话标题(首条用户消息裁剪)
 	MessageCount string // 累计消息条数(user+assistant)
@@ -34,6 +35,7 @@ type AiConversationColumns struct {
 // aiConversationColumns holds the columns for the table ai_conversation.
 var aiConversationColumns = AiConversationColumns{
 	Id:           "id",
+	TenantId:     "tenant_id",
 	SessionId:    "session_id",
 	UserId:       "user_id",
 	Title:        "title",

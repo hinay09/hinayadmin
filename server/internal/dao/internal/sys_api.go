@@ -26,6 +26,7 @@ type SysApiColumns struct {
 	Method      string // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   string // 分组名称
 	Description string // 接口描述
+	MenuId      string // 归属菜单ID(0=平台/公共, 租户不可绑)
 	CreateId    string // 创建人ID(ORM自动填充)
 	UpdateId    string // 最后修改人ID(ORM自动填充)
 	CreatedAt   string //
@@ -40,6 +41,7 @@ var sysApiColumns = SysApiColumns{
 	Method:      "method",
 	GroupName:   "group_name",
 	Description: "description",
+	MenuId:      "menu_id",
 	CreateId:    "create_id",
 	UpdateId:    "update_id",
 	CreatedAt:   "created_at",

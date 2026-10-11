@@ -22,6 +22,7 @@ import (
 	"hinay.cn/admin/internal/middleware"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/internal/storage"
+	"hinay.cn/admin/utility/tenantx"
 )
 
 // Main 启动 HTTP 服务。
@@ -33,6 +34,15 @@ var Main = gcmd.Command{
 		// 预加载 Casbin 策略 (失败仅打日志, 不阻断启动)
 		if _, err := casbinx.Reload(ctx); err != nil {
 			g.Log().Warningf(ctx, "casbin reload on startup failed: %v", err)
+		}
+
+		// 多租户 + 本地存储形态告警 (docs/multi-tenant.md §6-file 评审四):
+		// /upload 静态路由公开且无租户校验 —— "知 URL 即可访问";
+		// SaaS 生产形态推荐 s3 私有桶 + 预签名, local+多租户定位私有部署/接受边界场景。
+		if tenantx.Enabled(ctx) {
+			if st, serr := storage.Current(ctx); serr == nil && st.Type() == storage.TypeLocal {
+				g.Log().Warningf(ctx, "[multi-tenant] file.storage.type=local: /upload 静态文件公开可访问且无租户校验, 生产环境建议切换 s3 私有桶+预签名")
+			}
 		}
 
 		// 启动定时任务调度 (失败仅打日志, 不阻断启动)

@@ -13,10 +13,10 @@ import (
 type SysUserPost struct {
 	g.Meta    `orm:"table:sys_user_post, do:true"`
 	Id        any         // 主键ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
 	UserId    any         // 用户ID
 	PostId    any         // 岗位ID
 	OrgId     any         // 组织ID(0=不限定组织)
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
-
 }

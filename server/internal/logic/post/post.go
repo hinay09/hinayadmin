@@ -12,6 +12,8 @@ import (
 	"hinay.cn/admin/internal/model/entity"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -25,7 +27,7 @@ type sPost struct{}
 func postItem(ctx context.Context, p *entity.SysPost) *v1.PostItem {
 	cnt, _ := dao.SysUserPost.Ctx(ctx).Where("post_id", p.Id).Count()
 	return &v1.PostItem{
-		Id: p.Id, PostCode: p.PostCode, PostName: p.PostName, PostKind: p.PostKind,
+		Id: p.Id, TenantId: p.TenantId, PostCode: p.PostCode, PostName: p.PostName, PostKind: p.PostKind,
 		Sort: p.Sort, Status: p.Status, Remark: p.Remark, Members: int64(cnt), UpdateAt: p.UpdatedAt,
 	}
 }
@@ -52,21 +54,45 @@ func (s *sPost) PostList(ctx context.Context, in *v1.PostListReq) (res *v1.PostL
 	for _, r := range rows {
 		list = append(list, postItem(ctx, r))
 	}
+	// 多租户: 平台超管未切换时混排展示, 标注归属租户 (§8.6)
+	if tenantx.Enabled(ctx) {
+		tn := tenantNames(ctx)
+		for _, it := range list {
+			it.TenantName = tn[it.TenantId]
+		}
+	}
 	page := response.Page(list, int64(total), in.Page, in.PageSize)
 	return (*v1.PostListRes)(&page), nil
 }
 
+// tenantNames 租户名映射 (sys_tenant 平台表全量未删行; 与 system 包 loadTenantNames 同一规约,
+// 独立包内联避免跨 logic 包耦合)。
+func tenantNames(ctx context.Context) map[uint64]string {
+	out := map[uint64]string{}
+	res, err := dao.SysTenant.Ctx(contextx.WithoutTenant(ctx)).
+		Where("deleted_at IS NULL").Fields("id, name").All()
+	if err != nil {
+		return out
+	}
+	for _, r := range res {
+		out[r["id"].Uint64()] = r["name"].String()
+	}
+	return out
+}
+
 // PostAll 启用岗位全量。
 func (s *sPost) PostAll(ctx context.Context, in *v1.PostAllReq) (res *v1.PostAllRes, err error) {
+	// 多租户: 收窄到数据租户 (审批设计器选项/用户挂岗下拉; 平台超管未切换=平台租户,
+	// 同 roles/all —— §18.3 修正6)
 	var rows []*entity.SysPost
-	if err = dao.SysPost.Ctx(ctx).Where("status", 1).Where("deleted_at IS NULL").
+	if err = dao.SysPost.Ctx(contextx.ScopedToDataTenant(ctx)).Where("status", 1).Where("deleted_at IS NULL").
 		Order("sort ASC, id ASC").Scan(&rows); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 	list := make([]*v1.PostItem, 0, len(rows))
 	for _, r := range rows {
 		list = append(list, &v1.PostItem{
-			Id: r.Id, PostCode: r.PostCode, PostName: r.PostName, PostKind: r.PostKind,
+			Id: r.Id, TenantId: r.TenantId, PostCode: r.PostCode, PostName: r.PostName, PostKind: r.PostKind,
 			Sort: r.Sort, Status: r.Status,
 		})
 	}
@@ -126,7 +152,8 @@ func (s *sPost) codeExists(ctx context.Context, code string, excludeId uint64) b
 	if code == "" {
 		return false
 	}
-	cnt, err := dao.SysPost.Ctx(ctx).Where("post_code", code).
+	// 唯一性预检限定数据租户 (uk_tenant_post_code 租户内唯一)
+	cnt, err := dao.SysPost.Ctx(contextx.ScopedToDataTenant(ctx)).Where("post_code", code).
 		Where("deleted_at IS NULL").WhereNot("id", excludeId).Count()
 	return err == nil && cnt > 0
 }

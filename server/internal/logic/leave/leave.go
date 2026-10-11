@@ -45,22 +45,33 @@ func init() {
 	service.RegisterLeave(&sLeave{})
 	// 状态回调: 引擎事务提交后同步尽力调用, 业务侧须幂等。
 	flow.RegisterBizListener(flowKeyLeave, flow.BizListener{
-		OnApproved:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusApproved) },
-		OnReturned:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusReturned) },
-		OnWithdrawn:  func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusReturned) }, // 撤回≈退回: 单据回到可修改重提态
-		OnCanceled:   func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusCanceled) },
-		OnTerminated: func(instanceId, bizId uint64) { writeBackFlowStatus(instanceId, bizId, flowStatusTermed) },
+		OnApproved: func(ctx context.Context, instanceId, bizId uint64) {
+			writeBackFlowStatus(ctx, instanceId, bizId, flowStatusApproved)
+		},
+		OnReturned: func(ctx context.Context, instanceId, bizId uint64) {
+			writeBackFlowStatus(ctx, instanceId, bizId, flowStatusReturned)
+		},
+		OnWithdrawn: func(ctx context.Context, instanceId, bizId uint64) {
+			writeBackFlowStatus(ctx, instanceId, bizId, flowStatusReturned)
+		}, // 撤回≈退回: 单据回到可修改重提态
+		OnCanceled: func(ctx context.Context, instanceId, bizId uint64) {
+			writeBackFlowStatus(ctx, instanceId, bizId, flowStatusCanceled)
+		},
+		OnTerminated: func(ctx context.Context, instanceId, bizId uint64) {
+			writeBackFlowStatus(ctx, instanceId, bizId, flowStatusTermed)
+		},
 	})
 }
 
 // writeBackFlowStatus 回调幂等回写: 按 (bizId, instanceId) 定位, 旧实例的迟到
 // 回调不会覆盖新实例的状态 (撤销后重新发起等场景)。
-func writeBackFlowStatus(instanceId, bizId uint64, status int) {
-	_, err := dao.BizLeave.Ctx(context.Background()).
+func writeBackFlowStatus(ctx context.Context, instanceId, bizId uint64, status int) {
+	// ctx 透传租户 (引擎回调, §6): biz_leave 为 A 类隔离表, Background 写入会被 fail-close
+	_, err := dao.BizLeave.Ctx(context.WithoutCancel(ctx)).
 		Where("id", bizId).Where("flow_instance", instanceId).
 		Data(g.Map{"flow_status": status}).Update()
 	if err != nil {
-		g.Log().Warningf(context.Background(),
+		g.Log().Warningf(ctx,
 			"leave flow callback write back failed (biz=%d inst=%d status=%d): %v", bizId, instanceId, status, err)
 	}
 }
@@ -75,7 +86,7 @@ type sLeave struct{}
 func (s *sLeave) LeaveList(ctx context.Context, in *v1.LeaveListReq) (res *v1.LeaveListRes, err error) {
 	uid := contextx.UserId(ctx)
 	q := dao.BizLeave.Ctx(ctx).Where("deleted_at IS NULL")
-	if !contextx.IsAdmin(ctx) || (in.Mine != nil && *in.Mine == 1) {
+	if !contextx.IsManagerAdmin(ctx) || (in.Mine != nil && *in.Mine == 1) {
 		q = q.Where("create_id", uid)
 	}
 	if in.LeaveType != nil {
@@ -264,7 +275,7 @@ func (s *sLeave) loadForEdit(ctx context.Context, id uint64) (*entity.BizLeave, 
 	if err != nil {
 		return nil, err
 	}
-	if lv.CreateId != uid && !contextx.IsAdmin(ctx) {
+	if lv.CreateId != uid && !contextx.IsManagerAdmin(ctx) {
 		return nil, xerror.New(xerror.CodeForbidden, "仅申请人可操作")
 	}
 	if lv.FlowInstance > 0 &&

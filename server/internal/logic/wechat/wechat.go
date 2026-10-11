@@ -13,6 +13,7 @@
 package wechat
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -25,7 +26,7 @@ import (
 	offConfig "github.com/silenceper/wechat/v2/officialaccount/config"
 	"github.com/silenceper/wechat/v2/officialaccount/message"
 
-	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/logic/configx"
 	"hinay.cn/admin/internal/service"
 )
 
@@ -70,10 +71,11 @@ func (s *sWechat) Callback(r *ghttp.Request) {
 
 // account 懒构建公众号客户端; 配置变更 (指纹不同) 时重建。
 func (s *sWechat) account() (*officialaccount.OfficialAccount, error) {
-	appID := cfgOf("wechat.app_id", "")
-	secret := cfgOf("wechat.app_secret", "")
-	token := cfgOf("wechat.token", "")
-	aesKey := cfgOf("wechat.encoding_aes_key", "")
+	ctx := context.Background()
+	appID := cfgOf(ctx, "wechat.app_id", "")
+	secret := cfgOf(ctx, "wechat.app_secret", "")
+	token := cfgOf(ctx, "wechat.token", "")
+	aesKey := cfgOf(ctx, "wechat.encoding_aes_key", "")
 
 	if appID == "" || secret == "" || token == "" {
 		return nil, errNotConfigured
@@ -99,16 +101,8 @@ func (s *sWechat) account() (*officialaccount.OfficialAccount, error) {
 }
 
 // cfgOf 读 sys_config, 空/缺失回落默认。
-func cfgOf(key, def string) string {
-	v, err := dao.SysConfig.Ctx(nil).
-		Where("config_key", key).Where("deleted_at IS NULL").
-		Value("config_value")
-	if err != nil || v == nil {
-		return def
-	}
-	s := strings.TrimSpace(v.String())
-	if s == "" {
-		return def
-	}
-	return s
+func cfgOf(ctx context.Context, key, def string) string {
+	// wechat.* 为平台级配置 (docs/multi-tenant.md D6: 本期微信对接整体保持平台级),
+	// 经 configx 平台视角读取, 同时修复历史 Ctx(nil) 问题
+	return configx.PlatformValue(ctx, key, def)
 }

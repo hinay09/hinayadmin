@@ -11,6 +11,7 @@ import (
 // SysFile is the golang structure for table sys_file.
 type SysFile struct {
 	Id           uint64      `json:"id"           orm:"id"            description:"ID"`               // ID
+	TenantId     uint64      `json:"tenantId"     orm:"tenant_id"     description:"租户ID(ORM按上下文注入)"`  // 租户ID(ORM按上下文注入)
 	Name         string      `json:"name"         orm:"name"          description:"存储文件名"`            // 存储文件名
 	OriginalName string      `json:"originalName" orm:"original_name" description:"原始文件名"`            // 原始文件名
 	Path         string      `json:"path"         orm:"path"          description:"存储路径"`             // 存储路径

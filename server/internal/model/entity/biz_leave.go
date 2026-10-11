@@ -11,6 +11,7 @@ import (
 // BizLeave is the golang structure for table biz_leave.
 type BizLeave struct {
 	Id           uint64      `json:"id"           orm:"id"            description:"主键ID"`                                               // 主键ID
+	TenantId     uint64      `json:"tenantId"     orm:"tenant_id"     description:"租户ID(ORM按上下文注入)"`                                    // 租户ID(ORM按上下文注入)
 	LeaveType    int         `json:"leaveType"    orm:"leave_type"    description:"请假类型:1=事假,2=病假,3=年假,4=调休,5=其他"`                      // 请假类型:1=事假,2=病假,3=年假,4=调休,5=其他
 	StartDate    *gtime.Time `json:"startDate"    orm:"start_date"    description:"开始日期"`                                               // 开始日期
 	EndDate      *gtime.Time `json:"endDate"      orm:"end_date"      description:"结束日期"`                                               // 结束日期

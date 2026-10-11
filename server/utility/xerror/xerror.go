@@ -31,6 +31,20 @@ var (
 	CodeTotpTicketInvalid = gcode.New(50021, "两步验证会话已过期, 请重新登录", nil)
 	// CodeCaptchaInvalid 图形验证码缺失/错误/已过期(一次性消费后即失效), 前端应刷新验证码后重试。
 	CodeCaptchaInvalid = gcode.New(50022, "验证码错误或已失效", nil)
+	// ---- 多租户 (docs/multi-tenant.md §4.3) ----
+	// 登录三态错误: 租户码无效 / 租户已禁用 / 租户已到期, 各有专属文案, 不静默失败。
+	CodeTenantCodeInvalid = gcode.New(50023, "租户标识无效, 请确认后重试", nil)
+	CodeTenantDisabled    = gcode.New(50024, "该租户服务已停用, 请联系平台管理员", nil)
+	CodeTenantExpired     = gcode.New(50025, "该租户服务已到期, 请联系平台管理员", nil)
+	// CodeTenantCodeExists 租户标识(code)已存在 (全局唯一, 含软删撞码防护)。
+	CodeTenantCodeExists = gcode.New(50026, "租户标识已存在", nil)
+	// CodeMultiTenantDisabled 多租户功能未启用 (config.yaml multiTenant.enable=false),
+	// 租户管理相关 API 在关闭态统一返回该错误码而非静默 404 (§9 前端感知)。
+	CodeMultiTenantDisabled = gcode.New(50027, "多租户功能未启用", nil)
+	// CodeMenuNotInAuthSet 租户角色绑定的菜单超出租户应用授权集 (§7.1)。
+	CodeMenuNotInAuthSet = gcode.New(50028, "菜单超出租户应用授权范围", nil)
+	// CodeApiNotInAuthSet 租户角色绑定的 API 不在授权集内或不存在于 sys_api (§7.1)。
+	CodeApiNotInAuthSet = gcode.New(50029, "接口超出租户应用授权范围", nil)
 )
 
 // New 构造业务错误。

@@ -35,6 +35,16 @@
 3. **发起一律走业务后端 (StartForBiz / InstanceResubmit)**, 前端绝不用
    `POST /flow/instances` (该接口无 bizId, 实例会与业务单失联)。
 
+## 一点五、多租户 (multiTenant.enable 开启时) 的三条附加规约
+
+1. **业务表带 `tenant_id` 列** (BIGINT UNSIGNED NOT NULL DEFAULT 1, `KEY idx_tenant (tenant_id)`),
+   并在 `server/internal/logic/ormfill/tenantorm.go` 的 `tenantTables` 登记 (有审计列的同时在
+   `ormfill.go` 的 `fillTables` 登记) —— 行级隔离由驱动层注入, 业务代码零改动;
+2. **唯一键必须租户化**: 组合唯一键一律 `(tenant_id, col)`; 业务单号若将来引入,
+   单号须含租户短码或按租户独立序列 (防跨租户业务量枚举);
+3. **BizListener 回调签名带 ctx** (`func(ctx, instanceId, bizId)`) —— 回写业务表必须透传
+   引擎给的 ctx (租户上下文), 自行 `context.Background()` 会被注入器 fail-close 拒绝。
+
 ## 二、第 1 步: 建业务表
 
 单表 + 两个流程冗余列 + 标准审计三件套 (软删/审计列)。

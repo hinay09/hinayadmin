@@ -83,6 +83,7 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 		distinctIds = append(distinctIds, rid)
 	}
 	roleCodeMap := loadRoleCodeMap(ctx, distinctIds)
+	tenantNameMap := loadTenantNames(ctx)
 
 	list := make([]*v1.UserVO, 0, len(rows))
 	for _, u := range rows {
@@ -103,6 +104,8 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 			Phone:     u.Phone,
 			OrgId:     u.OrgId,
 			OrgName:   orgName,
+			TenantId:  u.TenantId,
+			TenantName: tenantNameMap[u.TenantId],
 			Status:    u.Status,
 			Remark:    u.Remark,
 			RoleIds:   ids,
@@ -142,6 +145,8 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 		Phone:     u.Phone,
 		OrgId:     u.OrgId,
 		OrgName:   orgName,
+		TenantId:  u.TenantId,
+		TenantName: loadTenantNames(ctx)[u.TenantId],
 		Status:    u.Status,
 		Remark:    u.Remark,
 		RoleIds:   roleIds,
@@ -152,7 +157,9 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 
 // Create 新增。
 func (s *sUser) Create(ctx context.Context, req *v1.UserCreateReq) (res *v1.UserCreateRes, err error) {
-	cnt, _ := dao.SysUser.Ctx(ctx).Where("username", req.Username).Where("deleted_at IS NULL").Count()
+	// 唯一性预检限定"写入目标租户" (平台超管未切换时不注入, 需强制收窄到数据租户;
+	// uk_tenant_username 按 (tenant_id, username) 租户内唯一 —— docs/multi-tenant.md D2)
+	cnt, _ := dao.SysUser.Ctx(contextx.ScopedToDataTenant(ctx)).Where("username", req.Username).Where("deleted_at IS NULL").Count()
 	if cnt > 0 {
 		return nil, xerror.New(xerror.CodeUsernameExists)
 	}
@@ -296,6 +303,15 @@ func (s *sUser) ResetPwd(ctx context.Context, req *v1.UserResetPwdReq) (res *v1.
 
 // existingRoleIds 过滤出仍然存在的角色ID (软删角色视为不存在)。
 func existingRoleIds(ctx context.Context, ids []uint64) ([]uint64, error) {
+	// 多租户归属校验 (docs/multi-tenant.md §5): sys_role 查询被租户注入天然限界,
+	// 跨租户角色 ID 在本租户不可见 —— 传入即拒绝 (防越权挂角色)。
+	if len(ids) > 0 {
+		n, cerr := dao.SysRole.Ctx(ctx).
+			WhereIn("id", ids).Where("deleted_at IS NULL").Count()
+		if cerr == nil && int64(n) != int64(len(dedupIds(ids))) {
+			return nil, xerror.New(xerror.CodeForbidden, "部分角色不存在或超出租户范围")
+		}
+	}
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -568,4 +584,31 @@ func (s *sUser) Import(ctx context.Context, req *v1.UserImportReq) (res *v1.User
 		res.SuccessCount++
 	}
 	return res, nil
+}
+
+// dedupIds uint64 去重。
+func dedupIds(in []uint64) []uint64 {
+	seen := make(map[uint64]struct{}, len(in))
+	out := make([]uint64, 0, len(in))
+	for _, v := range in {
+		if _, ok := seen[v]; !ok {
+			seen[v] = struct{}{}
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// loadTenantNames 租户名映射 (sys_tenant 平台表, 平台视角全量; 多租户关闭返回仅平台行)。
+func loadTenantNames(ctx context.Context) map[uint64]string {
+	out := map[uint64]string{}
+	res, err := dao.SysTenant.Ctx(contextx.WithoutTenant(ctx)).
+		Where("deleted_at IS NULL").Fields("id, name").All()
+	if err != nil {
+		return out
+	}
+	for _, r := range res {
+		out[r["id"].Uint64()] = r["name"].String()
+	}
+	return out
 }

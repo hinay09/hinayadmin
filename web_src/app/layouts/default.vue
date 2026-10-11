@@ -171,6 +171,7 @@ function handleFullscreen() {
             <el-icon class="header-action" @click="handleFullscreen"><FullScreen /></el-icon>
           </el-tooltip>
           <SettingDrawer />
+          <TenantSwitcher />
           <MessageBell />
           <el-divider direction="vertical" />
           <el-dropdown @command="handleDropdown">

@@ -11,6 +11,7 @@ import (
 // SysRoleOrg is the golang structure for table sys_role_org.
 type SysRoleOrg struct {
 	Id        uint64      `json:"id"        orm:"id"         description:"ID"`               // ID
+	TenantId  uint64      `json:"tenantId"  orm:"tenant_id"  description:"租户ID(ORM按上下文注入)"`  // 租户ID(ORM按上下文注入)
 	RoleId    uint64      `json:"roleId"    orm:"role_id"    description:"角色ID"`             // 角色ID
 	OrgId     uint64      `json:"orgId"     orm:"org_id"     description:"组织ID"`             // 组织ID
 	CreateId  uint64      `json:"createId"  orm:"create_id"  description:"创建人ID(ORM自动填充)"`   // 创建人ID(ORM自动填充)

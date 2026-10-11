@@ -44,9 +44,10 @@ func (s *sDataScope) OrgScope(ctx context.Context) (*model.OrgScope, error) {
 	scope := &model.OrgScope{}
 
 	// admin 全局放行
-	if contextx.IsAdmin(ctx) {
-		scope.All = true
-		return scope, nil
+	if contextx.IsManagerAdmin(ctx) {
+		// 平台超管跨租户全量; 租户管理员本租户全量 (docs/multi-tenant.md §2.2 ——
+		// 租户注入天然限界, 租户管理员的"全部数据"仅为本租户围栏内)
+		return &model.OrgScope{All: true}, nil
 	}
 
 	// 角色ID列表 (g 行按用户ID关联)

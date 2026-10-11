@@ -11,6 +11,11 @@ definePageMeta({ title: '用户管理' })
 defineOptions({ name: 'system-users' })
 
 const userApi = useUserApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
 const roleApi = useRoleApi()
 const orgApi = useOrgApi()
 

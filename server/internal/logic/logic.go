@@ -21,6 +21,7 @@ import (
 	_ "hinay.cn/admin/internal/logic/post"
 	_ "hinay.cn/admin/internal/logic/pwdpolicy"
 	_ "hinay.cn/admin/internal/logic/system"
+	_ "hinay.cn/admin/internal/logic/tenant"
 	_ "hinay.cn/admin/internal/logic/twofactor"
 	_ "hinay.cn/admin/internal/logic/wechat"
 )

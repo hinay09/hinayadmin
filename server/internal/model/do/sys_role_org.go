@@ -13,6 +13,7 @@ import (
 type SysRoleOrg struct {
 	g.Meta    `orm:"table:sys_role_org, do:true"`
 	Id        any         // ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
 	RoleId    any         // 角色ID
 	OrgId     any         // 组织ID
 	CreateId  any         // 创建人ID(ORM自动填充)

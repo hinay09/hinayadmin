@@ -13,6 +13,7 @@ import (
 type BizLeave struct {
 	g.Meta       `orm:"table:biz_leave, do:true"`
 	Id           any         // 主键ID
+	TenantId     any         // 租户ID(ORM按上下文注入)
 	LeaveType    any         // 请假类型:1=事假,2=病假,3=年假,4=调休,5=其他
 	StartDate    *gtime.Time // 开始日期
 	EndDate      *gtime.Time // 结束日期

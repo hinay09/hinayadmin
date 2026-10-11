@@ -5,7 +5,9 @@ import "github.com/gogf/gf/v2/os/gtime"
 
 // LoginLogItem 登录日志列表 VO。
 type LoginLogItem struct {
-	Id        uint64      `json:"id"`
+	Id          uint64      `json:"id"`
+	TenantId    uint64      `json:"tenantId"`
+	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	UserId    uint64      `json:"userId"`
 	Username  string      `json:"username"`
 	Status    int         `json:"status"`
@@ -17,6 +19,7 @@ type LoginLogItem struct {
 
 // LoginLogEntry 登录日志写入入参。
 type LoginLogEntry struct {
+	TenantId  uint64 `json:"tenantId"`
 	UserId    uint64 // 用户ID(登录用户不存在时为0)
 	Username  string
 	Status    int    // 1=成功 0=失败

@@ -22,7 +22,8 @@ type SysUserDao struct {
 // SysUserColumns defines and stores column names for the table sys_user.
 type SysUserColumns struct {
 	Id            string // 用户ID
-	Username      string // 登录账号
+	TenantId      string // 租户ID(ORM按上下文注入)
+	Username      string // 登录账号(租户内唯一)
 	Password      string // bcrypt 加密密码
 	Nickname      string // 昵称
 	Avatar        string // 头像URL
@@ -45,6 +46,7 @@ type SysUserColumns struct {
 // sysUserColumns holds the columns for the table sys_user.
 var sysUserColumns = SysUserColumns{
 	Id:            "id",
+	TenantId:      "tenant_id",
 	Username:      "username",
 	Password:      "password",
 	Nickname:      "nickname",

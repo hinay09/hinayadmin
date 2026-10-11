@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogf/gf/v2/database/gdb"
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gcron"
 	"github.com/gogf/gf/v2/os/gtime"
@@ -27,7 +29,9 @@ import (
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -134,19 +138,66 @@ func daysParam(params string, defaultDays int) int {
 	return p.Days
 }
 
-// cleanLogBefore 删除 N 天前的日志行 (通用内置清理), 返回执行摘要。
-// 硬编码表名说明: 这里操作的均为本脚手架固定日志表, 且表名不允许来自外部参数,
-// 不存在注入面。
+// logDao 日志表 → dao 映射 (数据库规约: 禁止裸 g.DB().Model(硬编码表名),
+// docs/multi-tenant.md §3.3/§6-job; 日志清理语义 = 物理删除旧数据行)。
+func logDao(table string) *gdb.Model {
+	switch table {
+	case "sys_login_log":
+		return dao.SysLoginLog.Ctx(context.Background()).Unscoped()
+	case "sys_audit_log":
+		return dao.SysAuditLog.Ctx(context.Background()).Unscoped()
+	case "sys_job_log":
+		return dao.SysJobLog.Ctx(context.Background()).Unscoped()
+	}
+	return nil
+}
+
+// cleanLogBefore 删除 N 天前的日志行, 返回执行摘要。
+// 多租户语义 (§6-job/§12): 任务在租户上下文只清理本租户日志 (注入器限界);
+// 平台级任务 (tenant_id=1) 逐租户巡检, 保证全部租户的日志都被清理。
 func cleanLogBefore(ctx context.Context, table, params string, defaultDays int) (string, error) {
 	days := daysParam(params, defaultDays)
 	before := gtime.Now().AddDate(0, 0, -days).Format("Y-m-d H:i:s")
-	res, err := g.DB().Model(table).Ctx(ctx).Where("created_at < ?", before).Delete()
-	if err != nil {
-		return "", err
+
+	total := int64(0)
+	sweepErr := SweepTenants(ctx, func(ctx context.Context, tid uint64) error {
+		m := logDao(table)
+		if m == nil {
+			return gerror.Newf("未知日志表 %s", table)
+		}
+		m = m.Ctx(ctx)
+		res, err := m.Where("created_at < ?", before).Delete()
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		return nil
+	})
+	if sweepErr != nil {
+		return "", sweepErr
 	}
-	n, _ := res.RowsAffected()
-	g.Log().Infof(ctx, "清理 %s %d 天前日志完成, 删除 %d 行", table, days, n)
-	return fmt.Sprintf("清理 %s %d 天前日志, 删除 %d 行", table, days, n), nil
+	g.Log().Infof(ctx, "清理 %s %d 天前日志完成, 删除 %d 行", table, days, total)
+	return fmt.Sprintf("清理 %s %d 天前日志, 删除 %d 行", table, days, total), nil
+}
+
+// SweepTenants 平台级任务逐租户巡检 (导出供 flow 超时扫描等平台级处理器复用): 多租户开启时遍历全部启用且未到期租户
+// (含平台租户) 逐个构造注入 ctx 执行 fn; 关闭时以平台语境执行一次。
+// fn 内的 A 类表操作天然限界在当前巡检租户 (§6-job 遍历多租户的平台级任务)。
+func SweepTenants(ctx context.Context, fn func(ctx context.Context, tid uint64) error) error {
+	if !tenantx.Enabled(ctx) {
+		return fn(ctx, consts.TenantPlatformId)
+	}
+	tenants, err := service.Tenant().ActiveTenantLites(ctx)
+	if err != nil {
+		return err
+	}
+	for _, t := range tenants {
+		if serr := fn(contextx.WithTenant(ctx, &model.TenantInfo{Id: t.Id, Code: t.Code, Name: t.Name, Inject: true}), t.Id); serr != nil {
+			g.Log().Warningf(ctx, "巡检租户 %s(%d) 失败: %v", t.Name, t.Id, serr)
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -154,9 +205,11 @@ func cleanLogBefore(ctx context.Context, table, params string, defaultDays int) 
 // ---------------------------------------------------------------------------
 
 // Start 应用启动时加载启用任务加入调度 (cmd 调用, 幂等)。
+// sys_job 为 A 类隔离表: 以平台视角 (不注入) 加载**全租户**任务 —— 租户管理员
+// 创建的任务同样需要调度, 执行时再按行内 tenant_id 构造租户上下文 (§6-job)。
 func (s *sJob) Start(ctx context.Context) error {
 	var rows []*model.SysJob
-	err := dao.SysJob.Ctx(ctx).
+	err := dao.SysJob.Ctx(contextx.WithoutTenant(ctx)).
 		Where("status", consts.StatusEnabled).
 		Where("deleted_at IS NULL").
 		Scan(&rows)
@@ -181,7 +234,7 @@ func (s *sJob) schedule(ctx context.Context, row *model.SysJob) error {
 		return nil
 	}
 	if _, err := s.cron.AddSingleton(ctx, row.CronExpr, func(ctx context.Context) {
-		s.runJob(row.Id, row.Name, row.Handler, row.Params)
+		s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params)
 	}, name); err != nil {
 		return err
 	}
@@ -193,11 +246,19 @@ func (s *sJob) unschedule(id uint64) {
 	s.cron.Remove(jobName(id))
 }
 
-// runJob 执行一次任务并异步落执行日志。
-func (s *sJob) runJob(id uint64, name, handler, params string) {
-	ctx := context.Background()
+// runJob 执行一次任务并落执行日志。
+// 多租户 (§6-job): 按任务行 tenant_id 构造带注入的租户上下文 —— 处理器内的
+// A 类表读写自动限界在该租户; 禁用/到期租户的任务跳过并写明原因 (评审四)。
+func (s *sJob) runJob(id, tenantId uint64, name, handler, params string) {
+	ctx, skip := buildJobCtx(context.Background(), tenantId)
 	start := time.Now()
-	out, err := s.invoke(ctx, handler, params)
+	var out string
+	var err error
+	if skip != "" {
+		err = gerror.New(skip)
+	} else {
+		out, err = s.invoke(ctx, handler, params)
+	}
 	duration := time.Since(start).Milliseconds()
 
 	// 成功与失败都记录执行输出: 成功=处理器返回的摘要, 失败=错误原因
@@ -213,7 +274,9 @@ func (s *sJob) runJob(id uint64, name, handler, params string) {
 		g.Log().Errorf(ctx, "定时任务[%s#%d]执行失败: %v", name, id, err)
 	}
 	output = truncate(output, 1000)
-	if _, lerr := dao.SysJobLog.Ctx(ctx).Data(g.Map{
+	// 执行日志随任务归属租户落库 (平台视角写入, 显式 tenant_id)
+	if _, lerr := dao.SysJobLog.Ctx(contextx.WithoutTenant(ctx)).Data(g.Map{
+		"tenant_id":   tenantId,
 		"job_id":      id,
 		"job_name":    name,
 		"handler":     handler,
@@ -224,6 +287,32 @@ func (s *sJob) runJob(id uint64, name, handler, params string) {
 	}).Insert(); lerr != nil {
 		g.Log().Errorf(ctx, "写入任务执行日志失败: %v", lerr)
 	}
+}
+
+// buildJobCtx 定时任务租户上下文构造: 校验租户状态/到期 (docs/multi-tenant.md §6/§12),
+// 失效租户返回 skip 原因 (调用方记 job_log 后跳过执行)。
+func buildJobCtx(ctx context.Context, tenantId uint64) (context.Context, string) {
+	if tenantId == 0 {
+		tenantId = consts.TenantPlatformId
+	}
+	if !tenantx.Enabled(ctx) {
+		return contextx.WithTenant(ctx, &model.TenantInfo{
+			Id: consts.TenantPlatformId, Code: consts.TenantPlatformCode, Name: "平台租户", Inject: false,
+		}), ""
+	}
+	t, err := service.Tenant().LoadLiteById(ctx, tenantId)
+	if err != nil {
+		return contextx.WithoutTenant(ctx), "租户不存在或已删除, 跳过执行"
+	}
+	if t.Status != consts.StatusEnabled {
+		return contextx.WithoutTenant(ctx), "租户已禁用, 跳过执行"
+	}
+	if t.ExpireAt != "" {
+		if ft, perr := gtime.StrToTime(t.ExpireAt); perr == nil && ft.Before(gtime.Now()) {
+			return contextx.WithoutTenant(ctx), "租户已到期, 跳过执行"
+		}
+	}
+	return contextx.WithTenant(ctx, &model.TenantInfo{Id: t.Id, Code: t.Code, Name: t.Name, Inject: true}), ""
 }
 
 // truncate 超长错误信息截断, 防止异常输出撑爆日志表。
@@ -255,9 +344,14 @@ func (s *sJob) List(ctx context.Context, req *v1.JobListReq) (res *v1.JobListRes
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 	items := make([]*model.JobItem, 0, len(rows))
+	tnMap := map[uint64]string{}
+	if tenantx.Enabled(ctx) {
+		tnMap = tenantNames(ctx)
+	}
 	for _, r := range rows {
 		items = append(items, &model.JobItem{
-			Id: r.Id, Name: r.Name, Handler: r.Handler, CronExpr: r.CronExpr,
+			Id: r.Id, TenantId: r.TenantId, TenantName: tnMap[r.TenantId],
+			Name: r.Name, Handler: r.Handler, CronExpr: r.CronExpr,
 			Params: r.Params, Status: r.Status, Remark: r.Remark,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
@@ -374,7 +468,7 @@ func (s *sJob) Run(ctx context.Context, req *v1.JobRunReq) (res *v1.JobRunRes, e
 	if err != nil {
 		return nil, err
 	}
-	go s.runJob(row.Id, row.Name, row.Handler, row.Params)
+	go s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params)
 	return &v1.JobRunRes{}, nil
 }
 
@@ -420,4 +514,19 @@ func (s *sJob) getJob(ctx context.Context, id uint64) (*model.SysJob, error) {
 		return nil, xerror.New(xerror.CodeBusinessError, "任务不存在")
 	}
 	return row, nil
+}
+
+// tenantNames 租户名映射 (sys_tenant 平台表全量未删行; 与 system 包 loadTenantNames 同一规约,
+// 独立包内联避免跨 logic 包耦合)。
+func tenantNames(ctx context.Context) map[uint64]string {
+	out := map[uint64]string{}
+	res, err := dao.SysTenant.Ctx(contextx.WithoutTenant(ctx)).
+		Where("deleted_at IS NULL").Fields("id, name").All()
+	if err != nil {
+		return out
+	}
+	for _, r := range res {
+		out[r["id"].Uint64()] = r["name"].String()
+	}
+	return out
 }

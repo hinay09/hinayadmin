@@ -36,23 +36,23 @@ type MonitorHost struct {
 
 // MonitorCpu CPU 指标。
 type MonitorCpu struct {
-	UsagePercent float64   `json:"usagePercent" dc:"总体占用率(%)"`
-	PerCore      []float64 `json:"perCore"      dc:"每逻辑核占用率(%)"`
-	CoresLogical int       `json:"coresLogical" dc:"逻辑核数"`
-	CoresPhysical int      `json:"coresPhysical" dc:"物理核数"`
-	ModelName    string    `json:"modelName"    dc:"CPU 型号"`
-	Mhz          float64   `json:"mhz"          dc:"主频(MHz)"`
-	Load1        float64   `json:"load1"        dc:"1 分钟负载"`
-	Load5        float64   `json:"load5"        dc:"5 分钟负载"`
-	Load15       float64   `json:"load15"       dc:"15 分钟负载"`
+	UsagePercent  float64   `json:"usagePercent" dc:"总体占用率(%)"`
+	PerCore       []float64 `json:"perCore"      dc:"每逻辑核占用率(%)"`
+	CoresLogical  int       `json:"coresLogical" dc:"逻辑核数"`
+	CoresPhysical int       `json:"coresPhysical" dc:"物理核数"`
+	ModelName     string    `json:"modelName"    dc:"CPU 型号"`
+	Mhz           float64   `json:"mhz"          dc:"主频(MHz)"`
+	Load1         float64   `json:"load1"        dc:"1 分钟负载"`
+	Load5         float64   `json:"load5"        dc:"5 分钟负载"`
+	Load15        float64   `json:"load15"       dc:"15 分钟负载"`
 }
 
 // MonitorMemory 内存指标 (物理内存)。
 type MonitorMemory struct {
-	Total        uint64  `json:"total"        dc:"总量(字节)"`
-	Used         uint64  `json:"used"         dc:"已用(字节)"`
-	Available    uint64  `json:"available"    dc:"可用(字节)"`
-	UsedPercent  float64 `json:"usedPercent"  dc:"占用率(%)"`
+	Total       uint64  `json:"total"        dc:"总量(字节)"`
+	Used        uint64  `json:"used"         dc:"已用(字节)"`
+	Available   uint64  `json:"available"    dc:"可用(字节)"`
+	UsedPercent float64 `json:"usedPercent"  dc:"占用率(%)"`
 }
 
 // MonitorDisk 磁盘分区用量。
@@ -103,13 +103,13 @@ type MonitorMysqlRes struct {
 
 // MonitorDbPool 应用侧数据库连接池状态。
 type MonitorDbPool struct {
-	Host          string `json:"host"          dc:"数据库节点"`
-	Name          string `json:"name"          dc:"数据库名"`
-	Open          int    `json:"open"          dc:"池中连接总数"`
-	InUse         int    `json:"inUse"         dc:"使用中"`
-	Idle          int    `json:"idle"          dc:"空闲"`
-	WaitCount     int64  `json:"waitCount"     dc:"等待连接的请求数(累计)"`
-	WaitDurationMs int64 `json:"waitDurationMs" dc:"累计等待时长(毫秒)"`
+	Host           string `json:"host"          dc:"数据库节点"`
+	Name           string `json:"name"          dc:"数据库名"`
+	Open           int    `json:"open"          dc:"池中连接总数"`
+	InUse          int    `json:"inUse"         dc:"使用中"`
+	Idle           int    `json:"idle"          dc:"空闲"`
+	WaitCount      int64  `json:"waitCount"     dc:"等待连接的请求数(累计)"`
+	WaitDurationMs int64  `json:"waitDurationMs" dc:"累计等待时长(毫秒)"`
 }
 
 // MonitorRedisReq Redis 连接与运行状态。

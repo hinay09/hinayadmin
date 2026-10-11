@@ -22,6 +22,7 @@ type SysLoginLogDao struct {
 // SysLoginLogColumns defines and stores column names for the table sys_login_log.
 type SysLoginLogColumns struct {
 	Id        string // ID
+	TenantId  string // 租户ID(记录归属, 平台可查全量)
 	UserId    string // 用户ID(登录用户不存在时为0)
 	Username  string // 登录账号
 	Status    string // 结果:1=成功,0=失败
@@ -34,6 +35,7 @@ type SysLoginLogColumns struct {
 // sysLoginLogColumns holds the columns for the table sys_login_log.
 var sysLoginLogColumns = SysLoginLogColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	UserId:    "user_id",
 	Username:  "username",
 	Status:    "status",

@@ -13,6 +13,7 @@ import (
 type WfInstance struct {
 	g.Meta         `orm:"table:wf_instance, do:true"`
 	Id             any         // 主键ID
+	TenantId       any         // 租户ID(ORM按上下文注入)
 	DefinitionId   any         // 定义版本行ID
 	FlowKey        any         // 流程标识(冗余)
 	FlowName       any         // 流程名称(冗余)
@@ -21,8 +22,9 @@ type WfInstance struct {
 	FormData       any         // 提交的表单数据 JSON
 	FormConf       any         // 表单定义快照(发起时从定义复制)
 	FlowConf       any         // 节点树快照(发起时从定义复制, 驳回重提沿用)
+	SelfSelects    any         // 发起人自选审批人快照 {nodeId: [userId]} (发起/重提时写入, 推进时读取)
 	CurrentNodeIds any         // 当前活跃节点ID(逗号分隔)
-	Status         any         // 状态:1=运行中,2=已通过,3=已驳回,4=已撤销,5=已终止
+	Status         any         // 状态:1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回(待重提),7=已撤回(发起人收回,待重提)
 	StartUserId    any         // 发起人ID
 	StartUserName  any         // 发起人昵称(冗余)
 	FinishedAt     *gtime.Time // 结束时间

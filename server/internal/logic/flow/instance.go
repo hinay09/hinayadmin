@@ -42,7 +42,7 @@ func (s *sFlow) InstanceStart(ctx context.Context, in *v1.FlowInstanceStartReq) 
 		return nil, err // startInstanceTx 内已按 xerror 语义包装
 	}
 	notify.flush(ctx)
-	fireEvent(def.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, def.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowInstanceStartRes{Id: inst.Id}, nil
 }
 
@@ -192,7 +192,7 @@ func (s *sFlow) InstanceList(ctx context.Context, in *v1.FlowInstanceListReq) (r
 		}
 	case "all":
 		// 管理员全局视角 (流程实例管理页): 跨用户列出全部实例
-		if !contextx.IsAdmin(ctx) {
+		if !contextx.IsManagerAdmin(ctx) {
 			return nil, xerror.New(xerror.CodeForbidden, "仅管理员可查看全部流程实例")
 		}
 		if in.Status != nil {
@@ -369,7 +369,7 @@ func (s *sFlow) InstanceCancel(ctx context.Context, in *v1.FlowInstanceCancelReq
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowInstanceCancelRes{}, nil
 }
 
@@ -451,7 +451,7 @@ func (s *sFlow) InstanceWithdraw(ctx context.Context, in *v1.FlowInstanceWithdra
 			fmt.Sprintf("发起人 %s 撤回了「%s」, 你的待办已作废, 无需再处理。", inst.StartUserName, inst.Title))
 	}
 	notify.flush(ctx)
-	fireEvent(inst.FlowKey, instStatusWithdrawn, inst.Id, inst.BizId)
+	fireEvent(ctx, inst.FlowKey, instStatusWithdrawn, inst.Id, inst.BizId)
 	return &v1.FlowInstanceWithdrawRes{}, nil
 }
 
@@ -594,7 +594,7 @@ func (s *sFlow) InstanceResubmit(ctx context.Context, in *v1.FlowInstanceResubmi
 
 	notify.flush(ctx)
 	if rerun.Status != instStatusRunning {
-		fireEvent(inst.FlowKey, rerun.Status, inst.Id, inst.BizId)
+		fireEvent(ctx, inst.FlowKey, rerun.Status, inst.Id, inst.BizId)
 	}
 	return &v1.FlowInstanceResubmitRes{}, nil
 }
@@ -605,7 +605,7 @@ func (s *sFlow) InstanceTerminate(ctx context.Context, in *v1.FlowInstanceTermin
 	if uid == 0 {
 		return nil, xerror.New(xerror.CodeUnauthorized)
 	}
-	if !contextx.IsAdmin(ctx) {
+	if !contextx.IsManagerAdmin(ctx) {
 		return nil, xerror.New(xerror.CodeForbidden, "仅管理员可终止流程")
 	}
 	user := contextx.LoginUser(ctx)
@@ -644,7 +644,7 @@ func (s *sFlow) InstanceTerminate(ctx context.Context, in *v1.FlowInstanceTermin
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowInstanceTerminateRes{}, nil
 }
 

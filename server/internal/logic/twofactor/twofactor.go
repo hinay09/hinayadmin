@@ -21,6 +21,8 @@ import (
 
 	v1 "hinay.cn/admin/api/auth/v1"
 	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/logic/configx"
+	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/model/entity"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
@@ -57,16 +59,16 @@ func normalizeCode(code string) (string, error) {
 	return c, nil
 }
 
-// issuer otpauth URI 中的发行方名称, 取全局配置 sys.name (验证器 App 里展示的站点名)。
+// issuer otpauth URI 中的发行方名称, 取 sys.name (白名单键, 走租户覆盖读序,
+// 验证器 App 里展示的站点名随租户生效 —— docs/multi-tenant.md D5)。
 func issuer(ctx context.Context) string {
-	if v, err := dao.SysConfig.Ctx(ctx).
-		Where("config_key", "sys.name").
-		Where("status", 1).
-		Where("deleted_at IS NULL").
-		Value("config_value"); err == nil && v != nil {
-		if s := strings.TrimSpace(v.String()); s != "" {
-			return s
-		}
+	t := contextx.Tenant(ctx)
+	lite := &model.TenantLite{}
+	if t != nil {
+		lite = &model.TenantLite{Id: t.Id}
+	}
+	if v := configx.Value(ctx, lite, "sys.name", ""); v != "" {
+		return v
 	}
 	return "hinay-admin"
 }

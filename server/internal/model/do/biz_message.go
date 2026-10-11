@@ -13,6 +13,7 @@ import (
 type BizMessage struct {
 	g.Meta      `orm:"table:biz_message, do:true"`
 	Id          any         //
+	TenantId    any         // 租户ID(ORM按上下文注入)
 	Type        any         // 消息类型:1=系统通知,2=私信
 	Title       any         // 标题
 	Content     any         // 内容

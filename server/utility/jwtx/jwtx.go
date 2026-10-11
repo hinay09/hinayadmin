@@ -17,6 +17,9 @@ import (
 type Claims struct {
 	UserId   uint64 `json:"uid"`
 	Username string `json:"usn"`
+	// TenantId 所属租户 (多租户, json `tid`); 老 token 无该 claim 解析为 0,
+	// 中间件回填平台租户 1 (平滑兼容, 存量登录不踢 —— docs/multi-tenant.md §4.1)。
+	TenantId uint64 `json:"tid"`
 	jwt.RegisteredClaims
 }
 type config struct {
@@ -63,16 +66,21 @@ func loadConfig(ctx context.Context) (*config, error) {
 }
 
 // Generate 签发 token, 返回 token 字符串与到期时间戳(秒)。
-func Generate(ctx context.Context, userId uint64, username string) (string, int64, error) {
+// tenantId 为用户所属租户 (写入 tid claim; 0 视为平台租户 1)。
+func Generate(ctx context.Context, userId uint64, username string, tenantId uint64) (string, int64, error) {
 	c, err := loadConfig(ctx)
 	if err != nil {
 		return "", 0, err
+	}
+	if tenantId == 0 {
+		tenantId = 1
 	}
 	now := time.Now()
 	exp := now.Add(time.Duration(c.ExpireSec) * time.Second)
 	claims := &Claims{
 		UserId:   userId,
 		Username: username,
+		TenantId: tenantId,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    c.Issuer,
 			Subject:   username,

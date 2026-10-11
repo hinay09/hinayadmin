@@ -22,6 +22,7 @@ type BizLeaveDao struct {
 // BizLeaveColumns defines and stores column names for the table biz_leave.
 type BizLeaveColumns struct {
 	Id           string // 主键ID
+	TenantId     string // 租户ID(ORM按上下文注入)
 	LeaveType    string // 请假类型:1=事假,2=病假,3=年假,4=调休,5=其他
 	StartDate    string // 开始日期
 	EndDate      string // 结束日期
@@ -39,6 +40,7 @@ type BizLeaveColumns struct {
 // bizLeaveColumns holds the columns for the table biz_leave.
 var bizLeaveColumns = BizLeaveColumns{
 	Id:           "id",
+	TenantId:     "tenant_id",
 	LeaveType:    "leave_type",
 	StartDate:    "start_date",
 	EndDate:      "end_date",

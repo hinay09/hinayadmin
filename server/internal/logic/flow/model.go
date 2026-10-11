@@ -2,6 +2,7 @@
 package flow
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 )
@@ -301,12 +302,15 @@ func findNode(root *Node, id string) *Node {
 // ============================================================
 
 // BizListener 流程状态回调 (事务提交后尽力调用)。
+// 回调携带 ctx 以透传租户上下文 (docs/multi-tenant.md §6): 业务表为 A 类隔离表,
+// 无租户 ctx 的回写会被注入器 fail-close 拒绝; 引擎侧 ctx 来自触发请求或
+// 超时扫描的逐租户巡检 (均为已构造的租户语境)。
 type BizListener struct {
-	OnApproved   func(instanceId, bizId uint64) // 全部节点通过
-	OnReturned   func(instanceId, bizId uint64) // 被驳回退回发起人 (可重提)
-	OnWithdrawn  func(instanceId, bizId uint64) // 发起人撤回 (可重提); 未注册时回退 OnReturned
-	OnCanceled   func(instanceId, bizId uint64) // 发起人撤销 (终态)
-	OnTerminated func(instanceId, bizId uint64) // 管理员终止
+	OnApproved   func(ctx context.Context, instanceId, bizId uint64) // 全部节点通过
+	OnReturned   func(ctx context.Context, instanceId, bizId uint64) // 被驳回退回发起人 (可重提)
+	OnWithdrawn  func(ctx context.Context, instanceId, bizId uint64) // 发起人撤回 (可重提); 未注册时回退 OnReturned
+	OnCanceled   func(ctx context.Context, instanceId, bizId uint64) // 发起人撤销 (终态)
+	OnTerminated func(ctx context.Context, instanceId, bizId uint64) // 管理员终止
 }
 
 var bizListeners = map[string]BizListener{}

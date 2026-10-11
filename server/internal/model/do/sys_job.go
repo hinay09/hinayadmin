@@ -13,6 +13,7 @@ import (
 type SysJob struct {
 	g.Meta    `orm:"table:sys_job, do:true"`
 	Id        any         // 任务ID
+	TenantId  any         // 租户ID(平台级任务=1; 执行时按该列构造租户上下文)
 	Name      any         // 任务名称
 	Handler   any         // 处理器名称(需已注册)
 	CronExpr  any         // cron表达式(6位: 秒 分 时 日 月 周)

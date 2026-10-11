@@ -5,10 +5,12 @@ import (
 	"context"
 
 	v1 "hinay.cn/admin/api/system/v1"
+	"hinay.cn/admin/internal/consts"
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -25,11 +27,16 @@ func NewLoginLog() *sLoginLog {
 }
 
 // Record 异步写一条登录日志 (登录/登出等链路调用, 失败仅记日志不阻断主流程)。
+// 保留请求 ctx 的租户值 (WithoutCancel 去取消传播): sys_login_log 为 A 类隔离表,
+// 无租户上下文的 Background 写入会被注入器 fail-close 拒绝 (docs/multi-tenant.md §4.2)。
 func (s *sLoginLog) Record(ctx context.Context, entry model.LoginLogEntry) {
-	// 脱离请求生命周期异步落库, 与 OperationLog 中间件同一模式
+	if entry.TenantId == 0 {
+		entry.TenantId = consts.TenantPlatformId
+	}
 	go func() {
-		bg := context.Background()
+		bg := context.WithoutCancel(ctx)
 		if _, err := dao.SysLoginLog.Ctx(bg).Data(g.Map{
+			"tenant_id":  entry.TenantId,
 			"user_id":    entry.UserId,
 			"username":   entry.Username,
 			"status":     entry.Status,
@@ -72,6 +79,12 @@ func (s *sLoginLog) List(ctx context.Context, req *v1.LoginLogListReq) (res *v1.
 	var rows []*model.LoginLogItem
 	if err = q.Page(req.Page, req.PageSize).Order("id DESC").Ctx(ctx).Scan(&rows); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if tenantx.Enabled(ctx) {
+		tnMap := loadTenantNames(ctx)
+		for _, r := range rows {
+			r.TenantName = tnMap[r.TenantId]
+		}
 	}
 
 	page := response.Page(rows, int64(total), req.Page, req.PageSize)

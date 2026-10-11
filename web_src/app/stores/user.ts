@@ -19,8 +19,18 @@ export interface LoginUser {
   roles: string[]
   /** 角色显示名 (与 roles 一一对应, 后端从 sys_role.name 解析) */
   roleNames?: string[]
-  /** 是否超管 (后端按内置角色ID判定, 与角色code解耦) */
+  /** 是否超管 (后端按内置角色ID判定 = 平台超管, 与角色code解耦) */
   isAdmin?: boolean
+  // ---- 多租户 (docs/multi-tenant.md §8.1) ----
+  tenantId?: number
+  tenantCode?: string
+  tenantName?: string
+  /** 平台超管 (跨租户/租户管理/gencode/monitor) */
+  isPlatformAdmin?: boolean
+  /** 租户管理员 (本租户围栏内的"圈养版超管") */
+  isTenantAdmin?: boolean
+  /** 平台超管代运维切换的目标租户 (null=未切换) */
+  switchTenant?: { id: number, code: string, name: string } | null
   lastLoginAt?: string | null
   lastLoginIp?: string
   mustChangePwd?: boolean
@@ -60,6 +70,10 @@ export const useUserStore = defineStore('user', {
     menus: [] as MenuNode[],
     permissions: [] as string[],
     menusLoaded: false,
+    /** 平台超管代运维切换的目标租户 ID (0=平台租户/未切换)。
+     * 只存 Pinia 内存、不落任何持久化 (docs/multi-tenant.md §8.3 评审四):
+     * 多标签页 JS 上下文天然隔离, 刷新即回平台租户 —— 零串页风险。 */
+    actTenantId: 0 as number,
   }),
 
   getters: {
@@ -67,6 +81,9 @@ export const useUserStore = defineStore('user', {
     roles: (s) => s.userInfo?.roles ?? [],
     // 后端 userInfo.isAdmin 按内置角色ID判定, 前端不再依赖角色code字符串
     isAdmin: (s) => s.userInfo?.isAdmin ?? false,
+    isPlatformAdmin: (s) => s.userInfo?.isPlatformAdmin ?? false,
+    isTenantAdmin: (s) => s.userInfo?.isTenantAdmin ?? false,
+    tenantSwitchActive: (s) => s.actTenantId > 0,
   },
 
   actions: {
@@ -140,9 +157,15 @@ export const useUserStore = defineStore('user', {
       return this.permissions.includes(code)
     },
 
+    /** 设置/清除平台超管代运维切换租户 (0=回平台租户); 切换器调用后重拉会话 */
+    setActTenant(id: number) {
+      this.actTenantId = id || 0
+    },
+
     reset() {
       this.setToken('')
       this.userInfo = null
+      this.actTenantId = 0
       this.mustChangePwd = false
       // 标签页随会话清空, 避免切换账号残留
       useTagsStore().$reset()

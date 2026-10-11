@@ -19,40 +19,46 @@ type WfTaskDao struct {
 	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
-// WfTaskColumns defines and stores column names for table wf_task.
+// WfTaskColumns defines and stores column names for the table wf_task.
 type WfTaskColumns struct {
-	Id           string // 主键ID
-	InstanceId   string // 实例ID
-	NodeId       string // 节点ID(树内唯一)
-	NodeName     string // 节点名称(冗余)
-	NodeType     string // 节点类型:1=审批,2=抄送
-	SignType     string // 签核方式:1=或签,2=会签
-	AssigneeId   string // 处理人ID
-	AssigneeName string // 处理人昵称(冗余)
-	Status       string // 状态:1=待办,2=已同意,3=已驳回,4=已转出,5=已作废
-	Comment      string // 审批意见
-	ReceiveTime  string // 到达时间
-	ActedAt      string // 处理时间
-	CreatedAt    string // 创建时间
-	UpdatedAt    string // 更新时间
+	Id             string // 主键ID
+	TenantId       string // 租户ID(ORM按上下文注入)
+	InstanceId     string // 实例ID
+	NodeId         string // 节点ID(树内唯一)
+	NodeName       string // 节点名称(冗余)
+	NodeType       string // 节点类型:1=审批,2=抄送
+	SignType       string // 签核方式:1=或签,2=会签
+	AssigneeId     string // 处理人ID
+	AssigneeName   string // 处理人昵称(冗余)
+	DelegateFromId string // 委派来源任务ID(0=非被委派任务,>0=被委派的代办任务)
+	Status         string // 状态:1=待办,2=已同意,3=已驳回,4=已转出,5=已作废,6=已失效(退回/撤销后原同意失效),7=已委派,8=委办完成
+	Comment        string // 审批意见
+	ReceiveTime    string // 到达时间
+	DueTime        string // 办理期限(节点超时配置物化,NULL=不限)
+	ActedAt        string // 处理时间
+	CreatedAt      string // 创建时间
+	UpdatedAt      string // 更新时间
 }
 
 // wfTaskColumns holds the columns for the table wf_task.
 var wfTaskColumns = WfTaskColumns{
-	Id:           "id",
-	InstanceId:   "instance_id",
-	NodeId:       "node_id",
-	NodeName:     "node_name",
-	NodeType:     "node_type",
-	SignType:     "sign_type",
-	AssigneeId:   "assignee_id",
-	AssigneeName: "assignee_name",
-	Status:       "status",
-	Comment:      "comment",
-	ReceiveTime:  "receive_time",
-	ActedAt:      "acted_at",
-	CreatedAt:    "created_at",
-	UpdatedAt:    "updated_at",
+	Id:             "id",
+	TenantId:       "tenant_id",
+	InstanceId:     "instance_id",
+	NodeId:         "node_id",
+	NodeName:       "node_name",
+	NodeType:       "node_type",
+	SignType:       "sign_type",
+	AssigneeId:     "assignee_id",
+	AssigneeName:   "assignee_name",
+	DelegateFromId: "delegate_from_id",
+	Status:         "status",
+	Comment:        "comment",
+	ReceiveTime:    "receive_time",
+	DueTime:        "due_time",
+	ActedAt:        "acted_at",
+	CreatedAt:      "created_at",
+	UpdatedAt:      "updated_at",
 }
 
 // NewWfTaskDao creates and returns a new DAO object for table data access.
@@ -70,23 +76,22 @@ func (dao *WfTaskDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO object.
+// Table returns the table name of the current DAO.
 func (dao *WfTaskDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO object.
+// Columns returns all column names of the current DAO.
 func (dao *WfTaskDao) Columns() WfTaskColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO object.
+// Group returns the database configuration group name of the current DAO.
 func (dao *WfTaskDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO object.
-// It automatically sets the context for the current operation.
+// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *WfTaskDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -96,6 +101,11 @@ func (dao *WfTaskDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *WfTaskDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

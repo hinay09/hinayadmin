@@ -55,6 +55,8 @@ var fillTables = map[string]struct{}{
 	"sys_post":      {},
 	// 业务审批 Demo: 请假申请 (flow_status/flow_instance 由引擎回调维护)
 	"biz_leave": {},
+	// 租户 (平台表; sys_tenant_menu 为纯关系表, 不纳入 —— 同 sys_user_totp 先例)
+	"sys_tenant": {},
 }
 
 // Driver 审计字段填充驱动: 继承内置 mysql 驱动, 重写 DoInsert / DoUpdate。
@@ -76,7 +78,8 @@ func (d *Driver) New(core *gdb.Core, node *gdb.ConfigNode) (gdb.DB, error) {
 	return &Driver{&mysql.Driver{Core: core}}, nil
 }
 
-// DoInsert INSERT 回调: 为白名单表补 create_id / update_id。
+// DoInsert INSERT 回调: 为白名单表补 create_id / update_id, 并叠加租户注入
+// (tenantorm.go —— tenant_id 无条件取 ctx, 与审计填充同点)。
 func (d *Driver) DoInsert(ctx context.Context, link gdb.Link, table string, list gdb.List, option gdb.DoInsertOption) (result sql.Result, err error) {
 	if _, ok := fillTables[normalizeTable(table)]; ok {
 		if uid := loginUserId(ctx); uid > 0 {
@@ -86,10 +89,12 @@ func (d *Driver) DoInsert(ctx context.Context, link gdb.Link, table string, list
 			}
 		}
 	}
-	return d.Driver.DoInsert(ctx, link, table, list, option)
+	tenantFillInsert(ctx, table, list)
+	return d.Driver.DoInsert(withStructuredExec(ctx), link, table, list, option)
 }
 
-// DoUpdate UPDATE 回调: 为白名单表补 update_id (data 为字符串更新语句时跳过)。
+// DoUpdate UPDATE 回调: 为白名单表补 update_id (data 为字符串更新语句时跳过),
+// 并叠加租户条件注入 (condition 末尾追加 AND tenant_id=?, 软删转 UPDATE 的路径天然覆盖)。
 func (d *Driver) DoUpdate(ctx context.Context, link gdb.Link, table string, data any, condition string, args ...any) (result sql.Result, err error) {
 	if _, ok := fillTables[normalizeTable(table)]; ok {
 		if uid := loginUserId(ctx); uid > 0 {
@@ -98,7 +103,12 @@ func (d *Driver) DoUpdate(ctx context.Context, link gdb.Link, table string, data
 			}
 		}
 	}
-	return d.Driver.DoUpdate(ctx, link, table, data, condition, args...)
+	if cond, newArgs, terr := tenantCondUpdate(ctx, table, condition, args); terr != nil {
+		return nil, terr
+	} else {
+		condition, args = cond, newArgs
+	}
+	return d.Driver.DoUpdate(withStructuredExec(ctx), link, table, data, condition, args...)
 }
 
 // normalizeTable 还原驱动层收到的表名为裸表名。

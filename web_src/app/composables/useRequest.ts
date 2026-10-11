@@ -38,7 +38,10 @@ async function doRefresh(config: ReturnType<typeof useRuntimeConfig>, userStore:
     `${config.public.apiBase}/auth/refresh`,
     {
       method: 'POST',
-      headers: { Authorization: `Bearer ${userStore.token}` },
+      headers: {
+        Authorization: `Bearer ${userStore.token}`,
+        ...(userStore.actTenantId > 0 ? { 'X-Tenant-Id': String(userStore.actTenantId) } : {}),
+      },
     },
   )
   if (res.code !== 0) throw new Error(res.message || 'refresh failed')
@@ -63,6 +66,11 @@ export function useRequest() {
     }
     if (userStore.token) {
       headers['Authorization'] = `Bearer ${userStore.token}`
+    }
+    // 平台超管代运维切换: 仅内存态 actTenantId 有值时携带 (后端仅平台超管可带,
+    // 非平台超管携带会被忽略并告警审计) —— docs/multi-tenant.md §8.3
+    if (userStore.actTenantId > 0) {
+      headers['X-Tenant-Id'] = String(userStore.actTenantId)
     }
 
     // 仅允许站内相对路径拼接 apiBase, 拒绝调用方传入完整外部 URL
@@ -211,9 +219,11 @@ export function useRequest() {
         }
       }
     }
+    const dlHeaders: Record<string, string> = userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}
+    if (userStore.actTenantId > 0) dlHeaders['X-Tenant-Id'] = String(userStore.actTenantId)
     const res = await $fetch.raw(fullUrl.toString(), {
       responseType: 'blob',
-      headers: userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {},
+      headers: dlHeaders,
     })
     if (res.status !== 200) {
       ElMessage.error('下载失败')

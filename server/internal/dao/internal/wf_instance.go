@@ -19,9 +19,10 @@ type WfInstanceDao struct {
 	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
-// WfInstanceColumns defines and stores column names for table wf_instance.
+// WfInstanceColumns defines and stores column names for the table wf_instance.
 type WfInstanceColumns struct {
 	Id             string // 主键ID
+	TenantId       string // 租户ID(ORM按上下文注入)
 	DefinitionId   string // 定义版本行ID
 	FlowKey        string // 流程标识(冗余)
 	FlowName       string // 流程名称(冗余)
@@ -30,8 +31,9 @@ type WfInstanceColumns struct {
 	FormData       string // 提交的表单数据 JSON
 	FormConf       string // 表单定义快照(发起时从定义复制)
 	FlowConf       string // 节点树快照(发起时从定义复制, 驳回重提沿用)
+	SelfSelects    string // 发起人自选审批人快照 {nodeId: [userId]} (发起/重提时写入, 推进时读取)
 	CurrentNodeIds string // 当前活跃节点ID(逗号分隔)
-	Status         string // 状态:1=运行中,2=已通过,3=已驳回,4=已撤销,5=已终止
+	Status         string // 状态:1=运行中,2=已通过,4=已撤销,5=已终止,6=已退回(待重提),7=已撤回(发起人收回,待重提)
 	StartUserId    string // 发起人ID
 	StartUserName  string // 发起人昵称(冗余)
 	FinishedAt     string // 结束时间
@@ -45,6 +47,7 @@ type WfInstanceColumns struct {
 // wfInstanceColumns holds the columns for the table wf_instance.
 var wfInstanceColumns = WfInstanceColumns{
 	Id:             "id",
+	TenantId:       "tenant_id",
 	DefinitionId:   "definition_id",
 	FlowKey:        "flow_key",
 	FlowName:       "flow_name",
@@ -53,6 +56,7 @@ var wfInstanceColumns = WfInstanceColumns{
 	FormData:       "form_data",
 	FormConf:       "form_conf",
 	FlowConf:       "flow_conf",
+	SelfSelects:    "self_selects",
 	CurrentNodeIds: "current_node_ids",
 	Status:         "status",
 	StartUserId:    "start_user_id",
@@ -80,23 +84,22 @@ func (dao *WfInstanceDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO object.
+// Table returns the table name of the current DAO.
 func (dao *WfInstanceDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO object.
+// Columns returns all column names of the current DAO.
 func (dao *WfInstanceDao) Columns() WfInstanceColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO object.
+// Group returns the database configuration group name of the current DAO.
 func (dao *WfInstanceDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO object.
-// It automatically sets the context for the current operation.
+// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *WfInstanceDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -106,6 +109,11 @@ func (dao *WfInstanceDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *WfInstanceDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

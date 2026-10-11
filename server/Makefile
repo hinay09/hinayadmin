@@ -35,6 +35,10 @@ initdb:
 vet:
 	@go vet ./...
 
+.PHONY: tenant-lint
+tenant-lint: ## 多租户工程规约静态检查 (手写DML/Cache/tenant_id条件/外键)
+	@bash tools/tenant-lint.sh
+
 # 代码格式化
 .PHONY: fmt
 fmt:

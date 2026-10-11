@@ -22,6 +22,7 @@ type SysRoleOrgDao struct {
 // SysRoleOrgColumns defines and stores column names for the table sys_role_org.
 type SysRoleOrgColumns struct {
 	Id        string // ID
+	TenantId  string // 租户ID(ORM按上下文注入)
 	RoleId    string // 角色ID
 	OrgId     string // 组织ID
 	CreateId  string // 创建人ID(ORM自动填充)
@@ -32,6 +33,7 @@ type SysRoleOrgColumns struct {
 // sysRoleOrgColumns holds the columns for the table sys_role_org.
 var sysRoleOrgColumns = SysRoleOrgColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	RoleId:    "role_id",
 	OrgId:     "org_id",
 	CreateId:  "create_id",

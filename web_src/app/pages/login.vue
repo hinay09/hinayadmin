@@ -6,7 +6,7 @@
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Lock, Histogram, Right, Back, Iphone, CircleCheckFilled, RefreshRight } from '@element-plus/icons-vue'
+import { User, Lock, Histogram, Right, Back, Iphone, CircleCheckFilled, CircleCloseFilled, OfficeBuilding, RefreshRight } from '@element-plus/icons-vue'
 import { JSEncrypt } from 'jsencrypt'
 import { storeToRefs } from 'pinia'
 import { useUserStore, safeRedirect } from '~/stores/user'
@@ -23,15 +23,37 @@ const router = useRouter()
 const api = useAuthApi()
 
 // 配置接口需登录后才能访问, 登录页读本地缓存展示(上次登录时写入), 无缓存回退默认值
-// 注册入口由公开接口 /auth/register/status 实时决定 (sys.allow_register 开关)
+// 注册入口由公开接口 /auth/register/status 实时决定 (sys.allow_register 开关);
+// multiTenant 标志随同一公开口下发 —— 登录页据此渲染租户码输入 (docs/multi-tenant.md §8.4)
 const allowRegister = ref(false)
+const multiTenant = ref(false)
+const tenantForm = reactive({ code: '' })
+const tenantHint = ref<{ found: boolean, enabled: boolean, name: string } | null>(null)
+let tenantHintTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 租户码提示条: 防抖调公开接口 /auth/tenant/info, 仅展示租户显示名 (§4.3) */
+function lookupTenant() {
+  const code = tenantForm.code.trim()
+  tenantHint.value = null
+  if (!multiTenant.value || !code) return
+  api.tenantInfo(code)
+    .then(res => (tenantHint.value = { found: !!res.found, enabled: !!res.enabled, name: res.name || '' }))
+    .catch(() => {})
+}
+function onTenantCodeInput() {
+  if (tenantHintTimer) clearTimeout(tenantHintTimer)
+  tenantHintTimer = setTimeout(lookupTenant, 400)
+}
 
 onMounted(() => {
   configStore.restore()
   startCountUp()
   loadCaptcha()
   api.registerStatus()
-    .then(res => (allowRegister.value = !!res.allowRegister))
+    .then((res) => {
+      allowRegister.value = !!res.allowRegister
+      multiTenant.value = !!res.multiTenant
+    })
     .catch(() => (allowRegister.value = false))
 })
 
@@ -133,7 +155,8 @@ async function encryptPassword(plain: string) {
 
 async function doLogin() {
   const { keyId, cipher } = await encryptPassword(form.password)
-  return api.login(form.username, cipher, keyId, captchaId.value, form.captchaCode)
+  const tenantCode = multiTenant.value ? tenantForm.code.trim() : undefined
+  return api.login(form.username, cipher, keyId, captchaId.value, form.captchaCode, tenantCode)
 }
 
 /** 登录收尾: 存 token / 用户信息 / 菜单并跳转 */
@@ -322,6 +345,30 @@ function backToPassword() {
             label-position="top"
             @keyup.enter="handleSubmit"
           >
+            <!-- 租户码 (多租户开启时展示; 默认平台租户可留空) —— docs/multi-tenant.md §4.3 -->
+            <el-form-item v-if="multiTenant" label="租户标识 (平台账号可留空)">
+              <el-input
+                v-model="tenantForm.code"
+                size="large"
+                placeholder="如 acme"
+                :prefix-icon="OfficeBuilding"
+                @input="onTenantCodeInput"
+              />
+              <div v-if="tenantHint" class="tenant-hint">
+                <template v-if="tenantHint.found && tenantHint.enabled">
+                  <el-icon color="var(--el-color-success)"><CircleCheckFilled /></el-icon>
+                  <span>{{ tenantHint.name }}</span>
+                </template>
+                <template v-else-if="tenantHint.found && !tenantHint.enabled">
+                  <el-icon color="var(--el-color-warning)"><CircleCloseFilled /></el-icon>
+                  <span>{{ tenantHint.name }} (服务已停用)</span>
+                </template>
+                <template v-else>
+                  <el-icon color="var(--el-color-danger)"><CircleCloseFilled /></el-icon>
+                  <span>租户标识无效</span>
+                </template>
+              </div>
+            </el-form-item>
             <el-form-item label="账号" prop="username">
               <el-input v-model="form.username" size="large" placeholder="用户名 / 手机号" :prefix-icon="User" />
             </el-form-item>
@@ -990,5 +1037,17 @@ function backToPassword() {
   .mini-spark-dot {
     display: none;
   }
+}
+</style>
+<style scoped>
+/* 租户码提示条: 仅展示租户显示名 (公开接口限流防枚举) */
+.tenant-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
 }
 </style>

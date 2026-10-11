@@ -22,6 +22,7 @@ type SysOrgDao struct {
 // SysOrgColumns defines and stores column names for the table sys_org.
 type SysOrgColumns struct {
 	Id        string // 组织ID
+	TenantId  string // 租户ID(ORM按上下文注入)
 	ParentId  string // 父级ID, 0=顶级
 	Name      string // 组织名称
 	Leader    string // 负责人
@@ -40,6 +41,7 @@ type SysOrgColumns struct {
 // sysOrgColumns holds the columns for the table sys_org.
 var sysOrgColumns = SysOrgColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	ParentId:  "parent_id",
 	Name:      "name",
 	Leader:    "leader",

@@ -10,6 +10,7 @@ import (
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -60,6 +61,12 @@ func (s *sAuditLog) List(ctx context.Context, req *v1.AuditLogListReq) (res *v1.
 	var rows []*model.AuditLogItem
 	if err = q.Page(req.Page, req.PageSize).Order("id DESC").Ctx(ctx).Scan(&rows); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+	if tenantx.Enabled(ctx) {
+		tnMap := loadTenantNames(ctx)
+		for _, r := range rows {
+			r.TenantName = tnMap[r.TenantId]
+		}
 	}
 
 	page := response.Page(rows, int64(total), req.Page, req.PageSize)

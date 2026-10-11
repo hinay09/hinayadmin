@@ -22,8 +22,9 @@ type SysRoleDao struct {
 // SysRoleColumns defines and stores column names for the table sys_role.
 type SysRoleColumns struct {
 	Id        string // 角色ID
+	TenantId  string // 租户ID(ORM按上下文注入)
 	Name      string // 角色名称
-	Code      string // 角色编码
+	Code      string // 角色编码(租户内唯一)
 	Sort      string // 排序
 	Status    string // 状态:1=启用,0=禁用
 	Remark    string // 备注
@@ -38,6 +39,7 @@ type SysRoleColumns struct {
 // sysRoleColumns holds the columns for the table sys_role.
 var sysRoleColumns = SysRoleColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	Name:      "name",
 	Code:      "code",
 	Sort:      "sort",

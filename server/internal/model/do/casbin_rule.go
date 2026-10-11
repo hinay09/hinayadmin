@@ -13,10 +13,10 @@ type CasbinRule struct {
 	g.Meta `orm:"table:casbin_rule, do:true"`
 	Id     any // 主键
 	Ptype  any // 策略类型: p / g / g2 ...
-	V0     any // p:sub(role) | g:user
-	V1     any // p:obj(path) | g:role
-	V2     any // p:act(method) | g:domain
-	V3     any // 预留字段
+	V0     any // p:sub(角色ID) | g:用户ID
+	V1     any // p:obj(path/menu:菜单ID) | g:角色ID
+	V2     any // p:act(method) | g:domain(租户ID)
+	V3     any // p:domain(租户ID)
 	V4     any // 预留字段
 	V5     any // 预留字段
 }

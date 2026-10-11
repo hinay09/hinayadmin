@@ -3,16 +3,21 @@ package system
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 
 	v1 "hinay.cn/admin/api/system/v1"
+	"hinay.cn/admin/internal/consts"
 	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/logic/configx"
 	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/internal/service"
+	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -95,40 +100,76 @@ func (s *sConfig) List(ctx context.Context, req *v1.ConfigListReq) (res *v1.Conf
 	return &r, nil
 }
 
-// All 获取所有启用的全局配置。
+// All 获取所有生效配置 (docs/multi-tenant.md D5 覆盖读序的前端消费口)。
+// 多租户开启时:
+//   - 平台租户用户: 全量平台行 (含敏感项脱敏, 行为同旧版);
+//   - 租户用户: 仅白名单键 (租户覆盖值 > 平台默认值), 基础设施配置 (storage/ai/
+//     wechat 等) 不下发 —— 前端 config store 零改动自动生效 (§8.5)。
+//
+// 无论何种视角, 追加合成键 sys.multi_tenant (布尔) —— 开关状态前端感知 (§9)。
 func (s *sConfig) All(ctx context.Context, _ *v1.ConfigAllReq) (res *v1.ConfigAllRes, err error) {
-	var rows []*model.ConfigItem
-	if err = dao.SysConfig.Ctx(ctx).
+	tid := contextx.TenantId(ctx)
+	tenantView := tenantx.Enabled(ctx) && tid != consts.TenantPlatformId && tid != 0
+
+	qctx := contextx.WithoutTenant(ctx)
+	q := dao.SysConfig.Ctx(qctx).
 		Where("status", 1).
-		Where("deleted_at IS NULL").
-		Order("sort ASC, id ASC").
-		Ctx(ctx).Scan(&rows); err != nil {
+		Where("deleted_at IS NULL")
+	if tenantView {
+		q = q.WhereIn("tenant_id", []uint64{consts.TenantPlatformId, tid})
+	} else {
+		q = q.Where("tenant_id", consts.TenantPlatformId)
+	}
+	var rows []*model.ConfigItem
+	if err = q.Order("sort ASC, id ASC").Scan(&rows); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 
-	// 转为 key-value map 方便前端直接使用
-	list := make(g.Map, len(rows))
+	// 分桶: 平台行全集 + 租户覆盖行 (configx.buildEffectiveAll 同一读序语义)
+	meta := make(map[string][]configx.CfgRowMeta, len(rows))
 	for _, item := range rows {
-		v := item.ConfigValue
-		if isSensitiveConfigKey(item.ConfigKey) {
+		tidRow := uint64(consts.TenantPlatformId)
+		if item.TenantId > 0 {
+			tidRow = item.TenantId
+		}
+		meta[item.ConfigKey] = append(meta[item.ConfigKey], configx.CfgRowMeta{
+			TenantId: tidRow, Status: 1, Value: item.ConfigValue, Type: item.ConfigType, Name: item.Name,
+		})
+	}
+	base := uint64(consts.TenantPlatformId)
+	if tenantView {
+		base = tid
+	}
+	merged := configx.BuildEffectiveAll(meta, base)
+
+	// 转为 key-value map: 租户视角仅白名单键
+	list := make(g.Map, len(merged)+1)
+	for key, m := range merged {
+		if tenantView && !configx.OverrideAllowed(key) {
+			continue
+		}
+		v := m.Value
+		if isSensitiveConfigKey(key) {
 			v = maskConfigValue(v)
 		}
-		list[item.ConfigKey] = g.Map{
-			"value": v,
-			"type":  item.ConfigType,
-			"name":  item.Name,
-		}
+		list[key] = g.Map{"value": v, "type": m.Type, "name": m.Name}
 	}
+	list["sys.multi_tenant"] = g.Map{"value": strconv.FormatBool(tenantx.Enabled(ctx)), "type": 2, "name": "多租户"}
 	return &v1.ConfigAllRes{List: list}, nil
 }
 
 // Create 新增全局配置。
 func (s *sConfig) Create(ctx context.Context, req *v1.ConfigCreateReq) (res *v1.ConfigCreateRes, err error) {
 	// 检查 config_key 唯一性
-	cnt, _ := dao.SysConfig.Ctx(ctx).
+	// 多租户 (D5): 租户管理员仅可创建白名单键的覆盖行; 非白名单键为平台级配置,
+	// 仅平台超管可维护。注入器按 ctx 归属写 tenant_id (平台超管未切换=平台行)。
+	if verr := guardConfigWrite(ctx, req.ConfigKey); verr != nil {
+		return nil, verr
+	}
+	cnt, _ := dao.SysConfig.Ctx(contextx.ScopedToDataTenant(ctx)).
 		Where("config_key", req.ConfigKey).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Count()
+		Count()
 	if cnt > 0 {
 		return nil, xerror.New(xerror.CodeBusinessError, "配置键已存在")
 	}
@@ -151,11 +192,11 @@ func (s *sConfig) Create(ctx context.Context, req *v1.ConfigCreateReq) (res *v1.
 // Update 修改全局配置。
 func (s *sConfig) Update(ctx context.Context, req *v1.ConfigUpdateReq) (res *v1.ConfigUpdateRes, err error) {
 	// 检查 config_key 唯一性（排除自身）
-	cnt, _ := dao.SysConfig.Ctx(ctx).
+	cnt, _ := dao.SysConfig.Ctx(contextx.ScopedToDataTenant(ctx)).
 		Where("config_key", req.ConfigKey).
 		Where("id != ?", req.Id).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Count()
+		Count()
 	if cnt > 0 {
 		return nil, xerror.New(xerror.CodeBusinessError, "配置键已存在")
 	}
@@ -168,6 +209,12 @@ func (s *sConfig) Update(ctx context.Context, req *v1.ConfigUpdateReq) (res *v1.
 		"remark":       req.Remark,
 		"status":       req.Status,
 		"sort":         req.Sort,
+	}
+
+	// 多租户: 行归属校验 (租户管理员仅可改本租户覆盖行且限白名单键;
+	// 平台行 (tenant_id=1) 仅平台侧可改 —— 租户管理员视角下行不可见, 显式复核)
+	if verr := guardConfigRowWrite(ctx, req.Id, req.ConfigKey); verr != nil {
+		return nil, verr
 	}
 
 	// 脱敏回传保护: 编辑表单拿到的是掩码值, 未改动时原样提交;
@@ -199,4 +246,52 @@ func (s *sConfig) Delete(ctx context.Context, req *v1.ConfigDeleteReq) (res *v1.
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 	return &v1.ConfigDeleteRes{}, nil
+}
+
+// guardConfigWrite 配置写入键守卫 (docs/multi-tenant.md D5):
+// 租户域仅开放白名单键 (租户覆盖行); 非白名单键仅平台超管。
+func guardConfigWrite(ctx context.Context, key string) error {
+	if !tenantx.Enabled(ctx) {
+		return nil
+	}
+	tid := contextx.TenantId(ctx)
+	if tid == consts.TenantPlatformId || tid == 0 {
+		return nil // 平台侧 (平台租户用户/平台超管未切换): 维护平台行
+	}
+	if contextx.IsPlatformAdmin(ctx) {
+		return nil // 平台超管代运维切换态: 视同租户管理员规则
+	}
+	if !configx.OverrideAllowed(key) {
+		return xerror.New(xerror.CodeForbidden, "该配置为平台级配置, 租户不可维护")
+	}
+	return nil
+}
+
+// guardConfigRowWrite 配置行写入归属校验: 行必须属于当前数据租户 (或平台行由平台侧操作)。
+func guardConfigRowWrite(ctx context.Context, id uint64, key string) error {
+	if !tenantx.Enabled(ctx) {
+		return nil
+	}
+	row, err := dao.SysConfig.Ctx(contextx.WithoutTenant(ctx)).
+		Where("id", id).Where("deleted_at IS NULL").Fields("tenant_id, config_key").One()
+	if err != nil || row.IsEmpty() {
+		return nil // 存在性/注入归属由后续更新语义兜底
+	}
+	rowTid := row["tenant_id"].Uint64()
+	tid := contextx.TenantId(ctx)
+	platformSide := tid == consts.TenantPlatformId || tid == 0 || contextx.IsPlatformAdmin(ctx)
+	if rowTid == consts.TenantPlatformId {
+		if !platformSide {
+			return xerror.New(xerror.CodeForbidden, "平台配置行仅平台侧可修改")
+		}
+		return nil
+	}
+	// 租户覆盖行: 本租户管理员可改 (白名单键校验), 平台干预走租户管理"重置配置"
+	if rowTid != tid && !platformSide {
+		return xerror.New(xerror.CodeForbidden, "不可修改其他租户的配置")
+	}
+	if !platformSide {
+		return guardConfigWrite(ctx, key)
+	}
+	return nil
 }

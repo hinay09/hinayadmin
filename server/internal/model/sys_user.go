@@ -5,6 +5,7 @@ import "github.com/gogf/gf/v2/os/gtime"
 // SysUser 数据库实体。
 type SysUser struct {
 	Id            uint64      `json:"id"        orm:"id"`
+	TenantId      uint64      `json:"tenantId"  orm:"tenant_id"`
 	Username      string      `json:"username"  orm:"username"`
 	Password      string      `json:"-"         orm:"password"`
 	Nickname      string      `json:"nickname"  orm:"nickname"`

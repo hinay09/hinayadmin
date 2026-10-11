@@ -13,11 +13,12 @@ import (
 type WfDefinition struct {
 	g.Meta    `orm:"table:wf_definition, do:true"`
 	Id        any         // 主键ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
 	FlowKey   any         // 流程标识(同标识共用一组版本, 如 leave)
 	Name      any         // 流程名称
 	FormConf  any         // 表单字段定义 JSON [{key,label,type,options,required}]
 	FlowConf  any         // 节点树定义 JSON {id,type,name,child,...}
-	Version   any         // 版本:0=草稿,>=1=已发布版本号
+	Version   any         // 版本号=发布次数,0=未发布过
 	Status    any         // 状态:0=草稿,1=已发布,2=已停用
 	Remark    any         // 备注
 	CreateId  any         // 创建人ID(ORM自动填充)

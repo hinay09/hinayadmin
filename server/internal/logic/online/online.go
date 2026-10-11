@@ -26,6 +26,8 @@ import (
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/jwtx"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/contextx"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -123,8 +125,28 @@ func (s *sOnline) List(ctx context.Context, req *v1.OnlineListReq) (res *v1.Onli
 		if req.Username != "" && !strings.Contains(sess.Username, req.Username) {
 			continue
 		}
+		// 租户归属过滤 (docs/multi-tenant.md §4.2): 平台超管未切换看全量;
+		// 租户用户/租户管理员/代运维切换态只看数据面租户的会话。
+		if tenantx.Enabled(ctx) {
+			seeAll := false
+			if u := contextx.LoginUser(ctx); u != nil && u.IsPlatformAdmin && u.SwitchTenantInfo == nil {
+				seeAll = true
+			}
+			if !seeAll {
+				viewTid := contextx.TenantId(ctx)
+				sessTid := sess.TenantId
+				if sessTid == 0 {
+					sessTid = consts.TenantPlatformId // 老会话 JSON 无租户字段: 视为平台
+				}
+				if sessTid != viewTid {
+					continue
+				}
+			}
+		}
 		items = append(items, &model.OnlineUserItem{
 			SessionId:    field,
+			TenantId:     sess.TenantId,
+			TenantName:   sess.TenantName,
 			UserId:       sess.UserId,
 			Username:     sess.Username,
 			Nickname:     sess.Nickname,
@@ -176,6 +198,22 @@ func (s *sOnline) Kick(ctx context.Context, req *v1.OnlineKickReq) (res *v1.Onli
 	var sess model.OnlineSession
 	if err = json.Unmarshal([]byte(raw.String()), &sess); err != nil || sess.Token == "" {
 		return nil, xerror.New(xerror.CodeBusinessError, "会话数据异常")
+	}
+	// 踢人归属校验 (§4.2): 平台超管未切换可踢全部; 其余视角仅可踢数据面租户的会话。
+	if tenantx.Enabled(ctx) {
+		seeAll := false
+		if u := contextx.LoginUser(ctx); u != nil && u.IsPlatformAdmin && u.SwitchTenantInfo == nil {
+			seeAll = true
+		}
+		if !seeAll {
+			sessTid := sess.TenantId
+			if sessTid == 0 {
+				sessTid = consts.TenantPlatformId
+			}
+			if sessTid != contextx.TenantId(ctx) {
+				return nil, xerror.New(xerror.CodeForbidden, "仅可强制下线本租户会话")
+			}
+		}
 	}
 	if err = jwtx.Blacklist(ctx, sess.Token); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "下线失败")

@@ -30,6 +30,7 @@ import (
 	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/password"
 	"hinay.cn/admin/utility/rsax"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -147,6 +148,7 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	// 锁定检查: 窗口内失败次数已达上限
 	if n, rerr := g.Redis().GroupString().Get(ctx, failKey); rerr == nil && n != nil && !n.IsNil() && n.Int64() >= consts.LoginFailMax {
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			TenantId: consts.TenantPlatformId,
 			Username: req.Username, Status: consts.LoginLogStatusFail,
 			Message: "失败次数过多, 临时锁定", Ip: ip, UserAgent: ua,
 		})
@@ -161,6 +163,20 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		return nil, xerror.New(xerror.CodeCaptchaInvalid)
 	}
 
+	// 租户识别 (docs/multi-tenant.md §4.3): 请求体 > X-Tenant-Code 头 > 默认平台租户;
+	// 三态错误 (码无效/禁用/到期) 在登录入口即拦截, 不静默失败;
+	// 无效租户码的失败日志归属平台租户 1, detail 记尝试的 code 供爆破排查聚合。
+	tenant, terr := ResolveTenantForLogin(ctx, req.TenantCode)
+	if terr != nil {
+		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			TenantId: consts.TenantPlatformId, Username: req.Username, Status: consts.LoginLogStatusFail,
+			Message: "登录入口拦截: " + terr.Error() + " (code: " + strings.TrimSpace(req.TenantCode) + ")",
+			Ip:      ip, UserAgent: ua,
+		})
+		return nil, terr
+	}
+	ctx = ScopedTenantCtx(ctx, tenant)
+
 	plainPassword, derr := decryptPassword(ctx, req.KeyId, req.Password)
 	if derr != nil {
 		return nil, derr
@@ -174,6 +190,7 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	if uerr != nil {
 		// 一号多户等账号歧义: 密码尚未校验, 不计入失败锁定, 仅记登录日志
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			TenantId: tenant.Id,
 			Username: req.Username, Status: consts.LoginLogStatusFail,
 			Message: "账号无法唯一匹配", Ip: ip, UserAgent: ua,
 		})
@@ -184,6 +201,7 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 		password.Verify(dummyBcryptHash, plainPassword)
 		recordLoginFailure(ctx, failKey)
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
+			TenantId: tenant.Id,
 			Username: req.Username, Status: consts.LoginLogStatusFail,
 			Message: "用户不存在", Ip: ip, UserAgent: ua,
 		})
@@ -191,7 +209,8 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	}
 	if u.Status != consts.StatusEnabled {
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
-			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
+			TenantId: tenant.Id,
+			UserId:   u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
 			Message: "账号已禁用", Ip: ip, UserAgent: ua,
 		})
 		return nil, xerror.New(xerror.CodeUserDisabled)
@@ -199,7 +218,8 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 	if !password.Verify(u.Password, plainPassword) {
 		recordLoginFailure(ctx, failKey)
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
-			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
+			TenantId: tenant.Id,
+			UserId:   u.Id, Username: u.Username, Status: consts.LoginLogStatusFail,
 			Message: "密码错误", Ip: ip, UserAgent: ua,
 		})
 		return nil, xerror.New(xerror.CodePasswordWrong)
@@ -219,7 +239,8 @@ func (s *sAuth) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, 
 			return nil, xerror.Wrap(xerror.CodeBusinessError, serr, "保存两步验证票据失败")
 		}
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
-			UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess,
+			TenantId: tenant.Id,
+			UserId:   u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess,
 			Message: "密码通过, 等待两步验证", Ip: ip, UserAgent: ua,
 		})
 		return &v1.LoginRes{Need2fa: true, Ticket: ticket}, nil
@@ -255,7 +276,8 @@ func (s *sAuth) TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.To
 	if n, _ := g.Redis().GroupString().Get(ctx, failKey); n != nil && !n.IsNil() && n.Int64() >= consts.TotpTicketFailMax {
 		_, _ = g.Redis().GroupGeneric().Del(ctx, ticketKey, failKey)
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
-			UserId: userId, Status: consts.LoginLogStatusFail,
+			TenantId: consts.TenantPlatformId,
+			UserId:   userId, Status: consts.LoginLogStatusFail,
 			Message: "两步验证失败次数过多", Ip: ip, UserAgent: ua,
 		})
 		return nil, xerror.New(xerror.CodeTotpTicketInvalid, "动态码错误次数过多, 请重新登录")
@@ -268,21 +290,27 @@ func (s *sAuth) TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.To
 			_, _ = g.Redis().GroupGeneric().Expire(ctx, failKey, consts.TotpTicketTTLSec)
 		}
 		service.LoginLog().Record(ctx, model.LoginLogEntry{
-			UserId: userId, Status: consts.LoginLogStatusFail,
+			TenantId: consts.TenantPlatformId,
+			UserId:   userId, Status: consts.LoginLogStatusFail,
 			Message: "两步验证码错误", Ip: ip, UserAgent: ua,
 		})
 		return nil, verr
 	}
 
-	// 二次确认用户仍有效: 票据签发到使用之间账号可能被禁用/删除
+	// 二次确认用户仍有效: 票据签发到使用之间账号可能被禁用/删除。
+	// 公开接口无中间件租户组装 —— 先以平台视角按主键装载, 再按用户归属租户
+	// 构造注入 ctx (多租户开启时无租户上下文查询隔离表会被 fail-close 拒绝)。
 	var u *model.SysUser
-	if err = dao.SysUser.Ctx(ctx).
+	if err = dao.SysUser.Ctx(contextx.WithoutTenant(ctx)).
 		Where("id", userId).
 		Where("status", consts.StatusEnabled).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Scan(&u); err != nil || u == nil {
+		Scan(&u); err != nil || u == nil {
 		_, _ = g.Redis().GroupGeneric().Del(ctx, ticketKey, failKey)
 		return nil, xerror.New(xerror.CodeUserDisabled)
+	}
+	if tsc, tscErr := tenantScopeForUser(ctx, u); tscErr == nil {
+		ctx = tsc
 	}
 
 	// 票据一次性: 换取 token 成功即销毁
@@ -298,12 +326,13 @@ func (s *sAuth) TotpLogin(ctx context.Context, req *v1.TotpLoginReq) (res *v1.To
 // completeLogin 登录收尾: 签发 token / 记录登录信息与日志 / 注册在线会话。
 // 密码登录与两步验证登录共用; twoFaOn 标记本次登录是否经过两步验证。
 func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua string, twoFaOn bool) (*v1.LoginRes, error) {
-	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
+	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username, u.TenantId)
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "签发token失败")
 	}
 	roleIds, _ := casbinx.GetUserRoles(ctx, u.Id)
-	roleCodes, roleNames, isAdmin := resolveRoleInfo(ctx, roleIds)
+	roleCodes, roleNames, isPlatform, isTenantAdmin := resolveRoleInfo(ctx, roleIds)
+	tenant := contextx.Tenant(ctx)
 
 	// 最近登录信息落库 (u 内存中仍是本次之前的值, 响应里展示的是"上次登录")
 	_, _ = dao.SysUser.Ctx(ctx).Where("id", u.Id).Data(g.Map{
@@ -315,15 +344,23 @@ func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua stri
 		msg = "登录成功(两步验证)"
 	}
 	service.LoginLog().Record(ctx, model.LoginLogEntry{
-		UserId: u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess, Message: msg, Ip: ip, UserAgent: ua,
+		TenantId: u.TenantId,
+		UserId:   u.Id, Username: u.Username, Status: consts.LoginLogStatusSuccess, Message: msg, Ip: ip, UserAgent: ua,
 	})
-	// 注册在线会话 (尽力而为)
+	// 注册在线会话 (尽力而为; 携带租户归属, 租户管理员可踢本租户会话)
+	tCode, tName := "", ""
+	if tenant != nil {
+		tCode, tName = tenant.Code, tenant.Name
+	}
 	service.Online().Register(ctx, token, model.OnlineSession{
-		UserId:    u.Id,
-		Username:  u.Username,
-		Nickname:  u.Nickname,
-		Ip:        ip,
-		UserAgent: ua,
+		TenantId:   u.TenantId,
+		TenantCode: tCode,
+		TenantName: tName,
+		UserId:     u.Id,
+		Username:   u.Username,
+		Nickname:   u.Nickname,
+		Ip:         ip,
+		UserAgent:  ua,
 	})
 
 	// 强制改密判定 (演示环境恒不强制)
@@ -333,17 +370,22 @@ func (s *sAuth) completeLogin(ctx context.Context, u *model.SysUser, ip, ua stri
 		Token:    token,
 		ExpireAt: exp,
 		UserInfo: &model.LoginUser{
-			UserId:        u.Id,
-			Username:      u.Username,
-			Nickname:      u.Nickname,
-			Avatar:        storage.ViewURL(ctx, u.Avatar),
-			Roles:         roleCodes,
-			RoleNames:     roleNames,
-			IsAdmin:       isAdmin,
-			LastLoginAt:   u.LastLoginAt,
-			LastLoginIp:   u.LastLoginIp,
-			MustChangePwd: mustChange,
-			TwoFaEnabled:  twoFaOn,
+			UserId:          u.Id,
+			Username:        u.Username,
+			Nickname:        u.Nickname,
+			Avatar:          storage.ViewURL(ctx, u.Avatar),
+			Roles:           roleCodes,
+			RoleNames:       roleNames,
+			IsAdmin:         isPlatform,
+			TenantId:        u.TenantId,
+			TenantCode:      tCode,
+			TenantName:      tName,
+			IsPlatformAdmin: isPlatform,
+			IsTenantAdmin:   isTenantAdmin,
+			LastLoginAt:     u.LastLoginAt,
+			LastLoginIp:     u.LastLoginIp,
+			MustChangePwd:   mustChange,
+			TwoFaEnabled:    twoFaOn,
 		},
 	}, nil
 }
@@ -399,13 +441,15 @@ func (s *sAuth) Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.Refres
 	if cur == nil {
 		return nil, xerror.New(xerror.CodeUnauthorized)
 	}
-	// 二次确认用户仍有效 (未被禁用/删除)
+	// 二次确认用户仍有效 (未被禁用/删除)。
+	// 身份面操作: 按归属租户视角读本人行 —— 平台超管代运维切换态下按数据面
+	// 注入查询会"用户不存在", 续签失败会把整个会话误踢下线。
 	var u *model.SysUser
-	if err = dao.SysUser.Ctx(ctx).
+	if err = dao.SysUser.Ctx(contextx.HomeTenantScope(ctx)).
 		Where("id", cur.UserId).
 		Where("status", consts.StatusEnabled).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Scan(&u); err != nil || u == nil {
+		Scan(&u); err != nil || u == nil {
 		return nil, xerror.New(xerror.CodeUserNotFound)
 	}
 
@@ -417,7 +461,7 @@ func (s *sAuth) Refresh(ctx context.Context, req *v1.RefreshReq) (res *v1.Refres
 		}
 	}
 
-	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username)
+	token, exp, err := jwtx.Generate(ctx, u.Id, u.Username, u.TenantId)
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "签发token失败")
 	}
@@ -444,42 +488,81 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 	if cur == nil {
 		return nil, xerror.New(xerror.CodeUnauthorized)
 	}
+	// 身份面: 按归属租户视角读本人行与归属域角色 —— 平台超管代运维切换态下
+	// 数据面注入会"用户不存在", 且切换域内无其角色 (roles 应展示真实归属角色)。
+	hctx := contextx.HomeTenantScope(ctx)
 	var u *model.SysUser
-	err := dao.SysUser.Ctx(ctx).
+	err := dao.SysUser.Ctx(hctx).
 		Where("id", cur.UserId).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Scan(&u)
+		Scan(&u)
 	if err != nil || u == nil {
 		return nil, xerror.New(xerror.CodeUserNotFound)
 	}
-	roleIds, _ := casbinx.GetUserRoles(ctx, u.Id)
-	roleCodes, roleNames, isAdmin := resolveRoleInfo(ctx, roleIds)
+	roleIds, _ := casbinx.GetUserRoles(hctx, u.Id)
+	roleCodes, roleNames, isPlatform, isTenantAdmin := resolveRoleInfo(hctx, roleIds)
+	// 角色判定优先取中间件组装结果 (含代运维切换语义), 回退实时计算
+	if cur.IsPlatformAdmin {
+		isPlatform = true
+	}
+	if cur.IsTenantAdmin {
+		isTenantAdmin = true
+	}
+	// 租户展示字段: 平台超管代运维切换时展示目标租户 (徽标/确认文案), 否则展示归属租户
+	tid, tcode, tname := cur.TenantId, cur.TenantCode, cur.TenantName
+	if cur.SwitchTenantInfo != nil {
+		tid, tcode, tname = cur.SwitchTenantInfo.Id, cur.SwitchTenantInfo.Code, cur.SwitchTenantInfo.Name
+	}
 	return &model.LoginUser{
-		UserId:        u.Id,
-		Username:      u.Username,
-		Nickname:      u.Nickname,
-		Avatar:        storage.ViewURL(ctx, u.Avatar),
-		Email:         u.Email,
-		Phone:         u.Phone,
-		Roles:         roleCodes,
-		RoleNames:     roleNames,
-		IsAdmin:       isAdmin,
-		LastLoginAt:   u.LastLoginAt,
-		LastLoginIp:   u.LastLoginIp,
-		MustChangePwd: mustChangePwdFlag(ctx, u),
-		TwoFaEnabled:  service.TwoFactor().Enabled(ctx, u.Id),
+		UserId:           u.Id,
+		Username:         u.Username,
+		Nickname:         u.Nickname,
+		Avatar:           storage.ViewURL(ctx, u.Avatar),
+		Email:            u.Email,
+		Phone:            u.Phone,
+		Roles:            roleCodes,
+		RoleNames:        roleNames,
+		IsAdmin:          isPlatform,
+		TenantId:         tid,
+		TenantCode:       tcode,
+		TenantName:       tname,
+		IsPlatformAdmin:  isPlatform,
+		IsTenantAdmin:    isTenantAdmin,
+		SwitchTenantInfo: cur.SwitchTenantInfo,
+		LastLoginAt:      u.LastLoginAt,
+		LastLoginIp:      u.LastLoginIp,
+		MustChangePwd:    mustChangePwdFlag(ctx, u),
+		TwoFaEnabled:     service.TwoFactor().Enabled(ctx, u.Id),
 	}, nil
 }
 
-// resolveRoleInfo 将 Casbin 角色ID解析为角色code/名称列表与超管标记。
-// 角色code仅为展示标识; 超管判定按内置角色ID, 与角色code解耦。
-// 角色已删除的条目跳过, 查询失败时退化为仅超管标记。
-func resolveRoleInfo(ctx context.Context, roleIds []uint64) (codes, names []string, isAdmin bool) {
-	isAdmin = slices.Contains(roleIds, consts.RoleAdminId)
+// tenantScopeForUser 按用户归属租户构造注入 ctx (TOTP 公开登录等无中间件组装的路径)。
+func tenantScopeForUser(ctx context.Context, u *model.SysUser) (context.Context, error) {
+	if !tenantx.Enabled(ctx) {
+		return contextx.WithTenant(ctx, &model.TenantInfo{
+			Id: consts.TenantPlatformId, Code: consts.TenantPlatformCode, Name: "平台租户", Inject: false,
+		}), nil
+	}
+	t, err := service.Tenant().LoadLiteById(ctx, u.TenantId)
+	if err != nil {
+		// 租户行缺失/已删: 用户随租户失效
+		return nil, err
+	}
+	if t.Status != consts.StatusEnabled {
+		return nil, xerror.New(xerror.CodeTenantDisabled)
+	}
+	return ScopedTenantCtx(ctx, t), nil
+}
+
+// resolveRoleInfo 将 Casbin 角色ID解析为角色code/名称列表与平台超管/租户管理员标记。
+// 平台超管按内置角色ID判定 (与角色code解耦); 租户管理员按 code=tenant_admin 判定
+// (docs/multi-tenant.md §2.2)。角色已删除的条目跳过, 查询失败时退化为仅平台超管标记。
+func resolveRoleInfo(ctx context.Context, roleIds []uint64) (codes, names []string, isPlatform, isTenantAdmin bool) {
+	isPlatform = slices.Contains(roleIds, consts.RoleAdminId)
 	codes = make([]string, 0, len(roleIds))
 	names = make([]string, 0, len(roleIds))
 	if len(roleIds) == 0 {
-		return codes, names, isAdmin
+		return codes, names, isPlatform, isTenantAdmin
 	}
 	var rows []*model.SysRole
 	if err := dao.SysRole.Ctx(ctx).
@@ -487,7 +570,7 @@ func resolveRoleInfo(ctx context.Context, roleIds []uint64) (codes, names []stri
 		Where("deleted_at IS NULL").
 		Fields("id, code, name").
 		Scan(&rows); err != nil {
-		return codes, names, isAdmin
+		return codes, names, isPlatform, isTenantAdmin
 	}
 	byId := make(map[uint64]*model.SysRole, len(rows))
 	for _, r := range rows {
@@ -497,9 +580,12 @@ func resolveRoleInfo(ctx context.Context, roleIds []uint64) (codes, names []stri
 		if r := byId[id]; r != nil {
 			codes = append(codes, r.Code)
 			names = append(names, r.Name)
+			if r.Code == consts.RoleTenantAdminCode {
+				isTenantAdmin = true
+			}
 		}
 	}
-	return codes, names, isAdmin
+	return codes, names, isPlatform, isTenantAdmin
 }
 
 // UserInfo 当前登录用户信息。
@@ -554,10 +640,10 @@ func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (
 		return nil, xerror.New(xerror.CodeBusinessError, "新密码不能与原密码相同")
 	}
 	var u *model.SysUser
-	if err = dao.SysUser.Ctx(ctx).
+	if err = dao.SysUser.Ctx(contextx.HomeTenantScope(ctx)).
 		Where("id", cur.UserId).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Scan(&u); err != nil || u == nil {
+		Scan(&u); err != nil || u == nil {
 		return nil, xerror.New(xerror.CodeUserNotFound)
 	}
 	if !password.Verify(u.Password, req.OldPassword) {
@@ -571,7 +657,7 @@ func (s *sAuth) ChangePassword(ctx context.Context, req *v1.ChangePasswordReq) (
 	if herr != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, herr, "密码加密失败")
 	}
-	if _, err = dao.SysUser.Ctx(ctx).Where("id", cur.UserId).
+	if _, err = dao.SysUser.Ctx(contextx.HomeTenantScope(ctx)).Where("id", cur.UserId).
 		Data(g.Map{
 			"password":        hash,
 			"pwd_updated_at":  gtime.Now(),
@@ -659,11 +745,11 @@ func (s *sAuth) UploadAvatar(ctx context.Context, req *v1.UploadAvatarReq) (res 
 	}
 	refURL := st.RefURL(key)
 
-	// 更新数据库
-	if _, err = dao.SysUser.Ctx(ctx).
+	// 更新数据库 (身份面: 归属租户视角写本人行)
+	if _, err = dao.SysUser.Ctx(contextx.HomeTenantScope(ctx)).
 		Where("id", cur.UserId).
 		Where("deleted_at IS NULL").
-		Ctx(ctx).Data(g.Map{"avatar": refURL}).Update(); err != nil {
+		Data(g.Map{"avatar": refURL}).Update(); err != nil {
 		// 落库失败回收已写入对象 (尽力而为)
 		go func() { _ = st.Delete(context.Background(), key) }()
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "更新头像失败")
@@ -681,8 +767,8 @@ func (s *sAuth) MenuTree(ctx context.Context, req *v1.MenuTreeReq) (res *v1.Menu
 
 	var menuIds []uint64
 
-	if contextx.IsAdmin(ctx) {
-		// 超管: 返回所有启用的可见菜单
+	if contextx.IsPlatformAdmin(ctx) && cur.SwitchTenantInfo == nil {
+		// 平台超管 (未代运维切换): 返回所有启用的可见菜单
 		values, _ := dao.SysMenu.Ctx(ctx).
 			Where("status", consts.StatusEnabled).
 			Where("deleted_at IS NULL").
@@ -696,14 +782,39 @@ func (s *sAuth) MenuTree(ctx context.Context, req *v1.MenuTreeReq) (res *v1.Menu
 		if rerr != nil {
 			return nil, xerror.Wrap(xerror.CodeBusinessError, rerr, "获取用户角色失败")
 		}
-		seen := make(map[int64]struct{})
-		for _, roleId := range roleIds {
-			ids, _ := casbinx.GetRoleMenus(ctx, roleId)
-			for _, id := range ids {
-				if _, ok := seen[id]; !ok {
-					seen[id] = struct{}{}
-					menuIds = append(menuIds, uint64(id))
+		if cur.SwitchTenantInfo != nil {
+			// 平台超管代运维切换: 展示目标租户的应用授权集全景 (平台管理入口自动隐藏)
+			if closure, cerr := service.Tenant().EffectiveMenuClosure(ctx, cur.SwitchTenantInfo.Id); cerr == nil && closure != nil {
+				for id := range closure {
+					menuIds = append(menuIds, id)
 				}
+			}
+		} else {
+			seen := make(map[int64]struct{})
+			for _, roleId := range roleIds {
+				ids, _ := casbinx.GetRoleMenus(ctx, roleId)
+				for _, id := range ids {
+					if _, ok := seen[id]; !ok {
+						seen[id] = struct{}{}
+						menuIds = append(menuIds, uint64(id))
+					}
+				}
+			}
+		}
+
+		// 应用授权集交集过滤 (§7.1 收口点: 租户用户菜单 = 角色菜单策略 ∩ 授权集闭包 ∪ 基础菜单;
+		// 平台租户整体豁免 —— EffectiveMenuClosure 返回 nil)
+		if tenantx.Enabled(ctx) {
+			if closure, cerr := service.Tenant().EffectiveMenuClosure(ctx, contextx.TenantId(ctx)); cerr == nil && closure != nil {
+				filtered := make([]uint64, 0, len(menuIds))
+				for _, id := range menuIds {
+					if _, ok := closure[id]; ok {
+						filtered = append(filtered, id)
+					}
+				}
+				// 基础菜单恒授 (30 仪表盘 / 40 个人中心, 代码常量)
+				filtered = append(filtered, consts.MenuDashboard, consts.MenuProfile)
+				menuIds = filtered
 			}
 		}
 	}

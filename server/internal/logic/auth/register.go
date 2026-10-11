@@ -13,9 +13,12 @@ import (
 	"hinay.cn/admin/internal/consts"
 	"hinay.cn/admin/internal/dao"
 	"hinay.cn/admin/internal/logic/casbinx"
+	"hinay.cn/admin/internal/logic/configx"
 	"hinay.cn/admin/internal/logic/pwdpolicy"
+	"hinay.cn/admin/internal/model"
 	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/password"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -23,35 +26,38 @@ import (
 const KeyAllowRegister = "sys.allow_register"
 
 // registerEnabled 读取开放注册开关 (仅启用状态的配置生效, 查询失败/缺省视为关闭)。
+// 多租户下走覆盖读序 (租户行 > 平台行, docs/multi-tenant.md D5/§4.3)。
 // 演示环境恒为关: 注册会真实落库建账号, 公开演示站点会被批量注册灌脏数据。
-func registerEnabled(ctx context.Context) bool {
+func registerEnabled(ctx context.Context, tenant *model.TenantLite) bool {
 	if demox.Enabled(ctx) {
 		return false
 	}
-	v, err := dao.SysConfig.Ctx(ctx).
-		Fields("config_value").
-		Where("config_key", KeyAllowRegister).
-		Where("status", consts.StatusEnabled).
-		Where("deleted_at IS NULL").
-		Value()
-	if err != nil || v == nil {
-		return false
-	}
-	s := v.String()
-	return s == "true" || s == "1"
+	return configx.Bool(ctx, tenant, KeyAllowRegister, false)
 }
 
-// RegisterStatus 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口)。
+// RegisterStatus 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口;
+// multiTenant 字段随此公开口下发, 登录/注册页据此渲染租户码输入框 —— §9 前端感知)。
 func (s *sAuth) RegisterStatus(ctx context.Context, _ *v1.RegisterStatusReq) (res *v1.RegisterStatusRes, err error) {
-	return &v1.RegisterStatusRes{AllowRegister: registerEnabled(ctx)}, nil
+	return &v1.RegisterStatusRes{
+		AllowRegister: registerEnabled(ctx, &model.TenantLite{Id: consts.TenantPlatformId}),
+		MultiTenant:   tenantx.Enabled(ctx),
+	}, nil
 }
 
 // Register 自助注册: 开关校验 -> RSA 解密 -> 密码策略 -> 建用户 -> 绑定内置普通角色。
 // 注册的密码由用户本人设定, 不置强制改密标志 (区别于管理员代建账号)。
 func (s *sAuth) Register(ctx context.Context, req *v1.RegisterReq) (res *v1.RegisterRes, err error) {
-	if !registerEnabled(ctx) {
+	// 租户识别 (公开接口无中间件组装): 注册需携带租户码且受 sys.allow_register 的
+	// 租户覆盖值控制 (docs/multi-tenant.md §4.3)
+	tenant, terr := ResolveTenantForLogin(ctx, req.TenantCode)
+	if terr != nil {
+		return nil, terr
+	}
+	if !registerEnabled(ctx, tenant) {
 		return nil, xerror.New(xerror.CodeBusinessError, "注册功能未开放")
 	}
+	// 构造租户注入 ctx: 后续 sys_user 读写按目标租户隔离
+	ctx = ScopedTenantCtx(ctx, tenant)
 
 	// 图形验证码校验 (sys.captcha_enable 开启时): 注册同为公开入口,
 	// 防脚本批量开户灌脏数据。

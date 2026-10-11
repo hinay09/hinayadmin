@@ -6,7 +6,10 @@ import "github.com/gogf/gf/v2/os/gtime"
 // OnlineSession Redis 中存储的在线会话记录 (JSON 序列化后作为 HASH value)。
 // Token 仅存于服务端 Redis, 列表 VO 不下发。
 type OnlineSession struct {
-	Token        string `json:"token"` // 原始 JWT, 强制下线时写入黑名单用
+	Token        string `json:"token"`
+	TenantId     uint64 `json:"tenantId"`
+	TenantCode   string `json:"tenantCode"`
+	TenantName   string `json:"tenantName"` // 原始 JWT, 强制下线时写入黑名单用
 	UserId       uint64 `json:"userId"`
 	Username     string `json:"username"`
 	Nickname     string `json:"nickname"`
@@ -18,6 +21,8 @@ type OnlineSession struct {
 
 // OnlineUserItem 在线用户列表 VO (不含 token)。
 type OnlineUserItem struct {
+	TenantId     uint64 `json:"tenantId"`
+	TenantName   string `json:"tenantName"`
 	SessionId    string      `json:"sessionId"`
 	UserId       uint64      `json:"userId"`
 	Username     string      `json:"username"`

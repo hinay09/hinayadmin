@@ -41,7 +41,7 @@ func NewMonitor() *sMonitor {
 
 // guardAdmin 仅超管可见的服务器指标入口。
 func guardAdmin(ctx context.Context) error {
-	if !contextx.IsAdmin(ctx) {
+	if !contextx.IsPlatformAdmin(ctx) {
 		return xerror.New(xerror.CodeForbidden)
 	}
 	return nil

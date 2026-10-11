@@ -13,7 +13,7 @@
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Promotion, VideoPause, Plus, User, Delete, ChatDotRound, InfoFilled, Loading, CircleCheckFilled, CircleCloseFilled, Lightning } from '@element-plus/icons-vue'
 import { useAiApi, type AiConfigStatus, type AiHistoryMessage, type AiSessionItem, type AiToolStep, type AiTokenUsage } from '~/composables/useApi/ai'
@@ -78,6 +78,14 @@ const input = ref('')
 const streaming = ref(false)
 const listRef = ref<HTMLElement>()
 let abort: AbortController | null = null
+
+// 平台超管代运维切换租户时立即断流 (防"看着 A 租户、流着 B 租户数据" —— §8.3);
+// tags 重置导致本页卸载时, onBeforeUnmount 的 stop 同样兜底
+function onTenantSwitched() {
+  abort?.abort()
+}
+onMounted(() => window.addEventListener('tenant:switched', onTenantSwitched))
+onBeforeUnmount(() => window.removeEventListener('tenant:switched', onTenantSwitched))
 
 // 左侧历史会话栏
 const sessions = ref<AiSessionItem[]>([])

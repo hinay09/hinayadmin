@@ -212,6 +212,7 @@ onMounted(async () => {
       <el-table v-loading="loading" :data="list" border stripe style="margin-top:8px">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="任务名称" min-width="140" />
+        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
         <el-table-column prop="handler" label="处理器" min-width="150" />
         <el-table-column label="cron 表达式" width="160">
           <template #default="{ row }">

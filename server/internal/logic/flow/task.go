@@ -34,7 +34,7 @@ func (s *sFlow) TaskApprove(ctx context.Context, in *v1.FlowTaskApproveReq) (res
 	}
 
 	notify.flush(ctx)
-	fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowTaskApproveRes{}, nil
 }
 
@@ -158,7 +158,7 @@ func (s *sFlow) TaskReject(ctx context.Context, in *v1.FlowTaskRejectReq) (res *
 		fmt.Sprintf("「%s」的节点「%s」被 %s 驳回: %s。请到 审批中心-我发起的 修改后重新提交, 或撤销申请。",
 			inst.Title, node.Name, act.operatorName, act.comment))
 	notify.flush(ctx)
-	fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return &v1.FlowTaskRejectRes{}, nil
 }
 
@@ -571,7 +571,7 @@ func (s *sFlow) loadAnchorTask(ctx context.Context, taskId uint64) (
 	if inst.Status != instStatusRunning {
 		return nil, nil, nil, xerror.New(xerror.CodeParamInvalid, "流程已结束")
 	}
-	if act.task.AssigneeId != act.operatorId && !contextx.IsAdmin(ctx) {
+	if act.task.AssigneeId != act.operatorId && !contextx.IsManagerAdmin(ctx) {
 		return nil, nil, nil, xerror.New(xerror.CodeForbidden, "仅节点处理人或管理员可加签/减签")
 	}
 	return act, inst, &notifySink{sender: act.operatorId}, nil

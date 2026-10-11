@@ -17,6 +17,7 @@ type SysApi struct {
 	Method      any         // HTTP方法(GET/POST/PUT/DELETE)
 	GroupName   any         // 分组名称
 	Description any         // 接口描述
+	MenuId      any         // 归属菜单ID(0=平台/公共, 租户不可绑)
 	CreateId    any         // 创建人ID(ORM自动填充)
 	UpdateId    any         // 最后修改人ID(ORM自动填充)
 	CreatedAt   *gtime.Time //

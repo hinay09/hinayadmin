@@ -13,6 +13,7 @@ import (
 type SysLoginLog struct {
 	g.Meta    `orm:"table:sys_login_log, do:true"`
 	Id        any         // ID
+	TenantId  any         // 租户ID(记录归属, 平台可查全量)
 	UserId    any         // 用户ID(登录用户不存在时为0)
 	Username  any         // 登录账号
 	Status    any         // 结果:1=成功,0=失败

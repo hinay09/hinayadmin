@@ -21,7 +21,9 @@ import (
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/guid"
 
-	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/consts"
+	"hinay.cn/admin/internal/logic/configx"
+	"hinay.cn/admin/utility/contextx"
 )
 
 // 存储类型标识 (sys_config: file.storage.type)。
@@ -75,8 +77,16 @@ func IsInlineExt(ext string) bool {
 
 // NewKey 生成对象相对路径: {yyyymmdd}/{guid}{ext}, 布局与历史本地存储一致,
 // 便于本地模式存量数据与对象存储互认。
-func NewKey(ext string) string {
-	return fmt.Sprintf("%s/%s%s", gtime.Now().Format("Ymd"), guid.S(), ext)
+// NewKey 生成新对象存储 key: {Ymd}/{guid}{ext}。
+// 多租户 (docs/multi-tenant.md §6-file): 非平台租户加 `tenant/{tid}/` 前缀,
+// S3 桶内按租户隔离命名空间; 平台租户(1)保持无前缀, 旧 key 无前缀视为平台租户
+// (ForURL/Local 兼容存量数据, 零迁移)。
+func NewKey(ctx context.Context, ext string) string {
+	prefix := ""
+	if tid := contextx.TenantId(ctx); tid > 0 && tid != consts.TenantPlatformId {
+		prefix = fmt.Sprintf("tenant/%d/", tid)
+	}
+	return fmt.Sprintf("%s%s/%s%s", prefix, gtime.Now().Format("Ymd"), guid.S(), ext)
 }
 
 // Config file.storage.* 配置快照。
@@ -92,18 +102,13 @@ type Config struct {
 }
 
 // loadConfig 一次读取全部 file.storage.* 配置, 未配置项回落默认值。
+// file.storage.* 为基础设施配置仅平台级 (docs/multi-tenant.md D5), 经 configx
+// 以平台视角批量读取 —— 租户上下文直查会被注入器限定在租户行内导致配置"丢失"。
 func loadConfig(ctx context.Context) (*Config, error) {
-	rows, err := dao.SysConfig.Ctx(ctx).
-		Where("config_key LIKE ?", cfgPrefix+"%").
-		Where("status", 1).
-		Where("deleted_at IS NULL").
-		All()
-	if err != nil {
-		return nil, err
-	}
+	rows := configx.PlatformPrefix(ctx, cfgPrefix)
 	m := g.MapStrStr{}
-	for _, row := range rows {
-		m[row["config_key"].String()] = strings.TrimSpace(row["config_value"].String())
+	for k, v := range rows {
+		m[k] = strings.TrimSpace(v)
 	}
 
 	// 默认: 本地存储; 预签名有效期 60 分钟; 路径风格 (自建 MinIO 为主场景)。

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/logic/configx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -53,17 +53,8 @@ func loadAiConfig(ctx context.Context) (*aiConfig, error) {
 
 // cfgOf 按 key 取配置值, 空/缺失回落默认值。
 func cfgOf(ctx context.Context, key, def string) string {
-	v, err := dao.SysConfig.Ctx(ctx).
-		Where("config_key", key).Where("deleted_at IS NULL").
-		Value("config_value")
-	if err != nil || v == nil {
-		return def
-	}
-	s := v.String()
-	if strings.TrimSpace(s) == "" {
-		return def
-	}
-	return s
+	// ai.* 为平台级配置 (docs/multi-tenant.md D6), 经 configx 平台视角读取
+	return configx.PlatformValue(ctx, key, def)
 }
 
 // maskKey apiKey 脱敏显示。

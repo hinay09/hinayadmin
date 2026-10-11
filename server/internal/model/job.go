@@ -15,6 +15,7 @@ type JobHandler func(ctx context.Context, params string) (string, error)
 // SysJob 数据库实体 (sys_job)。
 type SysJob struct {
 	Id        uint64      `json:"id"        orm:"id"`
+	TenantId  uint64      `json:"tenantId"  orm:"tenant_id"`
 	Name      string      `json:"name"      orm:"name"`
 	Handler   string      `json:"handler"   orm:"handler"`
 	CronExpr  string      `json:"cronExpr"  orm:"cron_expr"`
@@ -29,7 +30,9 @@ type SysJob struct {
 
 // JobItem 任务列表/详情 VO。
 type JobItem struct {
-	Id        uint64      `json:"id"`
+	Id          uint64      `json:"id"`
+	TenantId    uint64      `json:"tenantId"   dc:"所属租户ID(多租户)"`
+	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	Name      string      `json:"name"`
 	Handler   string      `json:"handler"`
 	CronExpr  string      `json:"cronExpr"`
@@ -42,7 +45,9 @@ type JobItem struct {
 
 // JobLogItem 任务执行日志 VO。
 type JobLogItem struct {
-	Id         uint64      `json:"id"`
+	Id          uint64      `json:"id"`
+	TenantId    uint64      `json:"tenantId"`
+	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	JobId      uint64      `json:"jobId"`
 	JobName    string      `json:"jobName"`
 	Handler    string      `json:"handler"`

@@ -11,6 +11,11 @@ definePageMeta({ title: '角色管理' })
 defineOptions({ name: 'system-roles' })
 
 const roleApi = useRoleApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
 const menuApi = useMenuApi()
 const apiResourceApi = useApiResourceApi()
 const orgApi = useOrgApi()
@@ -310,6 +315,8 @@ onMounted(loadList)
       <el-table v-loading="loading" :data="list" border stripe style="margin-top:8px">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="名称" />
+        <!-- 所属租户 (平台超管+多租户开启时的混排视角: 同名 code 角色靠此列区分 —— §8.6) -->
+        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
         <el-table-column prop="code" label="编码" />
         <el-table-column prop="sort" label="排序" width="80" />
         <el-table-column label="状态" width="80">

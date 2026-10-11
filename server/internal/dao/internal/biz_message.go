@@ -22,6 +22,7 @@ type BizMessageDao struct {
 // BizMessageColumns defines and stores column names for the table biz_message.
 type BizMessageColumns struct {
 	Id          string //
+	TenantId    string // 租户ID(ORM按上下文注入)
 	Type        string // 消息类型:1=系统通知,2=私信
 	Title       string // 标题
 	Content     string // 内容
@@ -40,6 +41,7 @@ type BizMessageColumns struct {
 // bizMessageColumns holds the columns for the table biz_message.
 var bizMessageColumns = BizMessageColumns{
 	Id:          "id",
+	TenantId:    "tenant_id",
 	Type:        "type",
 	Title:       "title",
 	Content:     "content",

@@ -11,6 +11,7 @@ import (
 // SysAuditLog is the golang structure for table sys_audit_log.
 type SysAuditLog struct {
 	Id         uint64      `json:"id"         orm:"id"          description:"ID"`                                          // ID
+	TenantId   uint64      `json:"tenantId"   orm:"tenant_id"   description:"租户ID(记录归属, 平台可查全量)"`                          // 租户ID(记录归属, 平台可查全量)
 	UserId     uint64      `json:"userId"     orm:"user_id"     description:"用户ID"`                                        // 用户ID
 	Username   string      `json:"username"   orm:"username"    description:"用户名"`                                         // 用户名
 	Action     string      `json:"action"     orm:"action"      description:"操作类型(create/update/delete/upload/login/...)"` // 操作类型(create/update/delete/upload/login/...)

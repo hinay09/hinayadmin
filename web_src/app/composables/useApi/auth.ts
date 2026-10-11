@@ -23,15 +23,21 @@ export function useAuthApi() {
       r.get<{ captchaEnabled: boolean; captchaId: string; image: string }>(
         '/auth/captcha', undefined, { silent: true },
       ),
-    /** 登录 (账号支持用户名或手机号; 密码须用 publicKey 返回的公钥加密后提交) */
-    login: (account: string, password: string, keyId: string, captchaId?: string, captchaCode?: string) =>
-      r.post<LoginResult>('/auth/login', { username: account, password, keyId, captchaId, captchaCode }),
-    /** 查询注册开关 (公开接口, 登录页据此决定是否展示注册入口; silent 失败不弹提示) */
+    /** 登录 (账号支持用户名或手机号; 密码须用 publicKey 返回的公钥加密后提交;
+     * tenantCode 多租户开启时的租户识别, 缺省走 X-Tenant-Code 头/平台租户) */
+    login: (account: string, password: string, keyId: string, captchaId?: string, captchaCode?: string, tenantCode?: string) =>
+      r.post<LoginResult>('/auth/login', { username: account, password, keyId, captchaId, captchaCode, tenantCode }),
+    /** 查询注册开关 (公开接口; multiTenant 随此口下发供登录/注册页渲染租户码输入) */
     registerStatus: () =>
-      r.get<{ allowRegister: boolean }>('/auth/register/status', undefined, { silent: true }),
+      r.get<{ allowRegister: boolean, multiTenant: boolean }>('/auth/register/status', undefined, { silent: true }),
     /** 用户注册 (密码须用 publicKey 返回的公钥加密后提交, 注册成功后跳登录页) */
-    register: (username: string, password: string, keyId: string, nickname?: string, captchaId?: string, captchaCode?: string) =>
-      r.post<void>('/auth/register', { username, password, keyId, nickname, captchaId, captchaCode }),
+    register: (username: string, password: string, keyId: string, nickname?: string, captchaId?: string, captchaCode?: string, tenantCode?: string) =>
+      r.post<void>('/auth/register', { username, password, keyId, nickname, captchaId, captchaCode, tenantCode }),
+    /** 公开租户信息 (仅显示名, 按 IP 限流防枚举; 登录页租户名提示条) */
+    tenantInfo: (code: string) =>
+      r.get<{ multiTenant: boolean, name: string, found: boolean, enabled: boolean }>(
+        '/auth/tenant/info', { code }, { silent: true },
+      ),
     /** 两步验证登录第二步: 票据 + 动态码换 token */
     loginTotp: (ticket: string, code: string) =>
       r.post<{ token: string; expireAt: number; userInfo: LoginUser }>(

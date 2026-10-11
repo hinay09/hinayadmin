@@ -47,6 +47,9 @@ type LoginReq struct {
 	KeyId       string `v:"required#缺少加密密钥标识" json:"keyId" dc:"公钥标识"`
 	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
 	CaptchaCode string `json:"captchaCode" dc:"验证码答案(开启 sys.captcha_enable 时必填)"`
+	// TenantCode 租户标识 (多租户开启时的登录入口识别, docs/multi-tenant.md §4.3):
+	// 解析优先级 请求体 > X-Tenant-Code 头 > 默认平台租户; 关闭态忽略。
+	TenantCode string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
 }
 
 // LoginRes 登录响应。
@@ -74,6 +77,8 @@ type RegisterReq struct {
 	Nickname    string `v:"length:0,32#昵称最长 32 个字符" json:"nickname" dc:"昵称, 空则默认取账号"`
 	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
 	CaptchaCode string `json:"captchaCode" dc:"验证码答案(开启 sys.captcha_enable 时必填)"`
+	// TenantCode 注册目标租户 (受 sys.allow_register 的租户覆盖值控制, docs/multi-tenant.md §4.3)。
+	TenantCode string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
 }
 
 // RegisterRes 注册响应。
@@ -87,6 +92,24 @@ type RegisterStatusReq struct {
 // RegisterStatusRes 注册开关响应。
 type RegisterStatusRes struct {
 	AllowRegister bool `json:"allowRegister" dc:"是否开放注册"`
+	// MultiTenant 多租户开关状态 (config.yaml multiTenant.enable, 经此公开口下发,
+	// 登录/注册页据此决定是否渲染租户码输入框 —— docs/multi-tenant.md §9 前端感知)。
+	MultiTenant bool `json:"multiTenant" dc:"多租户是否启用"`
+}
+
+// TenantInfoReq 公开租户信息 (登录页租户名提示条, docs/multi-tenant.md §4.3)。
+// 仅返回租户显示名与启用状态, 不泄露联系人/套餐/规模; 按 IP 限流防租户码枚举。
+type TenantInfoReq struct {
+	g.Meta `path:"/auth/tenant/info" tags:"Auth" method:"get" summary:"查询租户信息(公开,仅显示名)"`
+	Code   string `json:"code" in:"query" dc:"租户标识(空=仅返回开关状态)"`
+}
+
+// TenantInfoRes 租户信息响应。
+type TenantInfoRes struct {
+	MultiTenant bool   `json:"multiTenant" dc:"多租户是否启用"`
+	Name        string `json:"name"        dc:"租户显示名(标识无效时为空)"`
+	Found       bool   `json:"found"       dc:"租户标识是否存在"`
+	Enabled     bool   `json:"enabled"     dc:"租户是否启用(存在且启用才可登录)"`
 }
 
 // TotpLoginReq 两步验证登录第二步: 携带第一步返回的票据与 TOTP 动态码换取 token。

@@ -73,7 +73,10 @@ async function connectSse() {
   sseAbort = new AbortController()
   try {
     const res = await fetch(`${config.public.apiBase}/message/events`, {
-      headers: { Authorization: `Bearer ${tokenUsed}` },
+      headers: {
+        Authorization: `Bearer ${tokenUsed}`,
+        ...(userStore.actTenantId > 0 ? { 'X-Tenant-Id': String(userStore.actTenantId) } : {}),
+      },
       signal: sseAbort.signal,
     })
     // 429=连接数达上限(服务端每用户/全局配额): 不重连, 降级为轮询兜底

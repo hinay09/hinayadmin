@@ -19,20 +19,21 @@ type SysUserPostDao struct {
 	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
-// SysUserPostColumns defines and stores column names for table sys_user_post.
+// SysUserPostColumns defines and stores column names for the table sys_user_post.
 type SysUserPostColumns struct {
 	Id        string // 主键ID
+	TenantId  string // 租户ID(ORM按上下文注入)
 	UserId    string // 用户ID
 	PostId    string // 岗位ID
 	OrgId     string // 组织ID(0=不限定组织)
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
-
 }
 
 // sysUserPostColumns holds the columns for the table sys_user_post.
 var sysUserPostColumns = SysUserPostColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	UserId:    "user_id",
 	PostId:    "post_id",
 	OrgId:     "org_id",
@@ -55,23 +56,22 @@ func (dao *SysUserPostDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO object.
+// Table returns the table name of the current DAO.
 func (dao *SysUserPostDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO object.
+// Columns returns all column names of the current DAO.
 func (dao *SysUserPostDao) Columns() SysUserPostColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO object.
+// Group returns the database configuration group name of the current DAO.
 func (dao *SysUserPostDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO object.
-// It automatically sets the context for the current operation.
+// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *SysUserPostDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -81,6 +81,11 @@ func (dao *SysUserPostDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *SysUserPostDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

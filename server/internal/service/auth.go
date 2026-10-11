@@ -51,6 +51,8 @@ type (
 		// Register 自助注册: 开关校验 -> RSA 解密 -> 密码策略 -> 建用户 -> 绑定内置普通角色。
 		// 注册的密码由用户本人设定, 不置强制改密标志 (区别于管理员代建账号)。
 		Register(ctx context.Context, req *v1.RegisterReq) (res *v1.RegisterRes, err error)
+		// TenantInfo 公开租户信息 (登录页租户名提示条, 仅显示名, 按 IP 限流防枚举)。
+		TenantInfo(ctx context.Context, req *v1.TenantInfoReq) (res *v1.TenantInfoRes, err error)
 	}
 )
 

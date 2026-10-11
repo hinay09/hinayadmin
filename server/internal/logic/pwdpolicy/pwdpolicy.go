@@ -26,7 +26,10 @@ import (
 
 	"github.com/gogf/gf/v2/os/gtime"
 
-	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/consts"
+	"hinay.cn/admin/internal/logic/configx"
+	"hinay.cn/admin/internal/model"
+	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -65,52 +68,51 @@ func defaults() Policy {
 
 // 策略 30s 内存缓存: Auth 中间件每个业务请求都会做改密判定,
 // 避免逐请求读配置表 (配置修改最迟 30s 生效)。
+// 缓存键带租户维度 (docs/multi-tenant.md §9 缓存规约: sys.password.* 为白名单
+// 覆盖键, 各租户策略独立)。
 var (
 	policyMu    sync.RWMutex
-	policyCache Policy
-	policyAt    time.Time
+	policyCache = map[uint64]Policy{}
+	policyAt    = map[uint64]time.Time{}
 )
 
 // policyCacheTTL 策略缓存时长。
 const policyCacheTTL = 30 * time.Second
 
-// Load 读取当前启用的密码策略 (30s 缓存; 查询失败/缺项回退默认值, 不阻断业务)。
+// tenantIdOf 当前数据租户 (无租户上下文=平台)。
+func tenantIdOf(ctx context.Context) uint64 {
+	if t := contextx.Tenant(ctx); t != nil && t.Id > 0 {
+		return t.Id
+	}
+	return consts.TenantPlatformId
+}
+
+// Load 读取当前租户生效的密码策略 (30s 缓存; 查询失败/缺项回退默认值, 不阻断业务)。
 func Load(ctx context.Context) Policy {
+	tid := tenantIdOf(ctx)
 	policyMu.RLock()
-	if !policyAt.IsZero() && time.Since(policyAt) < policyCacheTTL {
-		p := policyCache
+	if at, ok := policyAt[tid]; ok && time.Since(at) < policyCacheTTL {
+		p := policyCache[tid]
 		policyMu.RUnlock()
 		return p
 	}
 	policyMu.RUnlock()
 
-	p := loadFromDB(ctx)
+	p := loadFromDB(ctx, tid)
 
 	policyMu.Lock()
-	policyCache, policyAt = p, time.Now()
+	policyCache[tid], policyAt[tid] = p, time.Now()
 	policyMu.Unlock()
 	return p
 }
 
-// loadFromDB 实际查询配置表。
-func loadFromDB(ctx context.Context) Policy {
+// loadFromDB 实际查询配置表 (覆盖读序: 租户行 > 平台行, 经 configx)。
+func loadFromDB(ctx context.Context, tid uint64) Policy {
 	p := defaults()
-	rows, err := dao.SysConfig.Ctx(ctx).
-		Fields("config_key, config_value").
-		WhereIn("config_key", allKeys).
-		Where("status", 1).
-		Where("deleted_at IS NULL").
-		All()
-	if err != nil {
-		return p
-	}
+	lite := &model.TenantLite{Id: tid}
 	get := func(key string) (string, bool) {
-		for _, r := range rows {
-			if r["config_key"].String() == key {
-				return r["config_value"].String(), true
-			}
-		}
-		return "", false
+		v := configx.Value(ctx, lite, key, "")
+		return v, v != ""
 	}
 	if v, ok := get(KeyMinLength); ok && v != "" {
 		if n := parsePositive(v); n > 0 {

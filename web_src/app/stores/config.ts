@@ -24,6 +24,8 @@ export const CONFIG_KEYS = {
   siteLogo: 'sys.logo',
   copyright: 'sys.copyright',
   allowRegister: 'sys.allow_register',
+  /** 多租户开关 (合成键, 后端 configs/all 下发 —— 登录页/切换器/租户管理入口据此渲染) */
+  multiTenant: 'sys.multi_tenant',
 } as const
 
 const CACHE_KEY = 'hinay_app_config'
@@ -51,6 +53,8 @@ export const useConfigStore = defineStore('appConfig', {
     copyright: s => s.configs[CONFIG_KEYS.copyright]?.value?.trim() || '',
     /** 是否开放注册 */
     allowRegister: s => parseBool(s.configs[CONFIG_KEYS.allowRegister]?.value),
+    /** 多租户是否启用 (关闭态: 登录页租户码/切换器/租户管理页全部不渲染) */
+    multiTenant: s => parseBool(s.configs[CONFIG_KEYS.multiTenant]?.value),
   },
 
   actions: {

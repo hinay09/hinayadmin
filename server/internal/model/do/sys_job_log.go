@@ -13,6 +13,7 @@ import (
 type SysJobLog struct {
 	g.Meta     `orm:"table:sys_job_log, do:true"`
 	Id         any         // 日志ID
+	TenantId   any         // 租户ID(记录归属)
 	JobId      any         // 任务ID
 	JobName    any         // 任务名称(冗余, 删除任务后日志仍可读)
 	Handler    any         // 处理器名称

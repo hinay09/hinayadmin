@@ -23,10 +23,10 @@ type CasbinRuleDao struct {
 type CasbinRuleColumns struct {
 	Id    string // 主键
 	Ptype string // 策略类型: p / g / g2 ...
-	V0    string // p:sub(role) | g:user
-	V1    string // p:obj(path) | g:role
-	V2    string // p:act(method) | g:domain
-	V3    string // 预留字段
+	V0    string // p:sub(角色ID) | g:用户ID
+	V1    string // p:obj(path/menu:菜单ID) | g:角色ID
+	V2    string // p:act(method) | g:domain(租户ID)
+	V3    string // p:domain(租户ID)
 	V4    string // 预留字段
 	V5    string // 预留字段
 }

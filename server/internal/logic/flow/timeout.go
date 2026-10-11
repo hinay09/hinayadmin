@@ -42,36 +42,41 @@ func init() {
 const timeoutScanBatch = 200
 
 // scanTimeoutTasks 超时扫描入口 (job 处理器): 找出逾期待办并按节点策略处理。
+// 多租户 (§6-job): 任务租户上下文注入使 wf_task 查询天然限界; 平台级任务
+// (tenant_id=1) 逐租户巡检, 保证全部租户的逾期单据都被处理。
 func scanTimeoutTasks(ctx context.Context, params string) (string, error) {
-	var tasks []*entity.WfTask
-	if err := dao.WfTask.Ctx(ctx).
-		Where("node_type", taskNodeTypeApprove).
-		Where("status", taskStatusPending).
-		Where("due_time IS NOT NULL AND due_time <= ?", gtime.Now()).
-		Order("due_time ASC").
-		Limit(timeoutScanBatch).
-		Scan(&tasks); err != nil {
+	var reminded, transferred, approved, skipped, total int
+	err := job.SweepTenants(ctx, func(ctx context.Context, tid uint64) error {
+		var tasks []*entity.WfTask
+		if err := dao.WfTask.Ctx(ctx).
+			Where("node_type", taskNodeTypeApprove).
+			Where("status", taskStatusPending).
+			Where("due_time IS NOT NULL AND due_time <= ?", gtime.Now()).
+			Order("due_time ASC").
+			Limit(timeoutScanBatch).
+			Scan(&tasks); err != nil {
+			return err
+		}
+		total += len(tasks)
+		for _, t := range tasks {
+			switch handleTimeout(ctx, t) {
+			case "remind":
+				reminded++
+			case "transfer":
+				transferred++
+			case "approve":
+				approved++
+			default:
+				skipped++
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return "", err
 	}
-	if len(tasks) == 0 {
-		return "无逾期待办", nil
-	}
-
-	var reminded, transferred, approved, skipped int
-	for _, t := range tasks {
-		switch handleTimeout(ctx, t) {
-		case "remind":
-			reminded++
-		case "transfer":
-			transferred++
-		case "approve":
-			approved++
-		default:
-			skipped++
-		}
-	}
 	summary := fmt.Sprintf("逾期待办 %d: 提醒 %d, 自动转办 %d, 自动通过 %d, 跳过 %d",
-		len(tasks), reminded, transferred, approved, skipped)
+		total, reminded, transferred, approved, skipped)
 	g.Log().Infof(ctx, "flow.timeoutScan: %s", summary)
 	return summary, nil
 }
@@ -258,7 +263,7 @@ func timeoutApprove(ctx context.Context, inst *entity.WfInstance, t *entity.WfTa
 	}
 	notify.flush(ctx)
 	if inst.Status != instStatusRunning {
-		fireEvent(inst.FlowKey, inst.Status, inst.Id, inst.BizId)
+		fireEvent(ctx, inst.FlowKey, inst.Status, inst.Id, inst.BizId)
 	}
 	return nil
 }

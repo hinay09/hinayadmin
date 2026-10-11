@@ -13,7 +13,7 @@ import (
 
 	v1 "hinay.cn/admin/api/auth/v1"
 	"hinay.cn/admin/internal/consts"
-	"hinay.cn/admin/internal/dao"
+	"hinay.cn/admin/internal/logic/configx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -24,17 +24,9 @@ const KeyCaptchaEnable = "sys.captcha_enable"
 // 查询失败/配置缺失按"开启"处理: 公开登录入口的挑战机制默认应该是有的,
 // 配置系统故障不应静默降级为无挑战 (fail-close)。
 func captchaEnabled(ctx context.Context) bool {
-	v, err := dao.SysConfig.Ctx(ctx).
-		Fields("config_value").
-		Where("config_key", KeyCaptchaEnable).
-		Where("status", consts.StatusEnabled).
-		Where("deleted_at IS NULL").
-		Value()
-	if err != nil || v == nil {
-		return true
-	}
-	s := v.String()
-	return s != "false" && s != "0"
+	// 平台级配置 (非白名单键, 经 configx 以平台视角读取 —— 多租户下租户 ctx 直查
+	// 会被注入器限定在租户行内导致配置"丢失")
+	return configx.PlatformBool(ctx, KeyCaptchaEnable, true)
 }
 
 // redisCaptchaStore base64Captcha.Store 的 Redis 实现 (替代默认内存 Store:

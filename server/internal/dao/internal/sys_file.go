@@ -22,6 +22,7 @@ type SysFileDao struct {
 // SysFileColumns defines and stores column names for the table sys_file.
 type SysFileColumns struct {
 	Id           string // ID
+	TenantId     string // 租户ID(ORM按上下文注入)
 	Name         string // 存储文件名
 	OriginalName string // 原始文件名
 	Path         string // 存储路径
@@ -39,6 +40,7 @@ type SysFileColumns struct {
 // sysFileColumns holds the columns for the table sys_file.
 var sysFileColumns = SysFileColumns{
 	Id:           "id",
+	TenantId:     "tenant_id",
 	Name:         "name",
 	OriginalName: "original_name",
 	Path:         "path",

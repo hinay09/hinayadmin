@@ -40,7 +40,7 @@ func StartForBiz(ctx context.Context, flowKey, title string, formData map[string
 		return 0, err
 	}
 	notify.flush(ctx)
-	fireEvent(def.FlowKey, inst.Status, inst.Id, inst.BizId)
+	fireEvent(ctx, def.FlowKey, inst.Status, inst.Id, inst.BizId)
 	return inst.Id, nil
 }
 

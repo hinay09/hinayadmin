@@ -11,6 +11,7 @@ import (
 // SysOrg is the golang structure for table sys_org.
 type SysOrg struct {
 	Id        uint64      `json:"id"        orm:"id"         description:"组织ID"`             // 组织ID
+	TenantId  uint64      `json:"tenantId"  orm:"tenant_id"  description:"租户ID(ORM按上下文注入)"`  // 租户ID(ORM按上下文注入)
 	ParentId  uint64      `json:"parentId"  orm:"parent_id"  description:"父级ID, 0=顶级"`       // 父级ID, 0=顶级
 	Name      string      `json:"name"      orm:"name"       description:"组织名称"`             // 组织名称
 	Leader    string      `json:"leader"    orm:"leader"     description:"负责人"`              // 负责人

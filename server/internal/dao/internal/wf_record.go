@@ -19,14 +19,15 @@ type WfRecordDao struct {
 	handlers []gdb.ModelHandler // handlers for customized model modification.
 }
 
-// WfRecordColumns defines and stores column names for table wf_record.
+// WfRecordColumns defines and stores column names for the table wf_record.
 type WfRecordColumns struct {
 	Id           string // 主键ID
+	TenantId     string // 租户ID(ORM按上下文注入)
 	InstanceId   string // 实例ID
 	TaskId       string // 关联任务ID(无则为0)
 	NodeId       string // 节点ID
 	NodeName     string // 节点名称
-	Action       string // 动作:submit/approve/reject/cancel/cc/finish
+	Action       string // 动作:submit/resubmit/approve/reject/back/cancel/withdraw/cc/finish/transfer/delegate/delegateResolve/terminate/urge/append/reduce/timeoutRemind/timeoutTransfer/timeoutApprove
 	OperatorId   string // 操作人ID(0=系统)
 	OperatorName string // 操作人昵称(0=系统)
 	Comment      string // 备注/意见
@@ -37,6 +38,7 @@ type WfRecordColumns struct {
 // wfRecordColumns holds the columns for the table wf_record.
 var wfRecordColumns = WfRecordColumns{
 	Id:           "id",
+	TenantId:     "tenant_id",
 	InstanceId:   "instance_id",
 	TaskId:       "task_id",
 	NodeId:       "node_id",
@@ -64,23 +66,22 @@ func (dao *WfRecordDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO object.
+// Table returns the table name of the current DAO.
 func (dao *WfRecordDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO object.
+// Columns returns all column names of the current DAO.
 func (dao *WfRecordDao) Columns() WfRecordColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO object.
+// Group returns the database configuration group name of the current DAO.
 func (dao *WfRecordDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO object.
-// It automatically sets the context for the current operation.
+// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
 func (dao *WfRecordDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -90,6 +91,11 @@ func (dao *WfRecordDao) Ctx(ctx context.Context) *gdb.Model {
 }
 
 // Transaction wraps the transaction logic using function f.
+// It rolls back the transaction and returns the error if function f returns a non-nil error.
+// It commits the transaction and returns nil if function f returns nil.
+//
+// Note: Do not commit or roll back the transaction in function f,
+// as it is automatically handled by this function.
 func (dao *WfRecordDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

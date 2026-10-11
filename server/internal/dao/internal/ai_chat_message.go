@@ -21,24 +21,32 @@ type AiChatMessageDao struct {
 
 // AiChatMessageColumns defines and stores column names for the table ai_chat_message.
 type AiChatMessageColumns struct {
-	Id             string // 主键ID
-	ConversationId string // 会话ID(ai_conversation.id)
-	Role           string // 角色:user/assistant
-	Content        string // 消息正文(思考过程不落库)
-	CreatedAt      string // 创建时间
-	UpdatedAt      string // 更新时间
-	DeletedAt      string // 未使用(保留列对齐代码生成器约定)
+	Id               string // 主键ID
+	TenantId         string // 租户ID(跟随会话, ORM注入)
+	ConversationId   string // 会话ID(ai_conversation.id)
+	Role             string // 角色:user/assistant/tool(tool=工具调用步骤,内容为步骤JSON)
+	Content          string // 消息正文(思考过程不落库)
+	PromptTokens     string // 输入token用量(仅assistant行,本轮累计)
+	CompletionTokens string // 输出token用量(仅assistant行,本轮累计)
+	TotalTokens      string // 总token用量(仅assistant行;网关未回报为0)
+	CreatedAt        string // 创建时间
+	UpdatedAt        string // 更新时间
+	DeletedAt        string // 未使用(保留列对齐代码生成器约定)
 }
 
 // aiChatMessageColumns holds the columns for the table ai_chat_message.
 var aiChatMessageColumns = AiChatMessageColumns{
-	Id:             "id",
-	ConversationId: "conversation_id",
-	Role:           "role",
-	Content:        "content",
-	CreatedAt:      "created_at",
-	UpdatedAt:      "updated_at",
-	DeletedAt:      "deleted_at",
+	Id:               "id",
+	TenantId:         "tenant_id",
+	ConversationId:   "conversation_id",
+	Role:             "role",
+	Content:          "content",
+	PromptTokens:     "prompt_tokens",
+	CompletionTokens: "completion_tokens",
+	TotalTokens:      "total_tokens",
+	CreatedAt:        "created_at",
+	UpdatedAt:        "updated_at",
+	DeletedAt:        "deleted_at",
 }
 
 // NewAiChatMessageDao creates and returns a new DAO object for table data access.

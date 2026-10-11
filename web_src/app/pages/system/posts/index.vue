@@ -12,6 +12,12 @@ definePageMeta({ title: '岗位管理' })
 defineOptions({ name: 'system-posts' })
 
 const api = usePostApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
+
 const userApi = useUserApi()
 const orgApi = useOrgApi()
 
@@ -193,6 +199,7 @@ onMounted(load)
       <el-table v-loading="loading" :data="list" border stripe style="margin-top:8px">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="postCode" label="岗位编码" width="160" />
+        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
         <el-table-column prop="postName" label="岗位名称" width="160" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">

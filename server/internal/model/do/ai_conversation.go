@@ -13,7 +13,8 @@ import (
 type AiConversation struct {
 	g.Meta       `orm:"table:ai_conversation, do:true"`
 	Id           any         // 主键ID
-	SessionId    any         // 会话ID(前端生成并保管)
+	TenantId     any         // 租户ID(ORM按上下文注入)
+	SessionId    any         // 会话ID(前端生成并保管, 全局唯一)
 	UserId       any         // 所属用户ID
 	Title        any         // 会话标题(首条用户消息裁剪)
 	MessageCount any         // 累计消息条数(user+assistant)

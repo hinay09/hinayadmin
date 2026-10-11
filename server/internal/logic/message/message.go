@@ -226,9 +226,14 @@ func (s *sMessage) PrivateCreate(ctx context.Context, in *v1.MessagePrivateCreat
 }
 
 // Delete 管理员软删除消息 (同时清理 target/read 关系)。
+// 审计整改 (docs/multi-tenant.md §3.3): 原实现为 tx.Exec 手写 UPDATE —— 多租户
+// 下该写法无安全注入点会被 DoExec fail-close 拒绝, 统一改走 dao 结构化软删
+// (deleted_at 走 Data 字段, 注入器在 condition 追加租户限界)。
 func (s *sMessage) Delete(ctx context.Context, in *v1.MessageDeleteReq) (res *v1.MessageDeleteRes, err error) {
 	err = dao.BizMessage.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, ie := tx.Exec("UPDATE biz_message SET deleted_at=NOW() WHERE id=?", in.Id); ie != nil {
+		if _, ie := dao.BizMessage.Ctx(ctx).
+			Where("id", in.Id).
+			Data(g.Map{"deleted_at": gtime.Now()}).Update(); ie != nil {
 			return ie
 		}
 		if _, ie := tx.Model("biz_message_target").Ctx(ctx).Where("message_id", in.Id).Delete(); ie != nil {

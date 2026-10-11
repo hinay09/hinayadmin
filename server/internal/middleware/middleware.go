@@ -6,13 +6,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gogf/gf/v2/errors/gcode"
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
+	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/guid"
 
 	"hinay.cn/admin/internal/consts"
@@ -24,6 +28,7 @@ import (
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/demox"
 	"hinay.cn/admin/utility/jwtx"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -99,7 +104,15 @@ func RequestId(r *ghttp.Request) {
 	)
 }
 
-// Auth 解析 JWT, 注入 LoginUser 到 ctx; 校验 Redis 黑名单。
+// Auth 解析 JWT, 注入 LoginUser 与租户上下文到 ctx; 校验 Redis 黑名单、
+// 账号状态、所属租户状态 (禁用/到期, docs/multi-tenant.md §2.1)。
+//
+// 多租户组装 (multiTenant.enable 开启时):
+//   - claims.tid 为所属租户 (老 token 无该 claim 回填平台租户 1);
+//   - 平台超管 (role id=1, 仅平台租户可授予) 默认不注入 (跨租户可见);
+//   - 平台超管携带 X-Tenant-Id 头 → 切换注入目标租户 (代运维);
+//   - 非平台超管携带 X-Tenant-Id → 忽略并写告警审计 (§12);
+//   - 租户上下文写 CtxTenantKey (与 CtxUserKey 同层双写), tenantorm 据此注入。
 //
 // 并发安全说明:
 //   - 每个 HTTP 请求都拥有独立的 *ghttp.Request 与 ctx, 此处创建的 user 是请求作用域内的局部变量,
@@ -119,7 +132,7 @@ func Auth(r *ghttp.Request) {
 	}
 	tokenStr := strings.TrimPrefix(header, consts.AuthScheme)
 
-	// 超长 token 直接拒绝, 规避解析放大攻击(CVE-2025-30204 类)与异常内存占用
+	// 超长 token 直接拒绝, 规避解析放大攻击(CVE-2025-30204类)与异常内存占用
 	if len(tokenStr) > 8192 {
 		writeUnauthorized(r)
 		return
@@ -157,26 +170,89 @@ func Auth(r *ghttp.Request) {
 
 	// 后端兜底 (纵深防御, 不依赖前端跳转):
 	//   1) 账号已禁用/删除 -> token 立即失效 (登录/续签之外的首道实时校验);
-	//   2) 强制改密 (管理员创建/重置/导入, 或密码已过期) -> 仅放行会话类白名单接口,
+	//   2) 租户已禁用/到期 -> 403 拦截 (含会话类接口, "已登录会话全部拦截");
+	//   3) 强制改密 (管理员创建/重置/导入, 或密码已过期) -> 仅放行会话类白名单接口,
 	//      其余业务 API 一律拒绝 (HTTP 428/业务码 42800), 直至完成改密。
 	// 会话类白名单(authWhitelist)与本中间件同文件, 含改密/用户信息/登出等。
-	if _, public := publicPaths[r.URL.Path]; !public {
-		if _, session := authWhitelist[r.URL.Path]; !session {
-			block, code, nickname := userAccessState(ctx, claims.UserId)
-			if block {
-				if code == xerror.CodeUnauthorized {
-					writeUnauthorized(r)
-				} else {
-					writeBlockedWithCode(r, code)
-				}
-				return
-			}
-			// 回填昵称: JWT 只携带 UserId/Username, 业务侧 (消息发送人/审批人
-			// 显示名等) 取 LoginUser.Nickname 时不再回退登录名;
-			// userAccessState 本就逐请求查 sys_user, 顺带取回零额外开销。
-			user.Nickname = nickname
-		}
+	_, isSessionPath := authWhitelist[r.URL.Path]
+	state, ok := userAccessState(newCtx, claims.UserId)
+	if !ok {
+		writeUnauthorized(r)
+		return
 	}
+	// 回填昵称: JWT 只携带 UserId/Username, 业务侧 (消息发送人/审批人
+	// 显示名等) 取 LoginUser.Nickname 时不再回退登录名;
+	// userAccessState 本就逐请求查 sys_user, 顺带取回零额外开销。
+	user.Nickname = state.nickname
+	if state.tenantBlocked {
+		writeBlockedWithCode(r, state.tenantCode)
+		return
+	}
+	if !isSessionPath && state.pwdBlocked {
+		writeBlockedWithCode(r, xerror.CodePwdMustChange)
+		return
+	}
+
+	// ---- 多租户上下文组装 (docs/multi-tenant.md §4.1) ----
+	var tenantCtx context.Context
+	if tenantx.Enabled(newCtx) {
+		tid := claims.TenantId
+		if tid == 0 {
+			tid = consts.TenantPlatformId // 老 token 兼容: 回填平台租户
+		}
+		user.TenantId = tid
+		user.TenantCode = state.tenantCodeStr
+		user.TenantName = state.tenantName
+
+		// 先以"平台视角"(不注入)计算归属域角色: 平台超管身份判定
+		homeCtx := contextx.WithTenant(newCtx, &model.TenantInfo{Id: tid, Code: state.tenantCodeStr, Inject: false})
+		roles, rerr := casbinx.GetUserRoles(homeCtx, claims.UserId)
+		isPlatform := rerr == nil && slices.Contains(roles, consts.RoleAdminId)
+		user.IsPlatformAdmin = isPlatform
+		if !isPlatform && rerr == nil && len(roles) > 0 {
+			user.IsTenantAdmin = hasTenantAdminRole(homeCtx, roles)
+		}
+
+		// 平台超管代运维: X-Tenant-Id 切换注入目标租户 (仅 platform:admin 可携带)
+		effective := &model.TenantInfo{Id: tid, Code: state.tenantCodeStr, Name: state.tenantName, Inject: !isPlatform}
+		if switchHeader := r.Header.Get(consts.HeaderTenantId); switchHeader != "" {
+			if !isPlatform {
+				// 非平台超管携带: 忽略并写告警审计 (§12)
+				auditTenantHeaderSpoof(newCtx, user, tid, switchHeader)
+				g.Log().Warningf(newCtx, "[tenant] non-platform user %d carried %s=%s, ignored", user.UserId, consts.HeaderTenantId, switchHeader)
+			} else if target, perr := strconv.ParseUint(switchHeader, 10, 64); perr != nil {
+				writeBlockedWithCode(r, xerror.CodeParamInvalid)
+				return
+			} else if target != tid {
+				if target == consts.TenantPlatformId {
+					effective = &model.TenantInfo{Id: consts.TenantPlatformId, Code: consts.TenantPlatformCode, Name: state.tenantName, Inject: false}
+					user.SwitchTenantInfo = nil
+				} else {
+					tref, terr := loadTenantForSwitch(newCtx, target)
+					if terr != nil {
+						writeBlockedWithCode(r, xerror.CodeNotFound)
+						return
+					}
+					effective = &model.TenantInfo{Id: tref.Id, Code: tref.Code, Name: tref.Name, Inject: true}
+					user.SwitchTenantInfo = tref
+				}
+			}
+		}
+		tenantCtx = contextx.WithTenant(newCtx, effective)
+		// 日志归因: glog ctxKeys 按 "ctxTenant" 输出当前数据面租户 ID
+		r.SetCtxVar(consts.CtxTenantName, effective.Id)
+	} else {
+		// 开关关闭: 单租户兼容 —— 平台视角 (TenantId(ctx)=1 但不注入)。
+		// 平台超管判定仍需计算 (Casbin 中间件旁路依赖; admin 不种 p 行, 靠判定短路)。
+		roles, rerr := casbinx.GetUserRoles(newCtx, claims.UserId)
+		if rerr == nil {
+			user.IsPlatformAdmin = slices.Contains(roles, consts.RoleAdminId)
+		}
+		tenantCtx = contextx.WithTenant(newCtx, &model.TenantInfo{
+			Id: consts.TenantPlatformId, Code: consts.TenantPlatformCode, Name: "平台租户", Inject: false,
+		})
+	}
+	r.SetCtx(tenantCtx)
 
 	// 在线会话心跳: 异步 + 节流 (logic/online), 尽力而为, 不影响请求
 	go service.Online().Touch(context.Background(), tokenStr)
@@ -184,30 +260,122 @@ func Auth(r *ghttp.Request) {
 	r.Middleware.Next()
 }
 
-// userAccessState 查询用户当前访问状态 (每个业务请求一次主键查询)。
-// 返回: block=是否拦截, code=拦截时使用的业务码, nickname=用户昵称原样带回
-// (昵称修改后无需重发 token 即时生效);
-// (CodeUnauthorized -> 401 踢回登录; CodePwdMustChange -> 428 引导改密)。
-func userAccessState(ctx context.Context, userId uint64) (block bool, code gcode.Code, nickname string) {
-	row, err := dao.SysUser.Ctx(ctx).
-		Fields("id, status, must_change_pwd, pwd_updated_at, deleted_at, nickname").
-		Where("id", userId).
+// accessState 每请求一次的用户+租户访问状态 (join sys_tenant, §2.1 校验并入
+// 现有 per-request 查询, 不新增 DB 往返)。
+type accessState struct {
+	nickname      string
+	pwdBlocked    bool
+	tenantBlocked bool
+	tenantCode    gcode.Code // 拦截业务码 (租户禁用/到期)
+	tenantCodeStr string     // 租户 code (展示冗余)
+	tenantName    string
+}
+
+// userAccessState 查询用户当前访问状态 (每个已登录请求一次主键查询)。
+// 第二返回值 false = 账号级拦截 (401)。
+func userAccessState(ctx context.Context, userId uint64) (accessState, bool) {
+	var st accessState
+	row, err := dao.SysUser.Ctx(contextx.WithoutTenant(ctx)).As("u").
+		LeftJoin("sys_tenant t", "t.id = u.tenant_id").
+		Fields("u.id, u.status, u.must_change_pwd, u.pwd_updated_at, u.deleted_at, u.nickname, u.tenant_id, t.code AS tcode, t.name AS tname, t.status AS tstatus, t.expire_at AS texpire, t.deleted_at AS tdeleted").
+		Where("u.id", userId).
 		One()
 	if err != nil {
 		// 查询失败 fail-close: 拒绝而非放行
-		return true, xerror.CodeUnauthorized, ""
+		return st, false
 	}
 	if row.IsEmpty() || !row["deleted_at"].IsNil() || row["status"].Int() != consts.StatusEnabled {
 		// 账号已删除/禁用: token 视为失效
-		return true, xerror.CodeUnauthorized, ""
+		return st, false
 	}
+	st.nickname = row["nickname"].String()
+	st.tenantCodeStr = row["tcode"].String()
+	st.tenantName = row["tname"].String()
+
+	// 租户状态校验 (多租户开启时; 平台租户行恒在且不受运营操作禁用)
+	if tenantx.Enabled(ctx) {
+		if row["tcode"].IsNil() || !row["tdeleted"].IsNil() {
+			// 租户行缺失 (升级脚本未执行/租户被物理清理): fail-close
+			st.tenantBlocked, st.tenantCode = true, xerror.CodeTenantDisabled
+			return st, true
+		}
+		if row["tstatus"].Int() != consts.StatusEnabled {
+			st.tenantBlocked, st.tenantCode = true, xerror.CodeTenantDisabled
+			return st, true
+		}
+		if !row["texpire"].IsNil() && !row["texpire"].GTime().IsZero() && row["texpire"].GTime().Before(gtime.Now()) {
+			st.tenantBlocked, st.tenantCode = true, xerror.CodeTenantExpired
+			return st, true
+		}
+	}
+
 	// 演示模式放行强制改密拦截: 改密接口已被 demox.Guard 禁止,
 	// 若仍按 428 锁定到改密页, 用户将被困在永远无法完成的改密流程 (前后端死锁)。
-	if !demox.Enabled(ctx) &&
-		(row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime())) {
-		return true, xerror.CodePwdMustChange, ""
+	st.pwdBlocked = !demox.Enabled(ctx) &&
+		(row["must_change_pwd"].Int() == 1 || pwdpolicy.Expired(ctx, row["pwd_updated_at"].GTime()))
+	return st, true
+}
+
+// hasTenantAdminRole 判定角色列表中是否含 code=tenant_admin 的角色 (租户管理员)。
+// 以平台视角查询 (角色 ID 已来自归属域 g 行, 跨域角色 ID 天然不可能出现)。
+func hasTenantAdminRole(ctx context.Context, roleIds []uint64) bool {
+	if len(roleIds) == 0 {
+		return false
 	}
-	return false, nil, row["nickname"].String()
+	n, err := dao.SysRole.Ctx(contextx.WithoutTenant(ctx)).
+		WhereIn("id", roleIds).
+		Where("code", consts.RoleTenantAdminCode).
+		Where("deleted_at IS NULL").
+		Count()
+	return err == nil && n > 0
+}
+
+// loadTenantForSwitch 平台超管切换目标租户时装载租户行 (平台视角查询, 不校验
+// 状态 —— 运维需要能进入已禁用租户排查)。
+func loadTenantForSwitch(ctx context.Context, tenantId uint64) (*model.TenantRef, error) {
+	row, err := dao.SysTenant.Ctx(contextx.WithoutTenant(ctx)).
+		Fields("id, code, name").
+		Where("id", tenantId).
+		Where("deleted_at IS NULL").
+		One()
+	if err != nil {
+		return nil, err
+	}
+	if row.IsEmpty() {
+		return nil, gerror.New("tenant not found")
+	}
+	return &model.TenantRef{
+		Id:   row["id"].Uint64(),
+		Code: row["code"].String(),
+		Name: row["name"].String(),
+	}, nil
+}
+
+// auditTenantHeaderSpoof 非平台超管伪造 X-Tenant-Id 的告警审计 (§7 平台审计,
+// 异步落 sys_audit_log, 租户归属=操作者所属租户, detail 记录伪造值)。
+func auditTenantHeaderSpoof(ctx context.Context, user *model.LoginUser, homeTid uint64, headerVal string) {
+	ctx = contextx.WithoutTenant(context.WithoutCancel(ctx))
+	go func() {
+		_, err := dao.SysAuditLog.Ctx(ctx).Data(g.Map{
+			"tenant_id":   homeTid,
+			"user_id":     user.UserId,
+			"username":    user.Username,
+			"action":      "tenant_header_spoof",
+			"resource":    "tenant",
+			"resource_id": "",
+			"method":      "",
+			"path":        "",
+			"status_code": 0,
+			"code":        0,
+			"message":     "非平台超管携带 X-Tenant-Id 头, 已忽略",
+			"detail":      truncateForColumn("forged X-Tenant-Id: "+headerVal, 512),
+			"ip":          "",
+			"user_agent":  "",
+		}).Insert()
+		if err != nil {
+			g.Log().Warningf(ctx, "tenant header spoof audit insert failed: %v", err)
+		}
+	}()
 }
 
 // publicPaths 公开接口白名单: Auth 与 Casbin 中间件均跳过。
@@ -218,6 +386,9 @@ var publicPaths = map[string]struct{}{
 	"/api/v1/auth/login/totp":      {},
 	"/api/v1/auth/register":        {},
 	"/api/v1/auth/register/status": {},
+	// 公开租户信息 (登录页租户名提示条): 仅返回租户显示名, 不泄露其他信息,
+	// 按 IP 限流防租户码枚举 (docs/multi-tenant.md §4.3)。
+	"/api/v1/auth/tenant/info": {},
 }
 
 // authWhitelist 基础会话类接口白名单。
@@ -241,6 +412,9 @@ var authWhitelist = map[string]struct{}{
 	// 若走逐角色 Casbin 授权, 未配置该 API 策略的普通用户会在进布局时 403。
 	// 放入白名单 = 登录即可读; 匿名访问仍被 Auth 中间件拦截。
 	"/api/v1/system/configs/all": {},
+	// 字典全量(仅启用项): 前端字典数据全站消费, 而字典管理菜单(14)不进任何租户
+	// 基础授权包 —— 与 configs/all 同理同法 (docs/multi-tenant.md §7.1 支撑 API 段)。
+	"/api/v1/system/dicts/all": {},
 	// 消息事件流: 会话级实时通知, 登录即可订阅 (SSE 长连接)
 	"/api/v1/message/events": {},
 }
@@ -266,8 +440,9 @@ func Casbin(r *ghttp.Request) {
 		writeUnauthorized(r)
 		return
 	}
-	// 超管全放行
-	if contextx.IsAdmin(ctx) {
+	// 平台超管全放行 (docs/multi-tenant.md §2.2: 判定从 IsAdmin 换 IsPlatformAdmin;
+	// 租户管理员不旁路 Casbin —— 他们的权限由域内角色策略决定)
+	if contextx.IsPlatformAdmin(ctx) {
 		r.Middleware.Next()
 		return
 	}
@@ -407,10 +582,12 @@ func OperationLog(r *ghttp.Request) {
 		code, message := parseResponseResult(r.Response.Buffer())
 		durationMs := time.Since(start).Milliseconds()
 
-		// 异步写入数据库: 使用全新的 background context, 不依赖已结束的请求 ctx
+		// 异步写入数据库: 保留请求上下文租户信息 (WithoutCancel 去取消传播,
+		// sys_audit_log 为 A 类隔离表, 无租户上下文写入会被 fail-close 拒绝)
 		go func() {
-			ctx := context.Background()
+			ctx := context.WithoutCancel(r.Context())
 			_, err := dao.SysAuditLog.Ctx(ctx).Data(g.Map{
+				"tenant_id":   contextx.TenantId(ctx),
 				"user_id":     userId,
 				"username":    username,
 				"action":      action,

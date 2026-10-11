@@ -13,6 +13,7 @@ import (
 type SysOrg struct {
 	g.Meta    `orm:"table:sys_org, do:true"`
 	Id        any         // 组织ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
 	ParentId  any         // 父级ID, 0=顶级
 	Name      any         // 组织名称
 	Leader    any         // 负责人

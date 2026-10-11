@@ -13,7 +13,8 @@ import (
 type SysConfig struct {
 	g.Meta      `orm:"table:sys_config, do:true"`
 	Id          any         // ID
-	ConfigKey   any         // 配置键(唯一)
+	TenantId    any         // 租户ID(平台行=1; 白名单键支持租户覆盖, 读序: 租户>平台)
+	ConfigKey   any         // 配置键(租户内唯一)
 	ConfigValue any         // 配置值
 	ConfigType  any         // 配置类型:0=文本,1=数字,2=布尔,3=JSON
 	Name        any         // 配置名称(中文说明)

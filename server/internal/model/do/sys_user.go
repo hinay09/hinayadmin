@@ -13,7 +13,8 @@ import (
 type SysUser struct {
 	g.Meta        `orm:"table:sys_user, do:true"`
 	Id            any         // 用户ID
-	Username      any         // 登录账号
+	TenantId      any         // 租户ID(ORM按上下文注入)
+	Username      any         // 登录账号(租户内唯一)
 	Password      any         // bcrypt 加密密码
 	Nickname      any         // 昵称
 	Avatar        any         // 头像URL

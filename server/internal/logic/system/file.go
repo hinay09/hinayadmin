@@ -21,6 +21,7 @@ import (
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/mimeutil"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/tenantx"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -66,7 +67,7 @@ var dangerousContentTypes = map[string]bool{
 
 // presignKeyPattern 预签名 key 形态: {yyyymmdd}/{guid}{ext},
 // 确认接口只认本服务签发的 key, 防止对桶内任意对象"认领落库"。
-var presignKeyPattern = regexp.MustCompile(`^[0-9]{8}/[0-9a-z]{20,64}(\.[a-z0-9]{1,10})$`)
+var presignKeyPattern = regexp.MustCompile(`^(tenant/[1-9][0-9]*/)?[0-9]{8}/[0-9a-z]{20,64}(\.[a-z0-9]{1,10})$`)
 
 // List 分页列表。
 // S3 存储的记录 (url=s3://...) 出参改写为带有效期的预签名 GET 地址
@@ -89,6 +90,14 @@ func (s *sFile) List(ctx context.Context, req *v1.FileListReq) (res *v1.FileList
 	var rows []*model.FileItem
 	if err = q.Page(req.Page, req.PageSize).Order("id DESC").Ctx(ctx).Scan(&rows); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
+	}
+
+	// 所属租户名 (平台视角混排展示, §8.6; 租户用户视角恒为本租户)
+	if tenantx.Enabled(ctx) {
+		tnMap := loadTenantNames(ctx)
+		for _, row := range rows {
+			row.TenantName = tnMap[row.TenantId]
+		}
 	}
 
 	var s3st storage.Storage
@@ -147,7 +156,7 @@ func (s *sFile) Upload(ctx context.Context, file multipart.File, header *multipa
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "文件存储未就绪")
 	}
 
-	key := storage.NewKey(ext)
+	key := storage.NewKey(ctx, ext)
 	if err = st.Put(ctx, key, file, header.Size, mimeType); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
@@ -198,7 +207,7 @@ func (s *sFile) Presign(ctx context.Context, req *v1.FilePresignReq) (res *v1.Fi
 		return &v1.FilePresignRes{Mode: "server"}, nil
 	}
 
-	key := storage.NewKey(ext)
+	key := storage.NewKey(ctx, ext)
 	uploadURL, err := st.PresignPut(ctx, key, contentType)
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)

@@ -22,6 +22,7 @@ type SysJobDao struct {
 // SysJobColumns defines and stores column names for the table sys_job.
 type SysJobColumns struct {
 	Id        string // 任务ID
+	TenantId  string // 租户ID(平台级任务=1; 执行时按该列构造租户上下文)
 	Name      string // 任务名称
 	Handler   string // 处理器名称(需已注册)
 	CronExpr  string // cron表达式(6位: 秒 分 时 日 月 周)
@@ -38,6 +39,7 @@ type SysJobColumns struct {
 // sysJobColumns holds the columns for the table sys_job.
 var sysJobColumns = SysJobColumns{
 	Id:        "id",
+	TenantId:  "tenant_id",
 	Name:      "name",
 	Handler:   "handler",
 	CronExpr:  "cron_expr",

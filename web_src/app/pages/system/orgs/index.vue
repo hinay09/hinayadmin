@@ -11,6 +11,12 @@ definePageMeta({ title: '组织机构管理' })
 defineOptions({ name: 'system-orgs' })
 
 const orgApi = useOrgApi()
+
+/* ---- 多租户: 平台超管混排视角展示所属租户列 (§8.6) ---- */
+const userStore = useUserStore()
+const configStore = useConfigStore()
+const showTenantCol = computed(() => userStore.isPlatformAdmin && configStore.multiTenant)
+
 const loading = ref(false)
 const treeData = ref<any[]>([])
 const parentTreeOptions = computed(() => [

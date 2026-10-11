@@ -12,8 +12,9 @@ import (
 // SysPost is the golang structure of table sys_post for DAO operations like Where/Data.
 type SysPost struct {
 	g.Meta    `orm:"table:sys_post, do:true"`
-	Id        any         // 主键ID
-	PostCode  any         // 岗位编码(唯一, 如 hr, dept_leader)
+	Id        any         // 岗位ID
+	TenantId  any         // 租户ID(ORM按上下文注入)
+	PostCode  any         // 岗位编码(租户内唯一, 如 hr, dept_leader)
 	PostName  any         // 岗位名称
 	PostKind  any         // 岗位类型:1=普通岗,2=主管岗(部门主管解析依据)
 	Sort      any         // 排序
@@ -24,5 +25,4 @@ type SysPost struct {
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
 	DeletedAt *gtime.Time // 删除时间(软删)
-
 }

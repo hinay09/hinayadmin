@@ -22,6 +22,7 @@ type SysAuditLogDao struct {
 // SysAuditLogColumns defines and stores column names for the table sys_audit_log.
 type SysAuditLogColumns struct {
 	Id         string // ID
+	TenantId   string // 租户ID(记录归属, 平台可查全量)
 	UserId     string // 用户ID
 	Username   string // 用户名
 	Action     string // 操作类型(create/update/delete/upload/login/...)
@@ -43,6 +44,7 @@ type SysAuditLogColumns struct {
 // sysAuditLogColumns holds the columns for the table sys_audit_log.
 var sysAuditLogColumns = SysAuditLogColumns{
 	Id:         "id",
+	TenantId:   "tenant_id",
 	UserId:     "user_id",
 	Username:   "username",
 	Action:     "action",

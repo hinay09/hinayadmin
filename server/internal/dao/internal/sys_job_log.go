@@ -22,6 +22,7 @@ type SysJobLogDao struct {
 // SysJobLogColumns defines and stores column names for the table sys_job_log.
 type SysJobLogColumns struct {
 	Id         string // 日志ID
+	TenantId   string // 租户ID(记录归属)
 	JobId      string // 任务ID
 	JobName    string // 任务名称(冗余, 删除任务后日志仍可读)
 	Handler    string // 处理器名称
@@ -35,6 +36,7 @@ type SysJobLogColumns struct {
 // sysJobLogColumns holds the columns for the table sys_job_log.
 var sysJobLogColumns = SysJobLogColumns{
 	Id:         "id",
+	TenantId:   "tenant_id",
 	JobId:      "job_id",
 	JobName:    "job_name",
 	Handler:    "handler",

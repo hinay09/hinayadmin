@@ -4,7 +4,9 @@ import "github.com/gogf/gf/v2/os/gtime"
 
 // SysOrg 组织机构实体。
 type SysOrg struct {
-	Id        uint64      `json:"id"        orm:"id"`
+	Id          uint64      `json:"id"          orm:"id"`
+	TenantId    uint64      `json:"tenantId"    orm:"tenant_id"`
+	TenantName  string      `json:"tenantName"  orm:"-"` // 展示冗余 (多租户平台视角, 树根节点标注)
 	ParentId  uint64      `json:"parentId"  orm:"parent_id"`
 	Name      string      `json:"name"      orm:"name"`
 	Leader    string      `json:"leader"    orm:"leader"`

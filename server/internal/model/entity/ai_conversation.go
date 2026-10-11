@@ -11,7 +11,8 @@ import (
 // AiConversation is the golang structure for table ai_conversation.
 type AiConversation struct {
 	Id           uint64      `json:"id"           orm:"id"            description:"主键ID"`                   // 主键ID
-	SessionId    string      `json:"sessionId"    orm:"session_id"    description:"会话ID(前端生成并保管)"`          // 会话ID(前端生成并保管)
+	TenantId     uint64      `json:"tenantId"     orm:"tenant_id"     description:"租户ID(ORM按上下文注入)"`        // 租户ID(ORM按上下文注入)
+	SessionId    string      `json:"sessionId"    orm:"session_id"    description:"会话ID(前端生成并保管, 全局唯一)"`    // 会话ID(前端生成并保管, 全局唯一)
 	UserId       uint64      `json:"userId"       orm:"user_id"       description:"所属用户ID"`                 // 所属用户ID
 	Title        string      `json:"title"        orm:"title"         description:"会话标题(首条用户消息裁剪)"`         // 会话标题(首条用户消息裁剪)
 	MessageCount uint        `json:"messageCount" orm:"message_count" description:"累计消息条数(user+assistant)"` // 累计消息条数(user+assistant)
