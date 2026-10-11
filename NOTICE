@@ -16,6 +16,9 @@ web_src/package.json、web_src/yarn.lock。
 后端（Go, server/go.mod）
   - GoFrame 及其 MySQL 驱动、Redis nosql 组件（github.com/gogf/gf/v2 等）
       MIT License  Copyright (c) GoFrame
+  - AWS SDK for Go v2（github.com/aws/aws-sdk-go-v2 及其 config/credentials、
+    service/s3 组件，用于 S3 兼容对象存储）
+      Apache License 2.0  Copyright Amazon.com, Inc. or its affiliates
   - Casbin（github.com/casbin/casbin/v2）
       Apache License 2.0  Copyright (c) casbin
   - golang-jwt（github.com/golang-jwt/jwt/v5）
@@ -26,8 +29,13 @@ web_src/package.json、web_src/yarn.lock。
       BSD 3-Clause License  Copyright (c) xuri
   - silenceper/wechat 微信开发 SDK（github.com/silenceper/wechat/v2）
       MIT License  Copyright (c) 2016 silenceper
-  - langchaingo LLM 应用框架（github.com/tmc/langchaingo）
-      MIT License  Copyright (c) 2023 The LangChain Go Authors
+  - eino LLM 应用框架及其 eino-ext OpenAI ChatModel 组件
+    （github.com/cloudwego/eino、cloudwego/eino-ext/components/model/openai）
+      Apache License 2.0  Copyright (c) CloudWeGo
+  - base64Captcha 行为验证码库（github.com/mojocn/base64Captcha）
+      Apache License 2.0  Copyright 2019 Eric (mojocn)
+  - gopsutil 系统监控库（github.com/shirou/gopsutil/v4）
+      BSD 3-Clause License  Copyright (c) 2014, WAKAYAMA Shirou
   - golang.org/x/crypto
       BSD 3-Clause License  Copyright 2009 The Go Authors
 
@@ -38,6 +46,11 @@ web_src/package.json、web_src/yarn.lock。
   - Pinia 与 @pinia/nuxt（MIT License）
   - ECharts（Apache License 2.0）
   - vue-echarts（MIT License）
+  - wangeditor 富文本编辑器及其 Vue 组件
+    （@wangeditor/editor、@wangeditor/editor-for-vue，MIT License）
+  - @microsoft/fetch-event-source SSE 客户端（MIT License）
+  - highlight.js（BSD 3-Clause License）
+  - markdown-it（MIT License）
   - jsencrypt（MIT License）
   - qrcode（MIT License）
 
