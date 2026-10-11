@@ -55,6 +55,9 @@ var fillTables = map[string]struct{}{
 	"sys_post":      {},
 	// 业务审批 Demo: 请假申请 (flow_status/flow_instance 由引擎回调维护)
 	"biz_leave": {},
+	// 内容管理 CMS (栏目/文章)
+	"cms_category": {},
+	"cms_article":  {},
 	// 租户 (平台表; sys_tenant_menu 为纯关系表, 不纳入 —— 同 sys_user_totp 先例)
 	"sys_tenant": {},
 }

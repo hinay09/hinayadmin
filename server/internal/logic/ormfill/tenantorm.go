@@ -57,6 +57,8 @@ var tenantTables = map[string]struct{}{
 	"biz_message":     {},
 	"ai_conversation": {},
 	"ai_chat_message": {},
+	"cms_category":    {},
+	"cms_article":     {},
 }
 
 const tenantColumn = "tenant_id"

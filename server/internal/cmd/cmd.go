@@ -14,6 +14,7 @@ import (
 
 	"hinay.cn/admin/internal/controller/ai"
 	"hinay.cn/admin/internal/controller/auth"
+	"hinay.cn/admin/internal/controller/cms"
 	"hinay.cn/admin/internal/controller/flow"
 	"hinay.cn/admin/internal/controller/leave"
 	"hinay.cn/admin/internal/controller/message"
@@ -76,6 +77,7 @@ var Main = gcmd.Command{
 				sec.Bind(
 					ai.NewV1(),
 					auth.NewV1(),
+					cms.NewV1(),
 					flow.NewV1(),
 					leave.NewV1(),
 					message.NewV1(),

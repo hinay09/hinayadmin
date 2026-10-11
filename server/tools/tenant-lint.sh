@@ -16,7 +16,7 @@ FAIL=0
 hit() { FAIL=$((FAIL+1)); echo "✗ $1"; }
 
 # A 类隔离表清单 (与 internal/logic/ormfill/tenantorm.go tenantTables 对齐)
-TABLES='sys_user|sys_org|sys_role|sys_role_org|sys_post|sys_user_post|sys_config|sys_file|sys_audit_log|sys_login_log|sys_job|sys_job_log|wf_definition|wf_instance|wf_task|wf_record|biz_leave|biz_message|ai_conversation|ai_chat_message'
+TABLES='sys_user|sys_org|sys_role|sys_role_org|sys_post|sys_user_post|sys_config|sys_file|sys_audit_log|sys_login_log|sys_job|sys_job_log|wf_definition|wf_instance|wf_task|wf_record|biz_leave|biz_message|ai_conversation|ai_chat_message|cms_category|cms_article'
 
 echo "== 1. 手写 DML 引用隔离表 (tx.Exec/.Exec(/DoExec(/.Raw() =="
 # ormfill 包自身是实现体豁免; gencode 的 g.DB().Model("sys_menu") 为 B 类表不在清单

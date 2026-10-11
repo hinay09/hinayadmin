@@ -12,6 +12,8 @@ interface UploadResult {
   name: string
   originalName: string
   url: string
+  /** 持久引用 (sys_file.url 同源): 需落库回显的富媒体内容存此值, 展示时经后端 ViewURL 重写 */
+  ref?: string
   size: number
   extension: string
 }

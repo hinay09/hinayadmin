@@ -173,6 +173,7 @@ func (s *sFile) Upload(ctx context.Context, file multipart.File, header *multipa
 		Name:         filepath.Base(key),
 		OriginalName: originalName,
 		Url:          s.viewURL(ctx, st, key, originalName, ext),
+		Ref:          st.RefURL(key),
 		Size:         uint64(header.Size),
 		Extension:    ext,
 	}, nil
@@ -264,6 +265,7 @@ func (s *sFile) PresignConfirm(ctx context.Context, req *v1.FilePresignConfirmRe
 			Name:         exist.Name,
 			OriginalName: exist.OriginalName,
 			Url:          s.viewURL(ctx, st, key, exist.OriginalName, ext),
+			Ref:          st.RefURL(key),
 			Size:         exist.Size,
 			Extension:    exist.Extension,
 		}, nil
@@ -286,6 +288,7 @@ func (s *sFile) PresignConfirm(ctx context.Context, req *v1.FilePresignConfirmRe
 		Name:         filepath.Base(key),
 		OriginalName: originalName,
 		Url:          s.viewURL(ctx, st, key, originalName, ext),
+		Ref:          st.RefURL(key),
 		Size:         uint64(size),
 		Extension:    ext,
 	}, nil

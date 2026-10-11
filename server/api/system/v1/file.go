@@ -30,6 +30,7 @@ type FileUploadRes struct {
 	Name         string `json:"name"`
 	OriginalName string `json:"originalName"`
 	Url          string `json:"url"`
+	Ref          string `json:"ref" dc:"持久引用(sys_file.url 同源): 需落库回显的富媒体内容存此值, 展示时经 ViewURL 重写"`
 	Size         uint64 `json:"size"`
 	Extension    string `json:"extension"`
 }

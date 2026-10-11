@@ -1373,6 +1373,95 @@ INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/tenants/{id}/configs/reset',   'POST',   '租户管理', '重置租户覆盖配置'),
   ('/api/v1/auth/tenant/info',                    'GET',    '认证',     '公开租户信息(按code, 仅显示名, 限流)');
 
+-- ############################################################
+-- 七、内容管理 CMS (栏目 + 文章)
+-- cms_category / cms_article 均为 A 类租户隔离表 (tenantorm tenantTables);
+-- 文章正文为 wangeditor 富文本 HTML, 库内 img src 只存持久引用
+-- (/upload/.. 或 s3://bucket/key), 出站组装时经 storage.ViewURL 换预签名 ——
+-- 同 sys_user.avatar "库内存引用、出口重写" 哲学, 切换存储不腐蚀历史内容。
+-- 默认仅超管可见, 其他角色在「角色管理-分配权限」按需勾选 (同请假/AI 先例)。
+-- ############################################################
+
+DROP TABLE IF EXISTS `cms_category`;
+CREATE TABLE IF NOT EXISTS `cms_category` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`  BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
+  `name`       VARCHAR(64)  NOT NULL                   COMMENT '栏目名称',
+  `code`       VARCHAR(64)  NOT NULL                   COMMENT '栏目编码(租户内唯一)',
+  `sort`       INT          NOT NULL DEFAULT 0         COMMENT '排序(小在前)',
+  `status`     TINYINT      NOT NULL DEFAULT 1         COMMENT '状态:1=启用,0=禁用',
+  `remark`     VARCHAR(200) NOT NULL DEFAULT ''        COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tenant_code` (`tenant_id`, `code`),
+  KEY `idx_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='CMS栏目';
+
+DROP TABLE IF EXISTS `cms_article`;
+CREATE TABLE IF NOT EXISTS `cms_article` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`   BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(ORM按上下文注入)',
+  `category_id` BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '栏目ID(0=未分类)',
+  `title`       VARCHAR(200) NOT NULL                   COMMENT '文章标题',
+  `cover`       VARCHAR(500) NOT NULL DEFAULT ''        COMMENT '封面图持久引用(出口经storage.ViewURL重写)',
+  `summary`     VARCHAR(500) NOT NULL DEFAULT ''        COMMENT '摘要(列表展示)',
+  `content`     MEDIUMTEXT   NULL                       COMMENT '正文HTML(wangeditor; img src存持久引用)',
+  `tags`        VARCHAR(200) NOT NULL DEFAULT ''        COMMENT '标签(逗号分隔, 仅展示用)',
+  `status`      TINYINT      NOT NULL DEFAULT 0         COMMENT '状态:0=草稿,1=已发布,2=已下架',
+  `top`         TINYINT      NOT NULL DEFAULT 0         COMMENT '置顶:1=是,0=否',
+  `publish_at`  DATETIME     DEFAULT NULL               COMMENT '发布时间(首次发布写入)',
+  `create_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
+  `update_id`   BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '最后修改人ID(ORM自动填充)',
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at`  DATETIME     DEFAULT NULL               COMMENT '删除时间(软删)',
+  PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
+  KEY `idx_category` (`category_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='CMS文章';
+
+-- 菜单 (9400 号段: 内容管理)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9400, 0,    '内容管理', 1, '/cms',           'Layout',             'Reading',  'cms',              36, 1, 1),
+  (9410, 9400, '栏目管理', 2, '/cms/category',  'cms/category/index', 'Files',    'cms:category:list', 37, 1, 1),
+  (9420, 9400, '文章管理', 2, '/cms/article',   'cms/article/index',  'Document', 'cms:article:list',  38, 1, 1);
+
+-- 按钮权限
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9411, 9410, '栏目新增', 3, '', '', '', 'cms:category:create',  1, 0, 1),
+  (9412, 9410, '栏目修改', 3, '', '', '', 'cms:category:update',  2, 0, 1),
+  (9413, 9410, '栏目删除', 3, '', '', '', 'cms:category:delete',  3, 0, 1),
+  (9421, 9420, '文章新增', 3, '', '', '', 'cms:article:create',   1, 0, 1),
+  (9422, 9420, '文章修改', 3, '', '', '', 'cms:article:update',   2, 0, 1),
+  (9423, 9420, '文章删除', 3, '', '', '', 'cms:article:delete',   3, 0, 1),
+  (9424, 9420, '文章发布', 3, '', '', '', 'cms:article:publish',  4, 0, 1),
+  (9425, 9420, '文章下架', 3, '', '', '', 'cms:article:offline',  5, 0, 1);
+
+-- API 资源 (内容管理: 栏目归组 9410, 文章归组 9420 —— 租户授权集按菜单闭包放行)
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/cms/categories',        'GET',    '内容管理', '栏目分页列表'),
+  ('/api/v1/cms/categories/all',    'GET',    '内容管理', '启用栏目全量(文章表单下拉)'),
+  ('/api/v1/cms/categories',        'POST',   '内容管理', '新增栏目'),
+  ('/api/v1/cms/categories/{id}',   'PUT',    '内容管理', '修改栏目'),
+  ('/api/v1/cms/categories/{id}',   'DELETE', '内容管理', '删除栏目(栏目下有文章时拒绝)'),
+  ('/api/v1/cms/articles',          'GET',    '内容管理', '文章分页列表(不含正文)'),
+  ('/api/v1/cms/articles/{id}',     'GET',    '内容管理', '文章详情(含正文, 图片引用出站重写)'),
+  ('/api/v1/cms/articles',          'POST',   '内容管理', '新增文章(默认草稿)'),
+  ('/api/v1/cms/articles/{id}',     'PUT',    '内容管理', '修改文章'),
+  ('/api/v1/cms/articles/{id}',     'DELETE', '内容管理', '删除文章(软删)'),
+  ('/api/v1/cms/articles/{id}/publish', 'POST', '内容管理', '发布文章(草稿/下架→已发布; 已发布幂等成功)'),
+  ('/api/v1/cms/articles/{id}/offline', 'POST', '内容管理', '下架文章(已发布→已下架)');
+
+UPDATE `sys_api` SET `menu_id`=9410 WHERE `group_name`='内容管理' AND `menu_id`=0
+  AND `path` LIKE '/api/v1/cms/categories%';
+UPDATE `sys_api` SET `menu_id`=9420 WHERE `group_name`='内容管理' AND `menu_id`=0
+  AND `path` LIKE '/api/v1/cms/articles%';
+
 -- ============================================================
 -- sys_api.menu_id 归属回填 (§7.1: 平台维护的 API↔菜单映射, 按 group_name 归组;
 -- 0=平台/公共接口 租户不可绑 —— fail-close 安全方向。幂等: 仅回填 menu_id=0 的行)

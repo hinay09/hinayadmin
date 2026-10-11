@@ -8,6 +8,7 @@ import (
 	_ "hinay.cn/admin/internal/logic/ai"
 	_ "hinay.cn/admin/internal/logic/auth"
 	_ "hinay.cn/admin/internal/logic/casbinx"
+	_ "hinay.cn/admin/internal/logic/cms"
 	_ "hinay.cn/admin/internal/logic/datascope"
 	_ "hinay.cn/admin/internal/logic/flow"
 	_ "hinay.cn/admin/internal/logic/gencode"
