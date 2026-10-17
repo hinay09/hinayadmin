@@ -15,14 +15,14 @@ type PostItem struct {
 	Id         uint64      `json:"id"`
 	TenantId   uint64      `json:"tenantId"   dc:"所属租户ID(多租户)"`
 	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
-	PostCode string      `json:"postCode" dc:"岗位编码"`
-	PostName string      `json:"postName" dc:"岗位名称"`
-	PostKind int         `json:"postKind"  dc:"1=普通岗,2=主管岗"`
-	Sort     int         `json:"sort"`
-	Status   int         `json:"status"`
-	Remark   string      `json:"remark"`
-	Members  int64       `json:"members" dc:"成员数"`
-	UpdateAt *gtime.Time `json:"updateAt"`
+	PostCode   string      `json:"postCode" dc:"岗位编码"`
+	PostName   string      `json:"postName" dc:"岗位名称"`
+	PostKind   int         `json:"postKind"  dc:"1=普通岗,2=主管岗"`
+	Sort       int         `json:"sort"`
+	Status     int         `json:"status"`
+	Remark     string      `json:"remark"`
+	Members    int64       `json:"members" dc:"成员数"`
+	UpdateAt   *gtime.Time `json:"updateAt"`
 }
 
 // PostListReq 岗位分页列表。

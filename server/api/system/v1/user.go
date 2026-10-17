@@ -20,21 +20,21 @@ type UserListReq struct {
 
 // UserVO 列表/详情视图。
 type UserVO struct {
-	Id        uint64      `json:"id"`
-	Username  string      `json:"username"`
-	Nickname  string      `json:"nickname"`
-	Avatar    string      `json:"avatar"`
-	Email     string      `json:"email"`
-	Phone     string      `json:"phone"`
-	OrgId     uint64      `json:"orgId"`
-	OrgName   string      `json:"orgName"`
-	TenantId  uint64      `json:"tenantId"  dc:"所属租户ID(多租户开启时返回)"`
-	TenantName string     `json:"tenantName" dc:"所属租户名(平台视角/多租户开启时返回)"`
-	Status    int         `json:"status"`
-	Remark    string      `json:"remark"`
-	RoleIds   []uint64    `json:"roleIds"`
-	Roles     []string    `json:"roles"`
-	CreatedAt *gtime.Time `json:"createdAt"`
+	Id         uint64      `json:"id"`
+	Username   string      `json:"username"`
+	Nickname   string      `json:"nickname"`
+	Avatar     string      `json:"avatar"`
+	Email      string      `json:"email"`
+	Phone      string      `json:"phone"`
+	OrgId      uint64      `json:"orgId"`
+	OrgName    string      `json:"orgName"`
+	TenantId   uint64      `json:"tenantId"  dc:"所属租户ID(多租户开启时返回)"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角/多租户开启时返回)"`
+	Status     int         `json:"status"`
+	Remark     string      `json:"remark"`
+	RoleIds    []uint64    `json:"roleIds"`
+	Roles      []string    `json:"roles"`
+	CreatedAt  *gtime.Time `json:"createdAt"`
 }
 
 // UserListRes 列表响应。

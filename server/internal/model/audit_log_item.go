@@ -4,9 +4,9 @@ import "github.com/gogf/gf/v2/os/gtime"
 
 // AuditLogItem 操作日志列表 VO。
 type AuditLogItem struct {
-	Id          uint64      `json:"id"`
-	TenantId    uint64      `json:"tenantId"`
-	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
+	Id         uint64      `json:"id"`
+	TenantId   uint64      `json:"tenantId"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	UserId     uint64      `json:"userId"`
 	Username   string      `json:"username"`
 	Action     string      `json:"action"`

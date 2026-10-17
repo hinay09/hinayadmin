@@ -5,16 +5,16 @@ import "github.com/gogf/gf/v2/os/gtime"
 
 // LoginLogItem 登录日志列表 VO。
 type LoginLogItem struct {
-	Id          uint64      `json:"id"`
-	TenantId    uint64      `json:"tenantId"`
-	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
-	UserId    uint64      `json:"userId"`
-	Username  string      `json:"username"`
-	Status    int         `json:"status"`
-	Message   string      `json:"message"`
-	Ip        string      `json:"ip"`
-	UserAgent string      `json:"userAgent"`
-	CreatedAt *gtime.Time `json:"createdAt"`
+	Id         uint64      `json:"id"`
+	TenantId   uint64      `json:"tenantId"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
+	UserId     uint64      `json:"userId"`
+	Username   string      `json:"username"`
+	Status     int         `json:"status"`
+	Message    string      `json:"message"`
+	Ip         string      `json:"ip"`
+	UserAgent  string      `json:"userAgent"`
+	CreatedAt  *gtime.Time `json:"createdAt"`
 }
 
 // LoginLogEntry 登录日志写入入参。

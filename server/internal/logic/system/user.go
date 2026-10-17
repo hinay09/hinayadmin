@@ -96,21 +96,21 @@ func (s *sUser) List(ctx context.Context, req *v1.UserListReq) (res *v1.UserList
 		}
 		orgName := getOrgName(ctx, u.OrgId)
 		list = append(list, &v1.UserVO{
-			Id:        u.Id,
-			Username:  u.Username,
-			Nickname:  u.Nickname,
-			Avatar:    storage.ViewURL(ctx, u.Avatar),
-			Email:     u.Email,
-			Phone:     u.Phone,
-			OrgId:     u.OrgId,
-			OrgName:   orgName,
-			TenantId:  u.TenantId,
+			Id:         u.Id,
+			Username:   u.Username,
+			Nickname:   u.Nickname,
+			Avatar:     storage.ViewURL(ctx, u.Avatar),
+			Email:      u.Email,
+			Phone:      u.Phone,
+			OrgId:      u.OrgId,
+			OrgName:    orgName,
+			TenantId:   u.TenantId,
 			TenantName: tenantNameMap[u.TenantId],
-			Status:    u.Status,
-			Remark:    u.Remark,
-			RoleIds:   ids,
-			Roles:     codes,
-			CreatedAt: u.CreatedAt,
+			Status:     u.Status,
+			Remark:     u.Remark,
+			RoleIds:    ids,
+			Roles:      codes,
+			CreatedAt:  u.CreatedAt,
 		})
 	}
 	page := response.Page(list, int64(total), req.Page, req.PageSize)
@@ -137,21 +137,21 @@ func (s *sUser) Detail(ctx context.Context, req *v1.UserDetailReq) (res *v1.User
 	}
 	orgName := getOrgName(ctx, u.OrgId)
 	return &v1.UserDetailRes{UserVO: &v1.UserVO{
-		Id:        u.Id,
-		Username:  u.Username,
-		Nickname:  u.Nickname,
-		Avatar:    storage.ViewURL(ctx, u.Avatar),
-		Email:     u.Email,
-		Phone:     u.Phone,
-		OrgId:     u.OrgId,
-		OrgName:   orgName,
-		TenantId:  u.TenantId,
+		Id:         u.Id,
+		Username:   u.Username,
+		Nickname:   u.Nickname,
+		Avatar:     storage.ViewURL(ctx, u.Avatar),
+		Email:      u.Email,
+		Phone:      u.Phone,
+		OrgId:      u.OrgId,
+		OrgName:    orgName,
+		TenantId:   u.TenantId,
 		TenantName: loadTenantNames(ctx)[u.TenantId],
-		Status:    u.Status,
-		Remark:    u.Remark,
-		RoleIds:   roleIds,
-		Roles:     codes,
-		CreatedAt: u.CreatedAt,
+		Status:     u.Status,
+		Remark:     u.Remark,
+		RoleIds:    roleIds,
+		Roles:      codes,
+		CreatedAt:  u.CreatedAt,
 	}}, nil
 }
 

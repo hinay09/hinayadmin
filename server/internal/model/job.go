@@ -30,24 +30,24 @@ type SysJob struct {
 
 // JobItem 任务列表/详情 VO。
 type JobItem struct {
-	Id          uint64      `json:"id"`
-	TenantId    uint64      `json:"tenantId"   dc:"所属租户ID(多租户)"`
-	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
-	Name      string      `json:"name"`
-	Handler   string      `json:"handler"`
-	CronExpr  string      `json:"cronExpr"`
-	Params    string      `json:"params"`
-	Status    int         `json:"status"`
-	Remark    string      `json:"remark"`
-	CreatedAt *gtime.Time `json:"createdAt"`
-	UpdatedAt *gtime.Time `json:"updatedAt"`
+	Id         uint64      `json:"id"`
+	TenantId   uint64      `json:"tenantId"   dc:"所属租户ID(多租户)"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
+	Name       string      `json:"name"`
+	Handler    string      `json:"handler"`
+	CronExpr   string      `json:"cronExpr"`
+	Params     string      `json:"params"`
+	Status     int         `json:"status"`
+	Remark     string      `json:"remark"`
+	CreatedAt  *gtime.Time `json:"createdAt"`
+	UpdatedAt  *gtime.Time `json:"updatedAt"`
 }
 
 // JobLogItem 任务执行日志 VO。
 type JobLogItem struct {
-	Id          uint64      `json:"id"`
-	TenantId    uint64      `json:"tenantId"`
-	TenantName  string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
+	Id         uint64      `json:"id"`
+	TenantId   uint64      `json:"tenantId"`
+	TenantName string      `json:"tenantName" dc:"所属租户名(平台视角混排展示)"`
 	JobId      uint64      `json:"jobId"`
 	JobName    string      `json:"jobName"`
 	Handler    string      `json:"handler"`

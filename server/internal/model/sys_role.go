@@ -8,15 +8,15 @@ type SysRole struct {
 	TenantId   uint64      `json:"tenantId"   orm:"tenant_id"`
 	TenantName string      `json:"tenantName" orm:"-"` // 展示冗余 (多租户平台视角混排时区分同名角色)
 	Name       string      `json:"name"       orm:"name"`
-	Code      string      `json:"code"      orm:"code"`
-	Sort      int         `json:"sort"      orm:"sort"`
-	Status    int         `json:"status"    orm:"status"`
-	Remark    string      `json:"remark"    orm:"remark"`
-	DataScope int         `json:"dataScope" orm:"data_scope"`
-	CreateId  uint64      `json:"createId" orm:"create_id"`
-	UpdateId  uint64      `json:"updateId" orm:"update_id"`
-	CreatedAt *gtime.Time `json:"createdAt" orm:"created_at"`
-	UpdatedAt *gtime.Time `json:"updatedAt" orm:"updated_at"`
+	Code       string      `json:"code"      orm:"code"`
+	Sort       int         `json:"sort"      orm:"sort"`
+	Status     int         `json:"status"    orm:"status"`
+	Remark     string      `json:"remark"    orm:"remark"`
+	DataScope  int         `json:"dataScope" orm:"data_scope"`
+	CreateId   uint64      `json:"createId" orm:"create_id"`
+	UpdateId   uint64      `json:"updateId" orm:"update_id"`
+	CreatedAt  *gtime.Time `json:"createdAt" orm:"created_at"`
+	UpdatedAt  *gtime.Time `json:"updatedAt" orm:"updated_at"`
 }
 
 // OrgScope 组织数据范围 (当前登录用户全部角色的并集)。

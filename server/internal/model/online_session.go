@@ -21,8 +21,8 @@ type OnlineSession struct {
 
 // OnlineUserItem 在线用户列表 VO (不含 token)。
 type OnlineUserItem struct {
-	TenantId     uint64 `json:"tenantId"`
-	TenantName   string `json:"tenantName"`
+	TenantId     uint64      `json:"tenantId"`
+	TenantName   string      `json:"tenantName"`
 	SessionId    string      `json:"sessionId"`
 	UserId       uint64      `json:"userId"`
 	Username     string      `json:"username"`
