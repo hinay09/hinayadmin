@@ -54,7 +54,7 @@
 - 审批流高级动作: 撤回 `POST /flow/instances/{id}/withdraw` (尚无审批人同意时收回修改后重提, 区别于撤销终态)、委派 `POST /flow/tasks/{id}/delegate` 与委派处理 `POST /flow/tasks/{id}/delegateResolve` (被委托人提交意见后回到原审批人终审, 区别于转办换人)、节点超时处理 (审批节点配置办理期限与策略: 逾期提醒 / 自动转办 / 自动通过, 由定时任务 `flow.timeoutScan` 扫描执行)
 - 岗位管理 (`sys_post`): 用户挂多岗位, 作为审批流「指定岗位」审批人的解析依据
 - AI 智能对话: OpenAI 兼容接口 (eino react agent), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
-- 内容管理 CMS: 栏目 + 文章, 文章正文为 wangeditor 富文本 (前端 `RichEditor` 组件, 仅客户端动态加载); 图片/视频统一走文件管理上传 (预签名直传优先), 正文内媒体存持久引用 (`data-ref`, 入库归一 / 出站经 `storage.ViewURL` 重写 —— S3 预签名过期或切换存储不腐蚀历史内容); 文章状态机 草稿/已发布/已下架 + 置顶, 栏目编码租户内唯一
+- 内容管理 CMS: 栏目 + 文章, 文章正文为 wangeditor 富文本 (前端 `RichEditor` 组件, 仅客户端动态加载); 图片/视频统一走文件管理上传 (预签名直传优先), 正文内媒体存持久引用 (`data-ref`, 入库归一 / 出站经 `storage.ViewURL` 重写 —— S3 预签名过期或切换存储不腐蚀历史内容); 正文入库前经 bluemonday XSS 白名单过滤 (utility/sanitizer, 标题/摘要等纯文本字段剥标签), script/事件属性/危险 scheme/危险 style 声明全部剥离; 文章状态机 草稿/已发布/已下架 + 置顶, 栏目编码租户内唯一
 - 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
 - **多租户** (可选, `multiTenant.enable` 开关): 共享库 `tenant_id` 行级隔离 + Casbin 租户域 + 平台/租户管理员双层治理 + 应用授权集 (租户可用模块由平台圈定) + 配置租户覆盖 + 平台超管代运维租户切换; 关闭时行为与单租户完全一致 (开发指南见 [docs/multi-tenant.md](docs/multi-tenant.md))
 

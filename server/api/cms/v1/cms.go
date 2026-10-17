@@ -7,6 +7,10 @@
 // 入库前 normalizeContentImgs 把 img src 归一为持久引用; 出站 (详情) 时
 // viewContentImgs 把 s3:// 引用经 storage.ViewURL 换成预签名 URL ——
 // 同 sys_user.avatar "库内存引用、出口重写", 切换存储不腐蚀历史内容。
+//
+// XSS 防护: 正文与文本字段在 logic 层写库前经 utility/sanitizer (bluemonday)
+// 过滤 —— 正文 RichText 白名单清洗 (保留 wangeditor 产物, URL scheme 与
+// style 属性均白名单), 标题/摘要/标签/栏目名等 PlainText 剥除全部标签。
 package v1
 
 import (

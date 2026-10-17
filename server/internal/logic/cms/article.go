@@ -15,6 +15,7 @@ import (
 	"hinay.cn/admin/internal/model/entity"
 	"hinay.cn/admin/internal/storage"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/sanitizer"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -66,18 +67,18 @@ func (s *sCmsArticle) Detail(ctx context.Context, in *v1.CmsArticleDetailReq) (r
 	}}, nil
 }
 
-// Create 新增文章 (正文图片引用归一后入库; status=1 时直接发布)。
+// Create 新增文章 (正文 XSS 白名单过滤 + 图片引用归一后入库; status=1 时直接发布)。
 func (s *sCmsArticle) Create(ctx context.Context, in *v1.CmsArticleCreateReq) (res *v1.CmsArticleCreateRes, err error) {
 	if err = s.checkCategory(ctx, in.CategoryId); err != nil {
 		return nil, err
 	}
 	data := g.Map{
 		"category_id": in.CategoryId,
-		"title":       strings.TrimSpace(in.Title),
-		"cover":       in.Cover,
-		"summary":     in.Summary,
-		"content":     normalizeContentImgs(in.Content),
-		"tags":        strings.TrimSpace(in.Tags),
+		"title":       sanitizer.PlainText(strings.TrimSpace(in.Title)),
+		"cover":       sanitizer.PlainText(in.Cover),
+		"summary":     sanitizer.PlainText(in.Summary),
+		"content":     normalizeContentImgs(sanitizer.RichText(in.Content)),
+		"tags":        sanitizer.PlainText(strings.TrimSpace(in.Tags)),
 		"status":      in.Status,
 		"top":         in.Top,
 	}
@@ -91,7 +92,7 @@ func (s *sCmsArticle) Create(ctx context.Context, in *v1.CmsArticleCreateReq) (r
 	return &v1.CmsArticleCreateRes{Id: uint64(id)}, nil
 }
 
-// Update 修改文章 (正文图片引用归一后入库; 状态由发布/下架动作管理)。
+// Update 修改文章 (正文 XSS 白名单过滤 + 图片引用归一后入库; 状态由发布/下架动作管理)。
 func (s *sCmsArticle) Update(ctx context.Context, in *v1.CmsArticleUpdateReq) (res *v1.CmsArticleUpdateRes, err error) {
 	if err = s.checkCategory(ctx, in.CategoryId); err != nil {
 		return nil, err
@@ -99,11 +100,11 @@ func (s *sCmsArticle) Update(ctx context.Context, in *v1.CmsArticleUpdateReq) (r
 	if _, err = dao.CmsArticle.Ctx(ctx).Where("id", in.Id).Where("deleted_at IS NULL").
 		Data(g.Map{
 			"category_id": in.CategoryId,
-			"title":       strings.TrimSpace(in.Title),
-			"cover":       in.Cover,
-			"summary":     in.Summary,
-			"content":     normalizeContentImgs(in.Content),
-			"tags":        strings.TrimSpace(in.Tags),
+			"title":       sanitizer.PlainText(strings.TrimSpace(in.Title)),
+			"cover":       sanitizer.PlainText(in.Cover),
+			"summary":     sanitizer.PlainText(in.Summary),
+			"content":     normalizeContentImgs(sanitizer.RichText(in.Content)),
+			"tags":        sanitizer.PlainText(strings.TrimSpace(in.Tags)),
 			"top":         in.Top,
 		}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "修改文章失败")
@@ -233,6 +234,8 @@ var (
 // normalizeContentImgs 入库归一: 编辑器插图带 data-ref (上传响应 ref 持久引用),
 // src 可能是当时展示用的预签名 URL (会过期) —— 统一重置为持久引用。
 // 无 data-ref 的媒体 (外链图片等) 原样保留。
+// 注意上游已过 sanitizer.RichText: s3:// 等非白名单 scheme 的 src 会被剥掉
+// (data-ref 是自定义属性不受 scheme 校验, 保留), 这里从 data-ref 补回 src。
 func normalizeContentImgs(content string) string {
 	if !strings.Contains(content, "data-ref=") {
 		return content
@@ -246,6 +249,11 @@ func normalizeContentImgs(content string) string {
 		sm := mediaSrcRe.FindStringSubmatch(tag)
 		if sm != nil && sm[1] == ref {
 			return tag // 已是持久引用
+		}
+		if sm == nil {
+			// 无 src (被过滤剥掉或本就缺失): 在开标签末尾补回持久引用。
+			t := strings.TrimSuffix(strings.TrimSuffix(tag, ">"), "/")
+			return t + ` src="` + ref + `">`
 		}
 		return mediaSrcRe.ReplaceAllLiteralString(tag, ` src="`+ref+`"`)
 	})

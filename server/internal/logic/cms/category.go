@@ -14,6 +14,7 @@ import (
 	"hinay.cn/admin/internal/service"
 	"hinay.cn/admin/utility/contextx"
 	"hinay.cn/admin/utility/response"
+	"hinay.cn/admin/utility/sanitizer"
 	"hinay.cn/admin/utility/xerror"
 )
 
@@ -83,11 +84,11 @@ func (s *sCmsCategory) Create(ctx context.Context, in *v1.CmsCategoryCreateReq) 
 		return nil, xerror.New(xerror.CodeParamInvalid, "栏目编码已存在")
 	}
 	id, err := dao.CmsCategory.Ctx(ctx).Data(g.Map{
-		"name":   strings.TrimSpace(in.Name),
+		"name":   sanitizer.PlainText(strings.TrimSpace(in.Name)),
 		"code":   in.Code,
 		"sort":   in.Sort,
 		"status": in.Status,
-		"remark": in.Remark,
+		"remark": sanitizer.PlainText(in.Remark),
 	}).InsertAndGetId()
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "新增栏目失败")
@@ -99,10 +100,10 @@ func (s *sCmsCategory) Create(ctx context.Context, in *v1.CmsCategoryCreateReq) 
 func (s *sCmsCategory) Update(ctx context.Context, in *v1.CmsCategoryUpdateReq) (res *v1.CmsCategoryUpdateRes, err error) {
 	if _, err = dao.CmsCategory.Ctx(ctx).Where("id", in.Id).Where("deleted_at IS NULL").
 		Data(g.Map{
-			"name":   strings.TrimSpace(in.Name),
+			"name":   sanitizer.PlainText(strings.TrimSpace(in.Name)),
 			"sort":   in.Sort,
 			"status": in.Status,
-			"remark": in.Remark,
+			"remark": sanitizer.PlainText(in.Remark),
 		}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "修改栏目失败")
 	}

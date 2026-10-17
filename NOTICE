@@ -38,6 +38,9 @@ web_src/package.json、web_src/yarn.lock。
       BSD 3-Clause License  Copyright (c) 2014, WAKAYAMA Shirou
   - golang.org/x/crypto
       BSD 3-Clause License  Copyright 2009 The Go Authors
+  - bluemonday HTML 清理库（github.com/microcosm-cc/bluemonday，用于 CMS 富文本
+    入库 XSS 白名单过滤）
+      Apache License 2.0  Copyright (c) 2014 microcosm-cc
 
 前端（web_src/package.json）
   - Nuxt（MIT License）
