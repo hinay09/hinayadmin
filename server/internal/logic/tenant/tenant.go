@@ -68,6 +68,8 @@ type TenantItem struct {
 	Code         string      `json:"code"`
 	Contact      string      `json:"contact"`
 	Plan         string      `json:"plan"`
+	PackageId    uint64      `json:"packageId"`
+	PackageName  string      `json:"packageName"`
 	QuotaUsers   int         `json:"quotaUsers"`
 	QuotaStorage int64       `json:"quotaStorage"`
 	ExpireAt     *gtime.Time `json:"expireAt"`
@@ -99,9 +101,11 @@ func (s *sTenant) List(ctx context.Context, req *v1.TenantListReq) (res *v1.Tena
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "查询租户失败")
 	}
 	items := make([]*TenantItem, 0, len(rows))
+	pkgNames := packageNameMap(ctx)
 	for _, r := range rows {
 		items = append(items, &TenantItem{
 			Id: r.Id, Name: r.Name, Code: r.Code, Contact: r.Contact, Plan: r.Plan,
+			PackageId: r.PackageId, PackageName: pkgNames[r.PackageId],
 			QuotaUsers: r.QuotaUsers, QuotaStorage: r.QuotaStorage, ExpireAt: r.ExpireAt,
 			Status: r.Status, Remark: r.Remark, CreatedAt: r.CreatedAt,
 		})
@@ -159,7 +163,21 @@ func (s *sTenant) Create(ctx context.Context, req *v1.TenantCreateReq) (res *v1.
 	if n, _ := dao.SysTenant.Ctx(ctx).Where("code", req.Code).Where("deleted_at IS NULL").Count(); n > 0 {
 		return nil, xerror.New(xerror.CodeTenantCodeExists)
 	}
+	// 初始授权集来源: 显式勾选 menuIds > 套餐模板 > 基础协作包缺省模板;
+	// 套餐 ID 无论是否贡献授权集都记录绑定关系 (租户行 package_id)
 	menuIds := req.MenuIds
+	if req.PackageId > 0 {
+		pkg, perr := getPackageRow(ctx, req.PackageId)
+		if perr != nil {
+			return nil, perr
+		}
+		if pkg.Status != consts.StatusEnabled {
+			return nil, xerror.New(xerror.CodeBusinessError, "套餐已停用, 无法用于创建租户")
+		}
+		if len(menuIds) == 0 {
+			menuIds = parseMenuIds(pkg.MenuIds)
+		}
+	}
 	if len(menuIds) == 0 {
 		menuIds = defaultTemplateMenuIds
 	}
@@ -196,6 +214,7 @@ func (s *sTenant) Create(ctx context.Context, req *v1.TenantCreateReq) (res *v1.
 		// ① 租户行
 		tidv, err := dao.SysTenant.Ctx(ctx).Data(g.Map{
 			"name": req.Name, "code": req.Code, "contact": req.Contact, "plan": req.Plan,
+			"package_id":  req.PackageId,
 			"quota_users": 0, "quota_storage": 0, "expire_at": expire,
 			"status": consts.StatusEnabled, "remark": req.Remark,
 		}).InsertAndGetId()
@@ -267,9 +286,20 @@ func (s *sTenant) Update(ctx context.Context, req *v1.TenantUpdateReq) (res *v1.
 	if req.Id == consts.TenantPlatformId && (req.Status != consts.StatusEnabled || req.ExpireAt != "") {
 		return nil, xerror.New(xerror.CodeBusinessError, "平台租户不可禁用或设置到期")
 	}
+	// 套餐绑定仅记录归属, 不自动改授权集 (生效走套餐同步或应用授权抽屉)
+	if req.PackageId > 0 {
+		pkg, perr := getPackageRow(ctx, req.PackageId)
+		if perr != nil {
+			return nil, perr
+		}
+		if pkg.Status != consts.StatusEnabled {
+			return nil, xerror.New(xerror.CodeBusinessError, "套餐已停用, 无法绑定")
+		}
+	}
 	data := g.Map{
 		"name": req.Name, "contact": req.Contact, "plan": req.Plan,
-		"status": req.Status, "remark": req.Remark,
+		"package_id": req.PackageId,
+		"status":     req.Status, "remark": req.Remark,
 	}
 	if req.ExpireAt == "" {
 		data["expire_at"] = nil
@@ -366,36 +396,48 @@ func (s *sTenant) SetMenus(ctx context.Context, req *v1.TenantSetMenusReq) (res 
 	if req.Id == consts.TenantPlatformId {
 		return nil, xerror.New(xerror.CodeBusinessError, "平台租户授权集整体豁免, 无需配置")
 	}
-	if _, err = s.getTenant(ctx, req.Id); err != nil {
+	if err = s.applyMenuSet(ctx, req.Id, req.MenuIds); err != nil {
 		return nil, err
+	}
+	if _, rerr := casbinx.Reload(ctx); rerr != nil {
+		g.Log().Warningf(ctx, "casbin reload after tenant menus change failed: %v", rerr)
+	}
+	return &v1.TenantSetMenusRes{}, nil
+}
+
+// applyMenuSet 单租户授权集重写 + casbin 双向联动 (单事务, 不含 Reload) ——
+// SetMenus 与套餐同步 (tenantpackage.Sync) 共用同一路径。
+func (s *sTenant) applyMenuSet(ctx context.Context, tenantId uint64, menuIds []uint64) error {
+	if _, err := s.getTenant(ctx, tenantId); err != nil {
+		return err
 	}
 	menus, err := s.loadMenus(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	newSet := dedupU64(req.MenuIds)
+	newSet := dedupU64(menuIds)
 	if verr := s.validateGrantSet(menus, newSet); verr != nil {
-		return nil, verr
+		return verr
 	}
 	newClosure := closureOf(menus, newSet)
 	newApiRows, err := s.allowedApis(ctx, newClosure)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	oldSet := make(map[uint64]struct{})
-	if oldIds, oerr := s.AuthorizedMenuIds(ctx, req.Id); oerr == nil {
+	if oldIds, oerr := s.AuthorizedMenuIds(ctx, tenantId); oerr == nil {
 		for _, id := range oldIds {
 			oldSet[id] = struct{}{}
 		}
 	}
 	oldClosure := closureOf(menus, oldSet)
 
-	dom := strconv.FormatUint(req.Id, 10)
-	rid, terr := s.TenantAdminRoleId(ctx, req.Id)
+	dom := strconv.FormatUint(tenantId, 10)
+	rid, terr := s.TenantAdminRoleId(ctx, tenantId)
 
 	txErr := dao.SysTenantMenu.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 重写授权集 (PUT 全量覆盖, 幂等)
-		if err := rewriteTenantMenus(ctx, req.Id, newSet); err != nil {
+		if err := rewriteTenantMenus(ctx, tenantId, newSet); err != nil {
 			return err
 		}
 		// 收缩: 删除域内越界 p 行 (菜单 + API), 对全部角色生效 (不变式强制)
@@ -412,12 +454,9 @@ func (s *sTenant) SetMenus(ctx context.Context, req *v1.TenantSetMenusReq) (res 
 		return nil
 	})
 	if txErr != nil {
-		return nil, xerror.Wrap(xerror.CodeBusinessError, txErr, "设置应用授权集失败")
+		return xerror.Wrap(xerror.CodeBusinessError, txErr, "设置应用授权集失败")
 	}
-	if _, rerr := casbinx.Reload(ctx); rerr != nil {
-		g.Log().Warningf(ctx, "casbin reload after tenant menus change failed: %v", rerr)
-	}
-	return &v1.TenantSetMenusRes{}, nil
+	return nil
 }
 
 // ---------------------------------------------------------------------------

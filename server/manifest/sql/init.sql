@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS `sys_tenant` (
   `name`          VARCHAR(128) NOT NULL              COMMENT '租户名称',
   `code`          VARCHAR(64)  NOT NULL              COMMENT '租户标识(子域名/登录码, 全局唯一, 创建后不可变)',
   `contact`       VARCHAR(128) NOT NULL DEFAULT ''   COMMENT '联系人',
-  `plan`          VARCHAR(32)  NOT NULL DEFAULT 'standard' COMMENT '套餐(展示标签, 预留)',
+  `plan`          VARCHAR(32)  NOT NULL DEFAULT 'standard' COMMENT '套餐(展示标签)',
+  `package_id`    BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '套餐ID(sys_tenant_package, 0=自定义/未绑定)',
   `quota_users`   INT NOT NULL DEFAULT 0             COMMENT '用户数配额(0=不限, 预留)',
   `quota_storage` BIGINT NOT NULL DEFAULT 0          COMMENT '存储配额字节(0=不限, 预留)',
   `expire_at`     DATETIME DEFAULT NULL              COMMENT '到期时间(NULL=永久)',
@@ -47,8 +48,30 @@ CREATE TABLE IF NOT EXISTS `sys_tenant` (
   `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at`    DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_code` (`code`)
+  UNIQUE KEY `uk_code` (`code`),
+  KEY `idx_package` (`package_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='租户';
+
+-- ------------------------------------------------------------
+-- 租户套餐表 (§7.2: 应用授权集的模板复用层 —— 建同类租户免逐个勾选;
+-- 平台表无 tenant_id, 管理入口仅平台超管; menu_ids 为目录/页面级 ID 的
+-- JSON 数组快照, 保存时经与 sys_tenant_menu 相同的合法性校验
+-- (仅目录/页面级 + 非平台专属), 同步时物化到目标租户授权集)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `sys_tenant_package` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`       VARCHAR(64)  NOT NULL                COMMENT '套餐名称(全局唯一, 软删时改写防撞uk)',
+  `menu_ids`   TEXT         NOT NULL                COMMENT '应用授权集模板(目录/页面级ID的JSON数组)',
+  `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '1=启用 0=停用',
+  `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='租户套餐(应用授权集模板)';
 
 -- ------------------------------------------------------------
 -- 租户应用授权关系表 (§7.1: 平台管理的租户可用菜单目录/页面级授权集,
@@ -64,6 +87,10 @@ CREATE TABLE IF NOT EXISTS `sys_tenant_menu` (
 -- 平台租户 (id=1): 单租户部署下所有数据挂它; 运行时授权集整体豁免 (全集)
 INSERT IGNORE INTO `sys_tenant` (`id`,`name`,`code`,`contact`,`status`,`remark`) VALUES
   (1, '平台租户', 'platform', '', 1, '内置平台租户(id=1), 不可禁用/删除');
+
+-- 默认套餐种子: 基础协作包 (= 创建租户缺省授权模板, 与下方 sys_tenant_menu 平台行快照一致)
+INSERT IGNORE INTO `sys_tenant_package` (`id`,`name`,`menu_ids`,`status`,`remark`) VALUES
+  (1, '基础协作包', '[30,40,50,51,52,15,10,11,60,9040,9350]', 1, '默认套餐: 仪表盘/个人中心/消息/文件/用户/角色/组织/岗位/租户设置');
 
 -- ------------------------------------------------------------
 -- 用户表
@@ -1360,6 +1387,25 @@ INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (9351, 9350, '配置维护', 3, '', '', '', 'system:tenant-config:update', 1, 0, 1);
 
+-- 菜单: 租户套餐 (§7.2 应用授权集模板复用层; 平台专属 —— 不进任何租户授权集)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9360, 1, '租户套餐', 2, '/system/tenant-packages', 'system/tenant-packages/index', 'Box', 'system:tenant-package:list', 20, 1, 1);
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9361, 9360, '套餐新增', 3, '', '', '', 'system:tenant-package:create', 1, 0, 1),
+  (9362, 9360, '套餐修改', 3, '', '', '', 'system:tenant-package:update', 2, 0, 1),
+  (9363, 9360, '套餐删除', 3, '', '', '', 'system:tenant-package:delete', 3, 0, 1),
+  (9364, 9360, '套餐同步', 3, '', '', '', 'system:tenant-package:sync',   4, 0, 1);
+
+-- API 资源 (租户套餐)
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/tenant-packages',           'GET',    '租户套餐', '套餐分页列表'),
+  ('/api/v1/system/tenant-packages/all',       'GET',    '租户套餐', '启用套餐全量(创建向导/授权抽屉下拉)'),
+  ('/api/v1/system/tenant-packages/{id}',      'GET',    '租户套餐', '套餐详情(含授权集模板)'),
+  ('/api/v1/system/tenant-packages',           'POST',   '租户套餐', '新增套餐'),
+  ('/api/v1/system/tenant-packages/{id}',      'PUT',    '租户套餐', '修改套餐'),
+  ('/api/v1/system/tenant-packages/{id}',      'DELETE', '租户套餐', '删除套餐(使用中禁止)'),
+  ('/api/v1/system/tenant-packages/{id}/sync', 'POST',   '租户套餐', '套餐同步至绑定租户(重写授权集+联动casbin)');
+
 -- API 资源 (租户管理 + 公开租户信息)
 INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/tenants',                      'GET',    '租户管理', '租户分页列表'),
@@ -1496,4 +1542,5 @@ UPDATE `sys_api` SET `menu_id`=9040 WHERE `group_name`='岗位管理' AND `menu_
 UPDATE `sys_api` SET `menu_id`=9100 WHERE `group_name`='AI助手'   AND `menu_id`=0;
 UPDATE `sys_api` SET `menu_id`=9200 WHERE `group_name`='业务审批' AND `menu_id`=0;
 UPDATE `sys_api` SET `menu_id`=9300 WHERE `group_name`='租户管理' AND `menu_id`=0;
+UPDATE `sys_api` SET `menu_id`=9360 WHERE `group_name`='租户套餐' AND `menu_id`=0;
 -- 认证组 = 会话/公共支撑接口 (authWhitelist 免 Casbin) 与注册公共口: 保持 menu_id=0 (租户不可绑也无需绑)

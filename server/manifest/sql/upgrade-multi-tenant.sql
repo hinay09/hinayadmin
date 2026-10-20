@@ -392,5 +392,65 @@ UPDATE `sys_role`   SET `tenant_id`=1 WHERE `tenant_id`=0;
 UPDATE `sys_config` SET `tenant_id`=1 WHERE `tenant_id`=0;
 
 -- ------------------------------------------------------------
+-- 7. 租户套餐 (§7.2 应用授权集模板复用层; 已是最新多租户基线的库仅需执行本段)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `sys_tenant_package` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`       VARCHAR(64)  NOT NULL                COMMENT '套餐名称(全局唯一, 软删时改写防撞uk)',
+  `menu_ids`   TEXT         NOT NULL                COMMENT '应用授权集模板(目录/页面级ID的JSON数组)',
+  `status`     TINYINT      NOT NULL DEFAULT 1      COMMENT '1=启用 0=停用',
+  `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
+  `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `update_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='租户套餐(应用授权集模板)';
+
+DROP PROCEDURE IF EXISTS `mt_pkg_upgrade`;
+DELIMITER $$
+CREATE PROCEDURE `mt_pkg_upgrade`()
+BEGIN
+  DECLARE db VARCHAR(64);
+  SELECT DATABASE() INTO db;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA=db AND TABLE_NAME='sys_tenant' AND COLUMN_NAME='package_id') THEN
+    ALTER TABLE `sys_tenant` ADD COLUMN `package_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '套餐ID(sys_tenant_package, 0=自定义/未绑定)' AFTER `plan`;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA=db AND TABLE_NAME='sys_tenant' AND INDEX_NAME='idx_package') THEN
+    ALTER TABLE `sys_tenant` ADD INDEX `idx_package` (`package_id`);
+  END IF;
+END$$
+DELIMITER ;
+
+CALL `mt_pkg_upgrade`();
+DROP PROCEDURE IF EXISTS `mt_pkg_upgrade`;
+
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (9360, 1, '租户套餐', 2, '/system/tenant-packages', 'system/tenant-packages/index', 'Box', 'system:tenant-package:list', 20, 1, 1),
+  (9361, 9360, '套餐新增', 3, '', '', '', 'system:tenant-package:create', 1, 0, 1),
+  (9362, 9360, '套餐修改', 3, '', '', '', 'system:tenant-package:update', 2, 0, 1),
+  (9363, 9360, '套餐删除', 3, '', '', '', 'system:tenant-package:delete', 3, 0, 1),
+  (9364, 9360, '套餐同步', 3, '', '', '', 'system:tenant-package:sync',   4, 0, 1);
+
+INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
+  ('/api/v1/system/tenant-packages',           'GET',    '租户套餐', '套餐分页列表'),
+  ('/api/v1/system/tenant-packages/all',       'GET',    '租户套餐', '启用套餐全量(创建向导/授权抽屉下拉)'),
+  ('/api/v1/system/tenant-packages/{id}',      'GET',    '租户套餐', '套餐详情(含授权集模板)'),
+  ('/api/v1/system/tenant-packages',           'POST',   '租户套餐', '新增套餐'),
+  ('/api/v1/system/tenant-packages/{id}',      'PUT',    '租户套餐', '修改套餐'),
+  ('/api/v1/system/tenant-packages/{id}',      'DELETE', '租户套餐', '删除套餐(使用中禁止)'),
+  ('/api/v1/system/tenant-packages/{id}/sync', 'POST',   '租户套餐', '套餐同步至绑定租户(重写授权集+联动casbin)');
+
+UPDATE `sys_api` SET `menu_id`=9360 WHERE `group_name`='租户套餐' AND `menu_id`=0;
+
+-- 默认套餐种子 (与 §5 tenant_admin 模板授权集 / init.sql 基线一致)
+INSERT IGNORE INTO `sys_tenant_package` (`id`,`name`,`menu_ids`,`status`,`remark`) VALUES
+  (1, '基础协作包', '[30,40,50,51,52,15,10,11,60,9040,9350]', 1, '默认套餐: 仪表盘/个人中心/消息/文件/用户/角色/组织/岗位/租户设置');
+
+-- ------------------------------------------------------------
 -- 完成后: ① config.yaml 增加 multiTenant.enable: true; ② 重启应用。
 -- ------------------------------------------------------------

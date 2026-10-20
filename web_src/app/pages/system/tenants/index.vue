@@ -10,7 +10,7 @@
  */
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import { Plus, Edit, Delete, Key, RefreshLeft, Search } from '@element-plus/icons-vue'
-import { useTenantApi, type TenantItem } from '~/composables/useApi'
+import { useTenantApi, useTenantPackageApi, type TenantItem, type TenantPackageLite } from '~/composables/useApi'
 import { useMenuApi } from '~/composables/useApi'
 import { useUserStore } from '~/stores/user'
 import { useConfigStore } from '~/stores/config'
@@ -19,6 +19,7 @@ definePageMeta({ title: '租户管理' })
 defineOptions({ name: 'system-tenants' })
 
 const tenantApi = useTenantApi()
+const pkgApi = useTenantPackageApi()
 const menuApi = useMenuApi()
 const userStore = useUserStore()
 const configStore = useConfigStore()
@@ -40,28 +41,38 @@ async function loadList() {
   }
 }
 
-onMounted(() => { if (visible.value) loadList() })
+/* ---- 启用套餐下拉 (向导预填/编辑绑定/授权导入共用) ---- */
+const packages = ref<TenantPackageLite[]>([])
+async function loadPackages() {
+  const res: any = await pkgApi.listAll()
+  packages.value = (res?.list || []).map((p: any) => ({ ...p, menuIds: (p.menuIds || []).map(Number) }))
+}
+
+onMounted(() => { if (visible.value) { loadList(); loadPackages() } })
 
 /* ---- 编辑抽屉 ---- */
 const editRef = ref<FormInstance>()
 const editVisible = ref(false)
-const editForm = reactive({ id: 0, name: '', contact: '', plan: 'standard', expireAt: '', status: 1, remark: '', code: '' })
+const editForm = reactive({ id: 0, name: '', contact: '', plan: 'standard', packageId: 0, expireAt: '', status: 1, remark: '', code: '' })
 
 function openEdit(row: TenantItem) {
   Object.assign(editForm, {
     id: row.id, name: row.name, contact: row.contact, plan: row.plan || 'standard',
+    packageId: row.packageId || 0,
     expireAt: row.expireAt ? String(row.expireAt).replace('T', ' ').slice(0, 16) : '',
     status: row.status, remark: row.remark || '', code: row.code,
   })
+  if (!packages.value.length) loadPackages()
   editVisible.value = true
 }
 
 async function submitEdit() {
   await tenantApi.update(editForm.id, {
     name: editForm.name, contact: editForm.contact, plan: editForm.plan,
+    packageId: editForm.packageId || 0,
     expireAt: editForm.expireAt, status: editForm.status, remark: editForm.remark,
   })
-  ElMessage.success('已保存')
+  ElMessage.success('已保存 (套餐绑定变更不自动调整授权集, 需生效请在租户套餐页同步)')
   editVisible.value = false
   loadList()
 }
@@ -89,8 +100,10 @@ async function handleResetConfigs(row: TenantItem) {
 const wizardVisible = ref(false)
 const wizardStep = ref(0)
 const wizardRef = ref<FormInstance>()
+const wizardTreeRef = ref<any>()
 const wizard = reactive({
-  name: '', code: '', contact: '', plan: 'standard', expireAt: '', remark: '',
+  name: '', code: '', contact: '', plan: 'standard', packageId: undefined as number | undefined,
+  expireAt: '', remark: '',
   adminUsername: '', adminNickname: '', adminPassword: '',
   menuIds: [] as number[],
 })
@@ -115,12 +128,24 @@ const treeProps = { label: 'name', children: 'children' }
 
 function openWizard() {
   Object.assign(wizard, {
-    name: '', code: '', contact: '', plan: 'standard', expireAt: '', remark: '',
+    name: '', code: '', contact: '', plan: 'standard', packageId: undefined,
+    expireAt: '', remark: '',
     adminUsername: '', adminNickname: '', adminPassword: '', menuIds: [],
   })
   wizardStep.value = 0
   wizardVisible.value = true
   loadMenuTree()
+  if (!packages.value.length) loadPackages()
+}
+
+// 选中套餐 → 预填勾选树与套餐展示标签 (仍可在树上继续微调)
+function applyPackageToWizard(pkgId?: number) {
+  const pkg = packages.value.find(p => p.id === pkgId)
+  if (!pkg) return
+  wizard.menuIds = [...pkg.menuIds]
+  wizard.plan = pkg.name
+  wizardTreeRef.value?.setCheckedKeys([], false)
+  wizardTreeRef.value?.setCheckedKeys(pkg.menuIds, false)
 }
 
 async function nextStep() {
@@ -139,6 +164,7 @@ async function submitWizard() {
   try {
     const res = await tenantApi.create({
       name: wizard.name, code: wizard.code, contact: wizard.contact, plan: wizard.plan,
+      packageId: wizard.packageId || undefined,
       expireAt: wizard.expireAt, remark: wizard.remark,
       adminUsername: wizard.adminUsername, adminNickname: wizard.adminNickname || undefined,
       adminPassword: wizard.adminPassword || undefined,
@@ -157,15 +183,26 @@ const authVisible = ref(false)
 const authTreeRef = ref<any>()
 const authTenant = ref<TenantItem | null>(null)
 const authSaving = ref(false)
+const authImportPkg = ref<number | undefined>(undefined)
 
 async function openAuth(row: TenantItem) {
   authTenant.value = row
+  authImportPkg.value = undefined
   authVisible.value = true
   await loadMenuTree()
+  if (!packages.value.length) loadPackages()
   const [res] = await Promise.all([tenantApi.getMenus(row.id)])
   await nextTick()
   authTreeRef.value?.setCheckedKeys([], false)
   authTreeRef.value?.setCheckedKeys((res?.menuIds || []).map(Number), false)
+}
+
+// 从套餐导入授权集到勾选树 (预填, 仍需手动保存)
+function importPackageToAuth(pkgId?: number) {
+  const pkg = packages.value.find(p => p.id === pkgId)
+  if (!pkg) return
+  authTreeRef.value?.setCheckedKeys([], false)
+  authTreeRef.value?.setCheckedKeys(pkg.menuIds, false)
 }
 
 async function submitAuth() {
@@ -211,7 +248,12 @@ function statusText(s: number) { return s === 1 ? '启用' : '禁用' }
           <template #default="{ row }"><el-tag size="small" type="info">{{ row.code }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="contact" label="联系人" min-width="90" />
-        <el-table-column prop="plan" label="套餐" width="90" />
+        <el-table-column label="套餐" width="110">
+          <template #default="{ row }">
+            <el-tag v-if="row.packageName" size="small">{{ row.packageName }}</el-tag>
+            <span v-else>{{ row.plan }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="到期时间" width="160">
           <template #default="{ row }">
             <span v-if="row.expireAt">{{ String(row.expireAt).replace('T', ' ').slice(0, 16) }}</span>
@@ -258,6 +300,12 @@ function statusText(s: number) { return s === 1 ? '启用' : '禁用' }
         </el-form-item>
         <el-form-item label="联系人"><el-input v-model="editForm.contact" /></el-form-item>
         <el-form-item label="套餐"><el-input v-model="editForm.plan" /></el-form-item>
+        <el-form-item label="套餐绑定">
+          <el-select v-model="editForm.packageId" placeholder="未绑定/自定义" clearable style="width: 100%">
+            <el-option v-for="p in packages" :key="p.id" :label="`${p.name} (${p.menuIds.length} 个应用)`" :value="p.id" />
+          </el-select>
+          <div class="form-tip">仅记录归属; 调整授权集请用「应用授权」抽屉或在租户套餐页同步</div>
+        </el-form-item>
         <el-form-item label="到期时间">
           <el-date-picker v-model="editForm.expireAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="留空=永久" style="width: 100%" />
         </el-form-item>
@@ -310,7 +358,19 @@ function statusText(s: number) { return s === 1 ? '启用' : '禁用' }
 
       <div v-else>
         <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px"
-          title="勾选该租户可用的应用模块 (目录/页面级); 不勾=默认基础协作包; 后续可在「应用授权」抽屉调整" />
+          title="勾选该租户可用的应用模块 (目录/页面级); 可先选套餐预填再微调; 不勾=默认基础协作包; 后续可在「应用授权」抽屉调整" />
+        <el-form label-width="90px" style="margin-bottom: 10px">
+          <el-form-item label="选择套餐">
+            <el-select
+              :model-value="wizard.packageId"
+              placeholder="从套餐模板预填勾选 (可继续微调)"
+              clearable style="width: 100%"
+              @update:model-value="(v: any) => { wizard.packageId = v || undefined; applyPackageToWizard(v) }"
+            >
+              <el-option v-for="p in packages" :key="p.id" :label="`${p.name} (${p.menuIds.length} 个应用)`" :value="p.id" />
+            </el-select>
+          </el-form-item>
+        </el-form>
         <el-tree
           ref="wizardTreeRef"
           :data="menuTreeData"
@@ -340,6 +400,14 @@ function statusText(s: number) { return s === 1 ? '启用' : '禁用' }
     <el-drawer v-model="authVisible" :title="`应用授权 - ${authTenant?.name || ''}`" size="520px">
       <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px"
         title="收缩即时清理租户内越权策略; 扩张自动授予租户管理员角色 (买了就用), 普通角色仍由租户管理员分配" />
+      <el-select
+        v-model="authImportPkg"
+        placeholder="从套餐导入授权集 (预填勾选, 仍需保存)"
+        clearable size="default" style="width: 100%; margin-bottom: 10px"
+        @change="importPackageToAuth"
+      >
+        <el-option v-for="p in packages" :key="p.id" :label="`${p.name} (${p.menuIds.length} 个应用)`" :value="p.id" />
+      </el-select>
       <el-tree
         ref="authTreeRef"
         :data="menuTreeData"
@@ -366,4 +434,5 @@ function statusText(s: number) { return s === 1 ? '启用' : '禁用' }
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 12px; }
+.form-tip { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.4; margin-top: 2px; }
 </style>

@@ -130,11 +130,12 @@ const (
 )
 
 // 多租户相关内置菜单 ID (代码常量恒授/平台专属判定, 不依赖种子):
-// 基础菜单 30 仪表盘 / 40 个人中心 对任何租户恒授; 9300 租户管理为平台专属。
+// 基础菜单 30 仪表盘 / 40 个人中心 对任何租户恒授; 9300 租户管理 / 9360 租户套餐为平台专属。
 const (
-	MenuDashboard    uint64 = 30
-	MenuProfile      uint64 = 40
-	MenuTenantManage uint64 = 9300
+	MenuDashboard     uint64 = 30
+	MenuProfile       uint64 = 40
+	MenuTenantManage  uint64 = 9300
+	MenuTenantPackage uint64 = 9360
 )
 
 // 内置角色ID: 超级管理员角色固定为 1 (种子数据/删除保护/权限配置豁免均按此ID判定,

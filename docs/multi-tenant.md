@@ -13,6 +13,7 @@
 | 权限域化 | Casbin 升级域模型，各租户策略互不可见；角色唯一键 `(tenant_id, code)` |
 | 双层管理员 | 平台超管（角色 id=1，跨租户）/ 租户管理员（`tenant_admin` 角色，本租户围栏内全权） |
 | 应用授权集 | 平台通过 `sys_tenant_menu` 圈定每租户可用菜单/API，变更即时双向联动 Casbin 策略 |
+| 套餐模板 | 租户套餐（`sys_tenant_package`）复用授权集模板：创建向导选中预填（可微调）、修改后一键同步绑定租户（同授权集路径联动） |
 | 配置覆盖 | 白名单键（站点名/Logo/版权/注册开关/密码策略）支持租户覆盖，读序：租户 > 平台 |
 | 代运维切换 | 平台超管携带 `X-Tenant-Id` 头即可切换数据面到目标租户（内存态，非平台超管携带被忽略+告警审计） |
 | 租户生命周期 | 创建向导（六件套单事务）/ 禁用与到期逐请求拦截 / 软删（code 原子改写防重建撞码） |
@@ -144,6 +145,8 @@ configx.PlatformPrefix(ctx, "file.storage.")       // 平台级前缀批量
 | `DELETE /system/tenants/{id}` | 软删（code 改写 `{code}#del{unix}` 防重建撞码） |
 | `GET/PUT /system/tenants/{id}/menus` | 应用授权集（PUT 全量覆盖，双向联动 Casbin 即时生效） |
 | `POST /system/tenants/{id}/configs/reset` | 重置租户覆盖配置（回归平台默认） |
+| `GET/POST /system/tenant-packages` | 套餐分页列表 / 新增（含 `/all` 全量、`/{id}` 详情与修改、`DELETE /{id}` 删除——使用中禁止） |
+| `POST /system/tenant-packages/{id}/sync` | 套餐同步至绑定租户（逐租户重写授权集 + Casbin 联动；创建/修改租户用 `packageId` 字段绑定） |
 | `GET /auth/tenant/info?code=` | 公开租户信息（仅显示名，按 IP 限流） |
 
 登录侧：请求体 `tenantCode`（或 `X-Tenant-Code` 头）指定租户，缺省平台租户；
@@ -159,7 +162,7 @@ go test ./internal/logic/configx/   # 配置覆盖读序
 go test ./internal/logic/tenant/    # 授权集闭包/差集/平台专属判定
 make tenant-lint                    # 工程规约四项静态检查
 # 端到端冒烟 (前置: make run + initdb + sys.captcha_enable=false):
-bash tools/tenant-smoke.sh          # 16 组 56 断言: 隔离/切换/授权联动/生命周期全覆盖
+bash tools/tenant-smoke.sh          # 17 组 60+ 断言: 隔离/切换/授权联动/套餐模板/生命周期全覆盖
 ```
 
 ## 七、常见坑速查

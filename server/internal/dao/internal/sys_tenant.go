@@ -26,6 +26,7 @@ type SysTenantColumns struct {
 	Code         string // 租户标识(子域名/登录码, 全局唯一, 创建后不可变)
 	Contact      string // 联系人
 	Plan         string // 套餐(展示标签, 预留)
+	PackageId    string // 套餐ID(sys_tenant_package, 0=自定义/未绑定)
 	QuotaUsers   string // 用户数配额(0=不限, 预留)
 	QuotaStorage string // 存储配额字节(0=不限, 预留)
 	ExpireAt     string // 到期时间(NULL=永久)
@@ -45,6 +46,7 @@ var sysTenantColumns = SysTenantColumns{
 	Code:         "code",
 	Contact:      "contact",
 	Plan:         "plan",
+	PackageId:    "package_id",
 	QuotaUsers:   "quota_users",
 	QuotaStorage: "quota_storage",
 	ExpireAt:     "expire_at",

@@ -12,9 +12,10 @@ type MenuLite struct {
 
 // platformExclusiveMenus 平台专属页面 (docs/multi-tenant.md §7.1/§7.2):
 // 系统监控(2)/系统工具(3) 目录子树 + 平台目录维护页 (12 菜单/13 API/14 字典/17 全局配置)
-// + 租户管理(9300) 子树 —— 永不进任何租户授权集。
+// + 租户管理(9300) 子树 + 租户套餐(9360) 子树 —— 永不进任何租户授权集。
 var platformExclusiveMenus = map[uint64]struct{}{
-	2: {}, 3: {}, 12: {}, 13: {}, 14: {}, 17: {}, consts.MenuTenantManage: {},
+	2: {}, 3: {}, 12: {}, 13: {}, 14: {}, 17: {},
+	consts.MenuTenantManage: {}, consts.MenuTenantPackage: {},
 }
 
 // closureOf 计算授权集的有效闭包: 授权行 ∪ 子孙(按钮随父页面闭包) ∪ 祖先(菜单树完整性)。

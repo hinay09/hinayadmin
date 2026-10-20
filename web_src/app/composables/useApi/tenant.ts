@@ -9,6 +9,8 @@ export interface TenantItem {
   code: string
   contact: string
   plan: string
+  packageId?: number
+  packageName?: string
   quotaUsers: number
   quotaStorage: number
   expireAt?: string | null
@@ -29,6 +31,7 @@ export interface TenantCreateData {
   code: string
   contact?: string
   plan?: string
+  packageId?: number
   expireAt?: string
   remark?: string
   adminUsername: string
@@ -45,8 +48,7 @@ export function useTenantApi() {
     listAll: () => r.get<{ list: TenantLiteItem[] }>(`${base}/all`),
     detail: (id: number) => r.get<{ tenant: TenantItem }>(`${base}/${id}`),
     create: (data: TenantCreateData) => r.post<{ id: number, adminUserId: number }>(base, data),
-    update: (id: number, data: Partial<TenantCreateData> & { status?: number }) => r.put(`${base}/${id}`, data),
-    remove: (id: number) => r.del(`${base}/${id}`),
+    update: (id: number, data: Partial<TenantCreateData> & { status?: number }) => r.put(`${base}/${id}`, data),    remove: (id: number) => r.del(`${base}/${id}`),
     getMenus: (id: number) => r.get<{ menuIds: number[] }>(`${base}/${id}/menus`),
     setMenus: (id: number, menuIds: number[]) => r.put(`${base}/${id}/menus`, { menuIds }),
     resetConfigs: (id: number) => r.post(`${base}/${id}/configs/reset`),

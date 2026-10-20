@@ -45,6 +45,10 @@ var (
 	CodeMenuNotInAuthSet = gcode.New(50028, "菜单超出租户应用授权范围", nil)
 	// CodeApiNotInAuthSet 租户角色绑定的 API 不在授权集内或不存在于 sys_api (§7.1)。
 	CodeApiNotInAuthSet = gcode.New(50029, "接口超出租户应用授权范围", nil)
+	// CodePackageNameExists 套餐名称已存在 (全局唯一, 含软删撞名防护, §7.2)。
+	CodePackageNameExists = gcode.New(50030, "套餐名称已存在", nil)
+	// CodePackageInUse 套餐仍有未删租户绑定, 禁止删除 (§7.2)。
+	CodePackageInUse = gcode.New(50031, "套餐使用中, 请先解绑或换绑后再删除", nil)
 )
 
 // New 构造业务错误。

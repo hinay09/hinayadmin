@@ -17,6 +17,7 @@ type SysTenant struct {
 	Code         any         // 租户标识(子域名/登录码, 全局唯一, 创建后不可变)
 	Contact      any         // 联系人
 	Plan         any         // 套餐(展示标签, 预留)
+	PackageId    any         // 套餐ID(sys_tenant_package, 0=自定义/未绑定)
 	QuotaUsers   any         // 用户数配额(0=不限, 预留)
 	QuotaStorage any         // 存储配额字节(0=不限, 预留)
 	ExpireAt     *gtime.Time // 到期时间(NULL=永久)

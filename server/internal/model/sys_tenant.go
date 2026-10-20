@@ -9,6 +9,7 @@ type SysTenant struct {
 	Code         string      `json:"code"         orm:"code"`
 	Contact      string      `json:"contact"      orm:"contact"`
 	Plan         string      `json:"plan"         orm:"plan"`
+	PackageId    uint64      `json:"packageId"    orm:"package_id"`
 	QuotaUsers   int         `json:"quotaUsers"   orm:"quota_users"`
 	QuotaStorage int64       `json:"quotaStorage" orm:"quota_storage"`
 	ExpireAt     *gtime.Time `json:"expireAt"     orm:"expire_at"`

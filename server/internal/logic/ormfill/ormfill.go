@@ -59,7 +59,8 @@ var fillTables = map[string]struct{}{
 	"cms_category": {},
 	"cms_article":  {},
 	// 租户 (平台表; sys_tenant_menu 为纯关系表, 不纳入 —— 同 sys_user_totp 先例)
-	"sys_tenant": {},
+	"sys_tenant":         {},
+	"sys_tenant_package": {},
 }
 
 // Driver 审计字段填充驱动: 继承内置 mysql 驱动, 重写 DoInsert / DoUpdate。

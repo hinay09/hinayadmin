@@ -54,7 +54,8 @@ type TenantCreateReq struct {
 	AdminUsername string   `json:"adminUsername" v:"required|length:2,32" dc:"租户管理员登录账号"`
 	AdminNickname string   `json:"adminNickname" v:"length:0,32" dc:"租户管理员昵称(缺省同账号)"`
 	AdminPassword string   `json:"adminPassword" v:"length:0,32" dc:"初始密码(空=123456, 首次登录强制改密)"`
-	MenuIds       []uint64 `json:"menuIds" dc:"初始应用授权集(目录/页面级, 缺省=基础协作包模板)"`
+	PackageId     uint64   `json:"packageId"     dc:"套餐ID(选中套餐且未手动勾选时以其授权集为初始授权, 绑定关系记录在租户行)"`
+	MenuIds       []uint64 `json:"menuIds" dc:"初始应用授权集(目录/页面级, 优先级高于套餐; 缺省=套餐授权集或基础协作包模板)"`
 }
 
 // TenantCreateRes 创建响应。
@@ -65,14 +66,15 @@ type TenantCreateRes struct {
 
 // TenantUpdateReq 修改租户 (code 不可变 —— 租户码是登录入口/命名空间依据)。
 type TenantUpdateReq struct {
-	g.Meta   `path:"/system/tenants/{id}" tags:"SystemTenant" method:"put" summary:"修改租户"`
-	Id       uint64 `json:"id"       in:"path" v:"required"`
-	Name     string `json:"name"     v:"required|length:2,64"`
-	Contact  string `json:"contact"  v:"length:0,64"`
-	Plan     string `json:"plan"     v:"length:0,32"`
-	ExpireAt string `json:"expireAt" dc:"到期时间(空=永久)"`
-	Status   int    `json:"status"   v:"in:0,1" dc:"1=启用 0=禁用"`
-	Remark   string `json:"remark"`
+	g.Meta    `path:"/system/tenants/{id}" tags:"SystemTenant" method:"put" summary:"修改租户"`
+	Id        uint64 `json:"id"       in:"path" v:"required"`
+	Name      string `json:"name"     v:"required|length:2,64"`
+	Contact   string `json:"contact"  v:"length:0,64"`
+	Plan      string `json:"plan"     v:"length:0,32"`
+	ExpireAt  string `json:"expireAt" dc:"到期时间(空=永久)"`
+	Status    int    `json:"status"   v:"in:0,1" dc:"1=启用 0=禁用"`
+	PackageId uint64 `json:"packageId" dc:"套餐绑定(0=解绑; 仅记录归属, 不自动改授权集 —— 生效走套餐同步或应用授权抽屉)"`
+	Remark    string `json:"remark"`
 }
 
 // TenantUpdateRes 修改响应。

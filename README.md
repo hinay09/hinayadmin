@@ -56,7 +56,7 @@
 - AI 智能对话: OpenAI 兼容接口 (eino react agent), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
 - 内容管理 CMS: 栏目 + 文章, 文章正文为 wangeditor 富文本 (前端 `RichEditor` 组件, 仅客户端动态加载); 图片/视频统一走文件管理上传 (预签名直传优先), 正文内媒体存持久引用 (`data-ref`, 入库归一 / 出站经 `storage.ViewURL` 重写 —— S3 预签名过期或切换存储不腐蚀历史内容); 正文入库前经 bluemonday XSS 白名单过滤 (utility/sanitizer, 标题/摘要等纯文本字段剥标签), script/事件属性/危险 scheme/危险 style 声明全部剥离; 文章状态机 草稿/已发布/已下架 + 置顶, 栏目编码租户内唯一
 - 微信公众号回调 (验签 + Echo 回复, 占位可扩展)
-- **多租户** (可选, `multiTenant.enable` 开关): 共享库 `tenant_id` 行级隔离 + Casbin 租户域 + 平台/租户管理员双层治理 + 应用授权集 (租户可用模块由平台圈定) + 配置租户覆盖 + 平台超管代运维租户切换; 关闭时行为与单租户完全一致 (开发指南见 [docs/multi-tenant.md](docs/multi-tenant.md))
+- **多租户** (可选, `multiTenant.enable` 开关): 共享库 `tenant_id` 行级隔离 + Casbin 租户域 + 平台/租户管理员双层治理 + 应用授权集 (租户可用模块由平台圈定) + 租户套餐 (授权集模板复用: 创建向导选中预填 / 修改后一键同步绑定租户) + 配置租户覆盖 + 平台超管代运维租户切换; 关闭时行为与单租户完全一致 (开发指南见 [docs/multi-tenant.md](docs/multi-tenant.md))
 
 
 ## 界面截图
@@ -196,7 +196,7 @@ mysql -uroot -p hinay_admin < manifest/sql/init.sql
 
 | 表 | 说明 |
 | --- | --- |
-| `sys_tenant` / `sys_tenant_menu` | 多租户: 租户主表 + 租户应用授权集 (平台专属, 不走租户注入) |
+| `sys_tenant` / `sys_tenant_menu` / `sys_tenant_package` | 多租户: 租户主表 + 租户应用授权集 + 租户套餐授权集模板 (平台专属, 不走租户注入) |
 | `sys_user` | 系统用户 (含 `deleted_at` 软删) |
 | `sys_role` | 系统角色 |
 | `sys_org` | 组织机构 |
@@ -470,6 +470,8 @@ casbin:
 | 租户管理 | `/api/v1/system/tenants/{id}` | GET / PUT / DELETE | 租户详情 / 修改 / 删除 |
 | 租户管理 | `/api/v1/system/tenants/{id}/menus` | GET / PUT | 获取 / 设置应用授权集 |
 | 租户管理 | `/api/v1/system/tenants/{id}/configs/reset` | POST | 重置租户覆盖配置 |
+| 租户套餐 | `/api/v1/system/tenant-packages` (含 `/all`, `/{id}`) | CRUD | 套餐管理: 授权集模板 (仅平台) |
+| 租户套餐 | `/api/v1/system/tenant-packages/{id}/sync` | POST | 套餐同步至绑定租户 (重写授权集+联动 Casbin) |
 | 租户管理 | `/api/v1/auth/tenant/info` | GET | 公开租户信息 (按 code, 仅显示名, 限流) |
 | 内容管理 | `/api/v1/cms/categories` (含 `/all`) | CRUD | 栏目管理 (code 租户内唯一, 有文章不可删) |
 | 内容管理 | `/api/v1/cms/articles` (含 `/{id}`) | CRUD | 文章管理 (列表瘦身, 详情含富文本正文) |

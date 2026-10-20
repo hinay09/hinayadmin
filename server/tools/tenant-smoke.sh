@@ -187,6 +187,44 @@ RALL_S=$(curl -s "$BASE/system/roles/all" -H "$AH" -H "X-Tenant-Id: $TID")
 MIXS=$(jq_get "$RALL_S" "sum(1 for r in d['list'] if r['tenantId'] != $TID)")
 [ "$MIXS" = "0" ] && ok "平台超管切换态: 角色下拉=目标租户角色" || bad "切换态下拉混排 ($MIXS 条)"
 
+echo "== 8.6 租户套餐: 模板复用/绑定保护/同步联动 (§7.2) =="
+PKG=$(curl -s -X POST $BASE/system/tenant-packages -H "$AH" -H 'Content-Type: application/json' \
+  -d '{"name":"冒烟协作包","menuIds":[30,40,50,51,52,15,10,11,60,9040,9350],"status":1,"remark":"smoke"}')
+PKGID=$(jq_get "$PKG" "d['id']")
+if [ -n "$PKGID" ] && [ "$PKGID" != "None" ]; then
+  ok "套餐创建 id=$PKGID (授权集快照 11 项, 不含审批中心)"
+else
+  PKGID=$(curl -s "$BASE/system/tenant-packages?page=1&pageSize=100" -H "$AH" | jq_get "next((p['id'] for p in d['list'] if p['name']=='冒烟协作包'), None)")
+  [ -n "$PKGID" ] && [ "$PKGID" != "None" ] && ok "套餐已存在, 复用 id=$PKGID" || { bad "套餐创建失败: $PKG"; }
+fi
+BADPKG=$(curl -s -X POST $BASE/system/tenant-packages -H "$AH" -H 'Content-Type: application/json' \
+  -d '{"name":"冒烟越权包","menuIds":[9300]}')
+BADPKGC=$(jq_get "$BADPKG" "r['code']")
+[ "$BADPKGC" != "0" ] && ok "套餐含平台专属菜单(9300)被拒 → code=$BADPKGC" || bad "平台专属菜单进了套餐模板!"
+# 绑定 (仅记录归属, 不自动改授权集)
+BND=$(curl -s -X PUT "$BASE/system/tenants/$TID" -H "$AH" -H 'Content-Type: application/json' \
+  -d '{"name":"Acme租户","contact":"bob","status":1,"remark":"","plan":"standard","packageId":'"$PKGID"'}')
+BNDC=$(jq_get "$BND" "r['code']")
+TLIST=$(curl -s "$BASE/system/tenants?keyword=acme" -H "$AH")
+TPKG=$(jq_get "$TLIST" "next((t['packageName'] for t in d['list'] if t['id']==$TID), '')")
+[ "$BNDC" = "0" ] && [ "$TPKG" = "冒烟协作包" ] && ok "套餐绑定成功且列表标注归属 (packageName=$TPKG)" || bad "套餐绑定异常: code=$BNDC pkg=$TPKG"
+# 使用中禁删 (50031)
+DELPKG=$(curl -s -X DELETE "$BASE/system/tenant-packages/$PKGID" -H "$AH")
+DELPC=$(jq_get "$DELPKG" "r['code']")
+[ "$DELPC" = "50031" ] && ok "使用中套餐删除被拒 → 50031" || bad "使用中套餐被删: $DELPKG"
+# 同步: 套餐不含审批中心(9000), 同步后 acme 收缩 (与 SetMenus 同路径联动)
+SYNC=$(curl -s -X POST "$BASE/system/tenant-packages/$PKGID/sync" -H "$AH")
+SYNCC=$(jq_get "$SYNC" "r['code']"); SYNCN=$(jq_get "$SYNC" "d['count']")
+MENUSP=$(curl -s "$BASE/auth/menus" -H "$TH")
+HASFLOWP=$(jq_get "$MENUSP" "sum(1 for m in d['menus'] if m['path']=='/flow')")
+[ "$SYNCC" = "0" ] && [ "$SYNCN" = "1" ] && [ "$HASFLOWP" = "0" ] && ok "套餐同步 count=1, 审批中心被收缩" || bad "套餐同步异常: $SYNC / flow=$HASFLOWP"
+# 解绑后可删
+curl -s -X PUT "$BASE/system/tenants/$TID" -H "$AH" -H 'Content-Type: application/json' \
+  -d '{"name":"Acme租户","contact":"bob","status":1,"remark":"","plan":"standard","packageId":0}' > /dev/null
+DELPKG2=$(curl -s -X DELETE "$BASE/system/tenant-packages/$PKGID" -H "$AH")
+DELPC2=$(jq_get "$DELPKG2" "r['code']")
+[ "$DELPC2" = "0" ] && ok "解绑后套餐删除成功" || bad "解绑后删除失败: $DELPKG2"
+
 echo "== 9. 租户管理员可绑清单收口 =="
 TREES=$(curl -s "$BASE/system/menus/tree" -H "$TH")
 HASM=$(jq_get "$TREES" "sum(1 for m in d['tree'] if m['id']==22)")
@@ -300,6 +338,9 @@ MNC=$(jq_get "$MN" "r['code']")
 MON=$(curl -s "$BASE/system/monitor/server" -H "$TH")
 MONC=$(jq_get "$MON" "r['code']")
 [ "$MONC" != "0" ] && ok "租户管理员访问服务器监控被拒 → code=$MONC" || bad "监控接口泄漏!"
+TPL=$(curl -s "$BASE/system/tenant-packages?page=1&pageSize=10" -H "$TH")
+TPLC=$(jq_get "$TPL" "r['code']")
+[ "$TPLC" != "0" ] && ok "租户管理员访问租户套餐被拒 → code=$TPLC" || bad "租户套餐接口泄漏给租户!"
 
 echo ""
 echo "冒烟结果: PASS=$PASS FAIL=$FAIL"
