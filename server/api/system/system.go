@@ -11,6 +11,7 @@ import (
 )
 
 type ISystemV1 interface {
+	AccessLogList(ctx context.Context, req *v1.AccessLogListReq) (res *v1.AccessLogListRes, err error)
 	ApiList(ctx context.Context, req *v1.ApiListReq) (res *v1.ApiListRes, err error)
 	ApiAll(ctx context.Context, req *v1.ApiAllReq) (res *v1.ApiAllRes, err error)
 	ApiCreate(ctx context.Context, req *v1.ApiCreateReq) (res *v1.ApiCreateRes, err error)

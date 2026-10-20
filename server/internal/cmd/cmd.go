@@ -60,14 +60,15 @@ var Main = gcmd.Command{
 
 		// API 路由
 		s.Group("/api/v1", func(grp *ghttp.RouterGroup) {
-			// 注意: OperationLog 必须在 ghttp.MiddlewareHandlerResponse 之外层注册,
-			// 其 defer 阶段才能读到最终响应的业务码与 HTTP 状态
+			// 注意: OperationLog 与 AccessLog 必须在 ghttp.MiddlewareHandlerResponse
+			// 之外层注册, 其 defer 阶段才能读到最终响应的业务码与 HTTP 状态
 			grp.Middleware(
 				middleware.CORS,
 				middleware.RequestId,
 				middleware.RateLimit,
 				middleware.SecurityHeaders,
 				middleware.OperationLog,
+				middleware.AccessLog,
 				ghttp.MiddlewareHandlerResponse,
 			)
 

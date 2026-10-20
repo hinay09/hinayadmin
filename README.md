@@ -44,10 +44,11 @@
 - 全局配置 (键值对, 多类型支持: 文本 / 数字 / 布尔 / JSON)
 - 配置驱动界面: 站点名称 / Logo / 页脚版权取自 `sys_config`, 作用于侧边栏品牌区 / 登录页 / 浏览器标题 / 仪表盘, 配置管理页修改后即时生效
 - 操作日志 (自动记录 POST/PUT/DELETE)
+- 接口日志 (全量 API 访问流水, GET 查询亦留痕: RequestId/用户/路径/耗时/状态码异步落库, 超阈值打慢接口标记, 支持慢接口筛选)
 - 登录日志 (登录成功/失败异步落库, 记录 IP/UA/失败原因, 按条删除)
 - 统一软删除规范: 所有核心表带 `deleted_at`
 - 统一响应协议 `{ code, message, data }`
-- 中间件链: CORS / RequestId / 全局限流 / 安全响应头 / 操作日志 / JWT 鉴权 / Casbin 权限
+- 中间件链: CORS / RequestId / 全局限流 / 安全响应头 / 操作日志 / 访问日志 / JWT 鉴权 / Casbin 权限
 - 代码生成器 (CLI + 网页版): 见下方「CRUD 代码生成」
 - GoFrame 工程化分层: `api -> controller -> service -> logic -> dao` (gen ctrl / gen dao / gen service)
 - 自由审批流: 表单/流程可视化设计器, 发起/撤回/撤销/审批/驳回/转办/委派/加签/减签/中止/催办, 会签与或签, 审批人支持指定岗位与部门主管解析, 审批中心 (我的审批 / 实例管理); 业务审批标准模板见 `docs/flow-template.md` (内置请假申请 Demo)
@@ -98,7 +99,7 @@ hinay-admin/
 │   │   ├── service/                     # 业务接口层 (IXxx + RegisterXxx 手动 DI)
 │   │   ├── logic/                       # 业务实现层 (sXxx + init 注册到 service)
 │   │   │   ├── auth                     #   登录/菜单树/个人资料/改密/头像 + 图形验证码
-│   │   │   ├── system                   #   用户/角色/菜单/API/组织/字典/文件/配置/审计日志/登录日志
+│   │   │   ├── system                   #   用户/角色/菜单/API/组织/字典/文件/配置/审计日志/接口日志/登录日志
 │   │   │   ├── message                  #   消息通知 (含收件箱权限路由)
 │   │   │   ├── flow                     #   自由审批流引擎 (定义/发起/办理/回调/超时扫描)
 │   │   │   ├── leave                    #   请假申请 (flow.RegisterBizListener 状态回写示范)
@@ -119,7 +120,7 @@ hinay-admin/
 │   │   │   └── wechat                   #   微信公众号回调 (验签/Echo)
 │   │   ├── dao/                         # 数据访问对象 (gf gen dao 产物结构, 禁止手改)
 │   │   ├── model/                       # 实体 + DO + 业务 DTO
-│   │   ├── middleware                   # CORS / RequestId / 限流 / 安全头 / 操作日志 / Auth / Casbin
+│   │   ├── middleware                   # CORS / RequestId / 限流 / 安全头 / 操作日志 / 访问日志 / Auth / Casbin
 │   │   ├── storage                      # 文件存储抽象 (本地 / S3 兼容, 预签名直传)
 │   │   ├── consts                       # 常量与上下文 Key
 │   │   └── packed                       # 注册 MySQL/Redis 驱动
@@ -212,6 +213,7 @@ mysql -uroot -p hinay_admin < manifest/sql/init.sql
 | `sys_dict_data` | 字典数据项 (支持排序) |
 | `sys_file` | 文件管理 |
 | `sys_audit_log` | 操作审计日志 |
+| `sys_access_log` | 接口日志 (全量访问流水 + 慢接口标记) |
 | `sys_login_log` | 登录日志 |
 | `sys_job` / `sys_job_log` | 定时任务与执行日志 |
 | `sys_user_totp` | TOTP 两步验证密钥 |
@@ -458,6 +460,7 @@ casbin:
 | 文件 | `/api/v1/system/files/{id}` | DELETE | 删除文件 |
 | 全局配置 | `/api/v1/system/configs` (含 `/all`) | CRUD | 全局配置管理 |
 | 操作日志 | `/api/v1/system/audit-logs` | GET | 操作日志列表 |
+| 接口日志 | `/api/v1/system/access-logs` | GET | 接口日志列表 (全量访问流水 + 慢接口筛选) |
 | 消息 | `/api/v1/message` | GET | 管理员消息列表 |
 | 消息 | `/api/v1/message/system` | POST | 发布系统通知 |
 | 消息 | `/api/v1/message/private` | POST | 发送私信 |

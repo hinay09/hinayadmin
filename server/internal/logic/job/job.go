@@ -118,6 +118,10 @@ func (s *sJob) registerBuiltinHandlers() {
 	s.RegisterHandler("job.cleanAuditLog", func(ctx context.Context, params string) (string, error) {
 		return cleanLogBefore(ctx, "sys_audit_log", params, 180)
 	})
+	// 按天清理接口日志(全量访问流水, 量级高于操作日志, 默认保留期更短): params 形如 {"days": 30}
+	s.RegisterHandler("job.cleanAccessLog", func(ctx context.Context, params string) (string, error) {
+		return cleanLogBefore(ctx, "sys_access_log", params, 30)
+	})
 	// 按天清理自身执行日志: params 形如 {"days": 180}
 	s.RegisterHandler("job.cleanJobLog", func(ctx context.Context, params string) (string, error) {
 		return cleanLogBefore(ctx, "sys_job_log", params, 180)
@@ -146,6 +150,8 @@ func logDao(table string) *gdb.Model {
 		return dao.SysLoginLog.Ctx(context.Background()).Unscoped()
 	case "sys_audit_log":
 		return dao.SysAuditLog.Ctx(context.Background()).Unscoped()
+	case "sys_access_log":
+		return dao.SysAccessLog.Ctx(context.Background()).Unscoped()
 	case "sys_job_log":
 		return dao.SysJobLog.Ctx(context.Background()).Unscoped()
 	}

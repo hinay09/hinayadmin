@@ -14,6 +14,10 @@ import (
 )
 
 type (
+	IAccessLog interface {
+		// List 分页列表。
+		List(ctx context.Context, req *v1.AccessLogListReq) (res *v1.AccessLogListRes, err error)
+	}
 	IApi interface {
 		// List 获取 API 列表（支持分组筛选、分页）。
 		List(ctx context.Context, req *v1.ApiListReq) (res *v1.ApiListRes, err error)
@@ -166,18 +170,30 @@ type (
 )
 
 var (
-	localApi      IApi
-	localAuditLog IAuditLog
-	localConfig   IConfig
-	localDict     IDict
-	localDictType IDictType
-	localFile     IFile
-	localLoginLog ILoginLog
-	localMenu     IMenu
-	localOrg      IOrg
-	localRole     IRole
-	localUser     IUser
+	localAccessLog IAccessLog
+	localApi       IApi
+	localAuditLog  IAuditLog
+	localConfig    IConfig
+	localDict      IDict
+	localDictType  IDictType
+	localFile      IFile
+	localLoginLog  ILoginLog
+	localMenu      IMenu
+	localOrg       IOrg
+	localRole      IRole
+	localUser      IUser
 )
+
+func AccessLog() IAccessLog {
+	if localAccessLog == nil {
+		panic("implement not found for interface IAccessLog, forgot register?")
+	}
+	return localAccessLog
+}
+
+func RegisterAccessLog(i IAccessLog) {
+	localAccessLog = i
+}
 
 func Api() IApi {
 	if localApi == nil {

@@ -613,6 +613,117 @@ func OperationLog(r *ghttp.Request) {
 	r.Middleware.Next()
 }
 
+// ---------------------------------------------------------------------------
+// 全量 API 访问日志 (接口日志)
+// ---------------------------------------------------------------------------
+
+// accessLogSkipPaths 访问日志跳过列表: SSE 长连接存活数分钟到数小时,
+// 记入访问日志会产生 "耗时几分钟" 的误导性慢接口记录
+// (它是流式推送, 不是一次慢请求)。
+var accessLogSkipPaths = map[string]struct{}{
+	"/api/v1/message/events": {},
+}
+
+var (
+	alOnce    sync.Once
+	alEnabled bool
+	alSlowMs  int64
+)
+
+// initAccessLogConfig 惰性初始化: 读取 accessLog 配置(修改需重启生效),
+// 与全局限流 (ratelimit) 同款 once 模式。
+func initAccessLogConfig(ctx context.Context) {
+	alOnce.Do(func() {
+		alEnabled = true
+		if v, err := g.Cfg().Get(ctx, "accessLog.enable", true); err == nil {
+			alEnabled = v.Bool()
+		}
+		alSlowMs = 1000
+		if v, err := g.Cfg().Get(ctx, "accessLog.slowMs", 1000); err == nil && v.Int64() > 0 {
+			alSlowMs = v.Int64()
+		}
+	})
+}
+
+// AccessLog 接口日志中间件: 全方法访问流水 (GET 查询亦留痕), 与
+// OperationLog (只记写操作+脱敏请求体) 互补 —— 本表回答"谁在什么时候
+// 调了什么接口、多快", 每条含 RequestId/用户/方法路径/HTTP状态/业务码/
+// 耗时, 超过阈值 (accessLog.slowMs, 默认 1000ms) 打慢接口标记。
+//
+// 挂载位置要求: 与 OperationLog 相同, 必须注册在 ghttp.MiddlewareHandlerResponse
+// 之外层(先注册), defer 阶段才能读到最终响应。
+// 业务码解析有 64KB 响应体上限保护: 二进制导出 (xlsx) 与超大列表响应
+// 不做 JSON 解析 (白耗 CPU 且无 {code,message} 结构), 记 0。
+func AccessLog(r *ghttp.Request) {
+	initAccessLogConfig(r.Context())
+	if !alEnabled {
+		r.Middleware.Next()
+		return
+	}
+	if _, ok := accessLogSkipPaths[r.URL.Path]; ok {
+		r.Middleware.Next()
+		return
+	}
+
+	method := r.Method
+	path := r.URL.Path
+	query := truncateForColumn(r.URL.RawQuery, 512)
+	clientIp := r.GetClientIp()
+	userAgent := r.Header.Get("User-Agent")
+	requestId := r.GetCtxVar(consts.CtxRequestIdName, "").String()
+	start := time.Now()
+
+	defer func() {
+		// defer 在 ExitAll panic 展开时依然执行, 保证被 401/403/429 拦截的请求也留痕
+		var userId uint64
+		username := ""
+		if user := contextx.LoginUser(r.Context()); user != nil {
+			userId, username = user.UserId, user.Username
+		}
+
+		statusCode := r.Response.Status
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		code := 0
+		if buf := r.Response.Buffer(); len(buf) > 0 && len(buf) <= 65536 {
+			code, _ = parseResponseResult(buf)
+		}
+		durationMs := time.Since(start).Milliseconds()
+		slow := 0
+		if durationMs >= alSlowMs {
+			slow = 1
+			g.Log().Warningf(r.Context(), "[access-log] slow api: %s %s %dms (threshold %dms)", method, path, durationMs, alSlowMs)
+		}
+
+		// 异步写入: 与 OperationLog 同款 —— WithoutCancel 保留租户上下文
+		// (sys_access_log 为 A 类隔离表, 注入器要求 ctx 携带租户信息)
+		go func() {
+			ctx := context.WithoutCancel(r.Context())
+			_, err := dao.SysAccessLog.Ctx(ctx).Data(g.Map{
+				"tenant_id":   contextx.TenantId(ctx),
+				"user_id":     userId,
+				"username":    username,
+				"method":      method,
+				"path":        path,
+				"query":       query,
+				"status_code": statusCode,
+				"code":        code,
+				"duration_ms": durationMs,
+				"slow":        slow,
+				"request_id":  requestId,
+				"ip":          clientIp,
+				"user_agent":  truncateForColumn(userAgent, 512),
+			}).Insert()
+			if err != nil {
+				g.Log().Warningf(ctx, "AccessLog insert failed: %v", err)
+			}
+		}()
+	}()
+
+	r.Middleware.Next()
+}
+
 // parseResponseResult 从响应体解析业务码与消息({code,message,...} 结构)。
 func parseResponseResult(buf []byte) (code int, message string) {
 	if len(buf) == 0 {

@@ -43,6 +43,13 @@ ratelimit:
   rate: 100     # 每秒允许请求数(令牌补充速率)
   burst: 200    # 突发上限(桶容量)
 
+# 全量 API 访问日志 (接口日志, 修改需重启): 全方法访问流水异步落 sys_access_log,
+# GET 查询亦留痕; 超过 slowMs 阈值打慢接口标记并输出 Warning 日志。
+# 关闭后中间件直接放行不产生任何写入。清理任务: job.cleanAccessLog (默认保留 30 天)。
+accessLog:
+  enable: true
+  slowMs: 1000   # 慢接口阈值(毫秒)
+
 # 网页版代码生成 (information_schema 读表 + 预览/zip 下载/直写源码树)
 # 安全开关: 默认关闭; 直写要求服务实例运行于源码目录, 容器内自动拒绝。
 gencode:

@@ -47,6 +47,7 @@ var tenantTables = map[string]struct{}{
 	"sys_file":        {},
 	"sys_audit_log":   {},
 	"sys_login_log":   {},
+	"sys_access_log":  {},
 	"sys_job":         {},
 	"sys_job_log":     {},
 	"wf_definition":   {},

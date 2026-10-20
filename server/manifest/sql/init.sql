@@ -587,6 +587,36 @@ CREATE TABLE IF NOT EXISTS `sys_audit_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='操作日志';
 
 -- ------------------------------------------------------------
+-- 接口日志: 由中间件自动写入, 全方法访问流水 (GET 查询亦留痕),
+-- 超过耗时阈值 (accessLog.slowMs) 打慢接口标记; 与操作日志互补 ——
+-- 操作日志只记写操作并带脱敏请求体, 本表记"谁在什么时候调了什么接口、多快"。
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_access_log`;
+CREATE TABLE IF NOT EXISTS `sys_access_log` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id`   BIGINT UNSIGNED NOT NULL DEFAULT 1      COMMENT '租户ID(记录归属, 平台可查全量)',
+  `user_id`     BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '用户ID(匿名请求为0)',
+  `username`    VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '用户名(匿名请求为空)',
+  `method`      VARCHAR(10)  NOT NULL DEFAULT ''        COMMENT 'HTTP方法',
+  `path`        VARCHAR(255) NOT NULL DEFAULT ''        COMMENT '请求路径',
+  `query`       VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'URL查询串(GET筛选条件)',
+  `status_code` INT          NOT NULL DEFAULT 0        COMMENT 'HTTP状态码',
+  `code`        INT          NOT NULL DEFAULT 0        COMMENT '业务码(0=成功; 二进制/超大响应不解析记0)',
+  `duration_ms` INT          NOT NULL DEFAULT 0        COMMENT '耗时(毫秒)',
+  `slow`        TINYINT      NOT NULL DEFAULT 0        COMMENT '慢接口标记:1=耗时超过阈值(accessLog.slowMs)',
+  `request_id`  VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT '请求ID(链路追踪)',
+  `ip`          VARCHAR(64)  NOT NULL DEFAULT ''        COMMENT 'IP地址',
+  `user_agent`  VARCHAR(512) NOT NULL DEFAULT ''        COMMENT 'User-Agent',
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_tenant` (`tenant_id`),
+  KEY `idx_user` (`user_id`),
+  KEY `idx_path` (`path`),
+  KEY `idx_slow` (`slow`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='接口日志';
+
+-- ------------------------------------------------------------
 -- 字典类型主表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `sys_dict_type`;
@@ -660,6 +690,10 @@ INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`
   -- 操作日志挂在系统监控目录下 (id=2)
   (16, 2, '操作日志', 2, '/system/audit-logs', 'system/audit-logs/index', 'Timer', 'system:audit-log:list', 4, 1, 1);
 
+-- 接口日志 (全量访问流水 + 慢接口标记) 挂在系统监控目录下 (id=2)
+INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
+  (24, 2, '接口日志', 2, '/system/access-logs', 'system/access-logs/index', 'Histogram', 'system:access-log:list', 6, 1, 1);
+
 -- 按钮权限
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (141, 14, '字典新增', 3, '', '', '', 'system:dict:create', 1, 0, 1),
@@ -671,6 +705,7 @@ INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`
 -- 新 API 资源
 INSERT IGNORE INTO `sys_api` (`path`,`method`,`group_name`,`description`) VALUES
   ('/api/v1/system/audit-logs',    'GET',    '操作日志', '操作日志列表'),
+  ('/api/v1/system/access-logs',   'GET',    '接口日志', '接口日志列表(全方法访问流水+慢接口标记)'),
   -- 字典类型管理
   ('/api/v1/system/dict-types',         'GET',    '字典管理', '字典类型列表'),
   ('/api/v1/system/dict-types',         'POST',   '字典管理', '新增字典类型'),
