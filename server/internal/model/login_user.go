@@ -10,6 +10,9 @@ type LoginUser struct {
 	Avatar        string      `json:"avatar"`
 	Email         string      `json:"email"`
 	Phone         string      `json:"phone"`
+	Province      string      `json:"province"` // 省份(个人资料)
+	City          string      `json:"city"`     // 城市(个人资料)
+	District      string      `json:"district"` // 区县(个人资料)
 	Roles         []string    `json:"roles"`
 	RoleNames     []string    `json:"roleNames"`
 	IsAdmin       bool        `json:"isAdmin"`

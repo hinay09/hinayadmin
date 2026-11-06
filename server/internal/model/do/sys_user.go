@@ -20,6 +20,9 @@ type SysUser struct {
 	Avatar        any         // 头像URL
 	Email         any         // 邮箱
 	Phone         any         // 手机号
+	Province      any         // 省份
+	City          any         // 城市
+	District      any         // 区县
 	OrgId         any         // 所属组织ID
 	Status        any         // 状态:1=启用,0=禁用
 	Remark        any         // 备注

@@ -29,6 +29,9 @@ type SysUserColumns struct {
 	Avatar        string // 头像URL
 	Email         string // 邮箱
 	Phone         string // 手机号
+	Province      string // 省份
+	City          string // 城市
+	District      string // 区县
 	OrgId         string // 所属组织ID
 	Status        string // 状态:1=启用,0=禁用
 	Remark        string // 备注
@@ -53,6 +56,9 @@ var sysUserColumns = SysUserColumns{
 	Avatar:        "avatar",
 	Email:         "email",
 	Phone:         "phone",
+	Province:      "province",
+	City:          "city",
+	District:      "district",
 	OrgId:         "org_id",
 	Status:        "status",
 	Remark:        "remark",

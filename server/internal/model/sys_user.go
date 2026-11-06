@@ -12,6 +12,9 @@ type SysUser struct {
 	Avatar        string      `json:"avatar"    orm:"avatar"`
 	Email         string      `json:"email"     orm:"email"`
 	Phone         string      `json:"phone"     orm:"phone"`
+	Province      string      `json:"province"  orm:"province"`
+	City          string      `json:"city"      orm:"city"`
+	District      string      `json:"district"  orm:"district"`
 	OrgId         uint64      `json:"orgId"     orm:"org_id"`
 	Status        int         `json:"status"    orm:"status"`
 	Remark        string      `json:"remark"    orm:"remark"`

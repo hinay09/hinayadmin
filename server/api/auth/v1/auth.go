@@ -212,6 +212,9 @@ type UpdateProfileReq struct {
 	Avatar   string `json:"avatar"`
 	Email    string `json:"email"    v:"email#邮箱格式不正确"`
 	Phone    string `json:"phone"    v:"phone#手机号格式不正确"`
+	Province string `json:"province" v:"max-length:64#省份长度不能超过64个字符"`
+	City     string `json:"city"     v:"max-length:64#城市长度不能超过64个字符"`
+	District string `json:"district" v:"max-length:64#区县长度不能超过64个字符"`
 }
 
 // UpdateProfileRes 修改个人资料响应。

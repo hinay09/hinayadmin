@@ -16,6 +16,10 @@ export interface LoginUser {
   avatar: string
   email?: string
   phone?: string
+  /** 所在地区 (个人资料, 存中文名称) */
+  province?: string
+  city?: string
+  district?: string
   roles: string[]
   /** 角色显示名 (与 roles 一一对应, 后端从 sys_role.name 解析) */
   roleNames?: string[]

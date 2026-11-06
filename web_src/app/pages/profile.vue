@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * 个人中心
- * - 左侧: 个人信息卡片(头像/昵称/账号/角色/邮箱/手机)
- * - 右侧: tabs - "基础资料" + "修改密码" + "安全设置"
+ * - 左侧: 个人信息卡片(头像/昵称/账号/角色/邮箱/手机/所在地区)
+ * - 右侧: tabs - "基础资料"(含所在地区级联) + "修改密码" + "安全设置"
+ * - 头像: AvatarCropper 选图 -> 弹窗裁剪(1:1) -> /auth/avatar 即时上传生效
  * 数据接口: GET/PUT /auth/profile, PUT /auth/password, /auth/totp/*
  */
 import { reactive, ref, computed, onMounted } from 'vue'
@@ -62,7 +63,7 @@ interface ProfileForm {
   email: string
   phone: string
 }
-const profile = reactive<ProfileForm & { username: string; roles: string[]; roleNames: string[]; lastLoginAt: string; lastLoginIp: string }>({
+const profile = reactive<ProfileForm & { username: string; roles: string[]; roleNames: string[]; lastLoginAt: string; lastLoginIp: string; province: string; city: string; district: string }>({
   username: '',
   nickname: '',
   avatar: '',
@@ -72,7 +73,15 @@ const profile = reactive<ProfileForm & { username: string; roles: string[]; role
   roleNames: [],
   lastLoginAt: '',
   lastLoginIp: '',
+  province: '',
+  city: '',
+  district: '',
 })
+
+/** 所在地区级联值 ['省','市','区'], 提交时拆为 province/city/district 三字段 */
+const region = ref<string[]>([])
+/** 已保存地区的展示文案 (左卡片信息行) */
+const regionText = computed(() => [profile.province, profile.city, profile.district].filter(Boolean).join(' / '))
 
 interface PasswordForm {
   oldPassword: string
@@ -231,6 +240,10 @@ async function loadProfile() {
     profile.avatar = u.avatar || ''
     profile.email = u.email || ''
     profile.phone = u.phone || ''
+    profile.province = u.province || ''
+    profile.city = u.city || ''
+    profile.district = u.district || ''
+    region.value = [u.province, u.city, u.district].filter(Boolean)
     profile.roles = u.roles || []
     profile.roleNames = u.roleNames || []
     profile.lastLoginAt = u.lastLoginAt || ''
@@ -248,13 +261,21 @@ async function handleUpdateProfile() {
   if (!valid) return
   submitting.value = true
   try {
+    // 级联值拆为三字段提交 (未选满三级时以空串占位)
+    const [province = '', city = '', district = ''] = region.value
     await api.updateProfile({
       nickname: profile.nickname,
       avatar: profile.avatar,
       email: profile.email,
       phone: profile.phone,
+      province,
+      city,
+      district,
     })
     ElMessage.success('个人资料更新成功')
+    profile.province = province
+    profile.city = city
+    profile.district = district
     // 同步 store, 顶部头像/昵称即时刷新
     if (userStore.userInfo) {
       userStore.setUserInfo({
@@ -263,6 +284,9 @@ async function handleUpdateProfile() {
         avatar: profile.avatar,
         email: profile.email,
         phone: profile.phone,
+        province,
+        city,
+        district,
       })
     }
   }
@@ -343,7 +367,7 @@ onMounted(() => {
       <el-col :xs="24" :sm="24" :md="8" :lg="7" :xl="6">
         <el-card class="info-card">
           <div class="avatar-wrap">
-            <FileUploader
+            <AvatarCropper
               class="avatar-uploader"
               accept="image/jpeg,image/png,image/gif,image/webp"
               :upload-fn="uploadAvatar"
@@ -354,9 +378,9 @@ onMounted(() => {
               </el-avatar>
               <div class="avatar-overlay">
                 <el-icon :size="20"><UploadFilled /></el-icon>
-                <span>更换头像</span>
+                <span>裁剪头像</span>
               </div>
-            </FileUploader>
+            </AvatarCropper>
             <el-progress
               v-if="avatarUploading"
               :percentage="100"
@@ -394,6 +418,11 @@ onMounted(() => {
               <el-icon><Phone /></el-icon>
               <span class="info-key">手机</span>
               <span class="info-val">{{ profile.phone || '-' }}</span>
+            </li>
+            <li>
+              <el-icon><Location /></el-icon>
+              <span class="info-key">所在地区</span>
+              <span class="info-val">{{ regionText || '-' }}</span>
             </li>
             <li>
               <el-icon><Clock /></el-icon>
@@ -438,7 +467,7 @@ onMounted(() => {
                 </el-form-item>
                 <el-form-item label="头像">
                   <div class="form-avatar-row">
-                    <FileUploader
+                    <AvatarCropper
                       class="form-avatar-uploader"
                       accept="image/jpeg,image/png,image/gif,image/webp"
                       :upload-fn="uploadAvatar"
@@ -447,12 +476,12 @@ onMounted(() => {
                       <el-avatar :size="64" :src="profile.avatar" class="clickable">
                         {{ profile.nickname?.charAt(0) || profile.username?.charAt(0) || 'U' }}
                       </el-avatar>
-                    </FileUploader>
+                    </AvatarCropper>
                     <div class="form-avatar-tip">
                       <el-button size="small" :loading="avatarUploading">
-                        <el-icon style="margin-right:4px"><UploadFilled /></el-icon> 上传新头像
+                        <el-icon style="margin-right:4px"><UploadFilled /></el-icon> 选择图片并裁剪
                       </el-button>
-                      <div class="tip-text">支持 JPG / PNG / GIF / WEBP，不超过 2MB</div>
+                      <div class="tip-text">支持 JPG / PNG / GIF / WEBP，选图后可裁剪为方形头像</div>
                     </div>
                   </div>
                 </el-form-item>
@@ -461,6 +490,9 @@ onMounted(() => {
                 </el-form-item>
                 <el-form-item label="手机" prop="phone">
                   <el-input v-model="profile.phone" :prefix-icon="Phone" placeholder="11位手机号" />
+                </el-form-item>
+                <el-form-item label="所在地区">
+                  <AreaCascader v-model="region" />
                 </el-form-item>
                 <el-form-item>
                   <el-button

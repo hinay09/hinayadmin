@@ -56,7 +56,7 @@ export function useAuthApi() {
       '/auth/menus',
     ),
     profile: () => r.get<LoginUser>('/auth/profile'),
-    updateProfile: (data: { nickname: string; avatar?: string; email?: string; phone?: string }) =>
+    updateProfile: (data: { nickname: string; avatar?: string; email?: string; phone?: string; province?: string; city?: string; district?: string }) =>
       r.put('/auth/profile', data),
     changePassword: (oldPassword: string, newPassword: string) =>
       r.put('/auth/password', { oldPassword, newPassword }),

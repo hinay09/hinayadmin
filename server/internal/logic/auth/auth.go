@@ -521,6 +521,9 @@ func (s *sAuth) loadLoginUser(ctx context.Context) (*model.LoginUser, error) {
 		Avatar:           storage.ViewURL(ctx, u.Avatar),
 		Email:            u.Email,
 		Phone:            u.Phone,
+		Province:         u.Province,
+		City:             u.City,
+		District:         u.District,
 		Roles:            roleCodes,
 		RoleNames:        roleNames,
 		IsAdmin:          isPlatform,
@@ -607,7 +610,7 @@ func (s *sAuth) Profile(ctx context.Context, req *v1.ProfileReq) (res *v1.Profil
 	return &v1.ProfileRes{LoginUser: u}, nil
 }
 
-// UpdateProfile 修改当前用户基础信息 (昵称/头像/邮箱/手机)。
+// UpdateProfile 修改当前用户基础信息 (昵称/头像/邮箱/手机/省市区)。
 func (s *sAuth) UpdateProfile(ctx context.Context, req *v1.UpdateProfileReq) (res *v1.UpdateProfileRes, err error) {
 	cur := contextx.LoginUser(ctx)
 	if cur == nil {
@@ -621,6 +624,9 @@ func (s *sAuth) UpdateProfile(ctx context.Context, req *v1.UpdateProfileReq) (re
 		"avatar":   req.Avatar,
 		"email":    req.Email,
 		"phone":    req.Phone,
+		"province": req.Province,
+		"city":     req.City,
+		"district": req.District,
 	}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "修改个人资料失败")
 	}

@@ -18,6 +18,9 @@ type SysUser struct {
 	Avatar        string      `json:"avatar"        orm:"avatar"          description:"头像URL"`            // 头像URL
 	Email         string      `json:"email"         orm:"email"           description:"邮箱"`               // 邮箱
 	Phone         string      `json:"phone"         orm:"phone"           description:"手机号"`              // 手机号
+	Province      string      `json:"province"      orm:"province"        description:"省份"`               // 省份
+	City          string      `json:"city"          orm:"city"            description:"城市"`               // 城市
+	District      string      `json:"district"      orm:"district"        description:"区县"`               // 区县
 	OrgId         uint64      `json:"orgId"         orm:"org_id"          description:"所属组织ID"`           // 所属组织ID
 	Status        int         `json:"status"        orm:"status"          description:"状态:1=启用,0=禁用"`     // 状态:1=启用,0=禁用
 	Remark        string      `json:"remark"        orm:"remark"          description:"备注"`               // 备注
