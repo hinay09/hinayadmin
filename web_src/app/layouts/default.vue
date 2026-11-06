@@ -164,6 +164,7 @@ function handleFullscreen() {
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <MenuSearch />
           <el-tooltip content="刷新" placement="bottom">
             <el-icon class="header-action" @click="handleRefresh"><Refresh /></el-icon>
           </el-tooltip>
