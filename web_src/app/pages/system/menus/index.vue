@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
  * 菜单管理
+ * 列表搜索: 纯前端按 名称/路径/权限标识 模糊过滤 (多词空格分隔逐词 AND, 与顶栏菜单搜索同口径),
+ * 命中节点保留祖先链、收起子树; default-expand-all 下数据替换后自动全部展开, 无需手动展开。
  */
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
@@ -48,6 +50,47 @@ const filteredIcons = computed(() => {
 function selectIcon(name: string) {
   form.icon = name
   iconSearch.value = ''
+}
+
+/** 列表搜索: 关键词拆词 (小写、去空), 逐词 AND 命中 */
+const keyword = ref('')
+const terms = computed(() => keyword.value.trim().toLowerCase().split(/\s+/).filter(Boolean))
+const searchActive = computed(() => terms.value.length > 0)
+
+/** 过滤结果树: 自身命中的节点收起子树, 未命中但子孙命中的节点保留为祖先链 */
+const searchResult = computed(() => {
+  const ts = terms.value
+  if (!ts.length) return { tree: treeData.value as any[], count: 0 }
+  let count = 0
+  const walk = (nodes: any[]): any[] => {
+    const out: any[] = []
+    for (const node of nodes) {
+      const hay = `${node.name || ''} ${node.path || ''} ${node.permission || ''}`.toLowerCase()
+      if (ts.every(t => hay.includes(t))) {
+        count++
+        out.push({ ...node, children: [] })
+      }
+      else {
+        const children = node.children?.length ? walk(node.children) : []
+        if (children.length) out.push({ ...node, children })
+      }
+    }
+    return out
+  }
+  return { tree: walk(treeData.value), count }
+})
+const displayTree = computed(() => (searchActive.value ? searchResult.value.tree : treeData.value))
+const emptyText = computed(() => (searchActive.value ? `未找到匹配「${keyword.value.trim()}」的菜单` : '暂无数据'))
+
+/** 关键词高亮: 先转义再包 <mark>, 词与原文都按转义后形态匹配避免破坏标签 */
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[c] || c)
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+function highlight(text: string) {
+  const safe = escapeHtml(text || '')
+  if (!searchActive.value) return safe
+  const re = new RegExp(`(${terms.value.map(t => escapeRe(escapeHtml(t))).join('|')})`, 'gi')
+  return safe.replace(re, '<mark class="menu-hit">$1</mark>')
 }
 
 async function loadTree() {
@@ -120,27 +163,52 @@ onMounted(loadTree)
 <template>
   <div class="page">
     <el-card>
-      <div style="margin-bottom:8px">
-        <el-button v-permission="'system:menu:create'" type="success" :icon="Plus" @click="openCreate()">新增根菜单</el-button>
-        <el-button :icon="Refresh" @click="loadTree">刷新</el-button>
+      <div class="toolbar">
+        <div>
+          <el-button v-permission="'system:menu:create'" type="success" :icon="Plus" @click="openCreate()">新增根菜单</el-button>
+          <el-button :icon="Refresh" @click="loadTree">刷新</el-button>
+        </div>
+        <div class="toolbar-search">
+          <el-tag v-if="searchActive" type="info" size="small" effect="plain">命中 {{ searchResult.count }} 项</el-tag>
+          <el-input
+            v-model="keyword"
+            :prefix-icon="Search"
+            placeholder="搜索名称/路径/权限标识"
+            clearable
+            style="width:260px"
+          />
+        </div>
       </div>
       <el-table
         v-loading="loading"
-        :data="treeData"
+        :data="displayTree"
         row-key="id"
         border
         stripe
         :tree-props="{ children: 'children' }"
         default-expand-all
+        :empty-text="emptyText"
       >
-        <el-table-column prop="name" label="名称" min-width="180" />
+        <el-table-column label="名称" min-width="180">
+          <template #default="{ row }">
+            <span v-html="highlight(row.name)" />
+          </template>
+        </el-table-column>
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
             <el-tag :type="typeTag(row.type)" size="small">{{ typeText(row.type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="path" label="路径" min-width="160" />
-        <el-table-column prop="permission" label="权限标识" min-width="180" />
+        <el-table-column label="路径" min-width="160">
+          <template #default="{ row }">
+            <span v-html="highlight(row.path)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="权限标识" min-width="180">
+          <template #default="{ row }">
+            <span v-html="highlight(row.permission)" />
+          </template>
+        </el-table-column>
         <el-table-column prop="sort" label="排序" width="80" />
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
@@ -249,6 +317,25 @@ onMounted(loadTree)
 </template>
 
 <style scoped>
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.toolbar-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:deep(mark.menu-hit) {
+  padding: 0 2px;
+  border-radius: 2px;
+  background-color: var(--el-color-warning-light-8);
+  color: var(--el-color-warning-dark-2);
+}
 .icon-picker-body {
   max-height: 420px;
 }
