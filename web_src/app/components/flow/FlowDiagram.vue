@@ -78,8 +78,10 @@ withDefaults(defineProps<{
   flex-direction: column;
   align-items: center;
   min-width: max-content;
-  padding: 4px 24px 10px;
+  padding: 18px 24px 20px;
   margin: 0 auto;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
 }
 
 /* ---- 发起/终点胶囊 ---- */
@@ -87,11 +89,11 @@ withDefaults(defineProps<{
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 18px;
+  padding: 7px 22px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
-  background: var(--el-fill-color-light);
+  background: var(--el-bg-color);
   color: var(--el-text-color-regular);
   border: 1px solid var(--el-border-color-light);
 }

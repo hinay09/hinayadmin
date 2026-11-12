@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
- * 流程设计器 (钉钉式): 发起人 → 审批/抄送/条件分支 → 流程结束。
- * 画布带网点底纹; 节点间连接线由 FlowNode 渲染; 配置抽屉支持 岗位/角色/成员/自选/主管岗。
+ * 流程设计器 (钉钉式画布): 发起人 → 审批/抄送/条件分支 → 流程结束。
+ * 画布纯浅灰底; 节点间为带箭头虚线, "+"气泡就地加节点 (FlowNode 内 el-popover);
+ * 配置抽屉带彩色图标头部与头部删除; 缩放工具条在左下角 (含适应画布)。
  * 通过 provide('flowDesigner') 向递归子组件提供操作上下文, 就地修改 modelValue 树。
  */
-import { computed, provide, reactive, ref } from 'vue'
+import { computed, nextTick, provide, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { Avatar, CircleCheckFilled, Delete, Plus, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { Avatar, Bell, CircleCheckFilled, Delete, FullScreen, Plus, Share, User, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import FlowNode from './FlowNode.vue'
 import type { FlowBranch, FlowNode as FNode, FlowRoleOption, FlowUserOption, FlowPostOption, FlowFormField } from '~/composables/useApi/flow'
 
@@ -20,10 +21,21 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'change'): void }>()
 
-// 画布缩放 (CSS zoom: 影响布局, 滚动区域随之收缩; 小屏可缩到 50% 看全貌)
+// ---------------- 画布缩放 ----------------
+// CSS zoom: 影响布局, 滚动区域随之收缩; 适应画布时先复位 100% 再量实际宽度
 const zoom = ref(1)
+const scrollerRef = ref<HTMLElement>()
+const canvasRef = ref<HTMLElement>()
 function zoomBy(delta: number) {
   zoom.value = Math.min(1.2, Math.max(0.5, Math.round((zoom.value + delta) * 10) / 10))
+}
+async function fitView() {
+  zoom.value = 1
+  await nextTick()
+  const s = scrollerRef.value, c = canvasRef.value
+  if (!s || !c || !c.scrollWidth) return
+  const ratio = Math.floor(((s.clientWidth - 24) / c.scrollWidth) * 10) / 10
+  zoom.value = Math.max(0.5, Math.min(1, ratio))
 }
 
 let idSeq = 0
@@ -73,23 +85,23 @@ function insertNode(holder: any, before: FNode | null, type: 'approver' | 'cc' |
   touched()
 }
 async function removeNode(holder: any, node: FNode) {
-	// 条件分支节点: 其下各分支链条一并删除, 之后的节点接续保留
-	if (node.type === 'condition') {
-		const used = (node.branches || []).filter(b => b.child).length
-		await ElMessageBox.confirm(
-			`删除条件分支「${node.name || '条件分支'}」?` + (used ? `其 ${used} 个分支内的节点将一并删除,` : '') + '分支之后的节点将保留。',
-			'删除确认', { type: 'warning' },
-		)
-	}
-	holder.child = node.child
-	touched()
+  // 条件分支节点: 其下各分支链条一并删除, 之后的节点接续保留
+  if (node.type === 'condition') {
+    const used = (node.branches || []).filter(b => b.child).length
+    await ElMessageBox.confirm(
+      `删除条件分支「${node.name || '条件分支'}」?` + (used ? `其 ${used} 个分支内的节点将一并删除,` : '') + '分支之后的节点将保留。',
+      '删除确认', { type: 'warning' },
+    )
+  }
+  holder.child = node.child
+  touched()
 }
 async function removeBranch(node: FNode, br: FlowBranch) {
-	if (br.child) {
-		await ElMessageBox.confirm(`删除分支「${br.name}」及其内部节点?`, '删除确认', { type: 'warning' })
-	}
-	node.branches = (node.branches || []).filter(b => b !== br)
-	touched()
+  if (br.child) {
+    await ElMessageBox.confirm(`删除分支「${br.name}」及其内部节点?`, '删除确认', { type: 'warning' })
+  }
+  node.branches = (node.branches || []).filter(b => b !== br)
+  touched()
 }
 function addBranch(node: FNode) {
   node.branches = node.branches || []
@@ -127,21 +139,11 @@ function nodeDesc(node: FNode): string {
   return who
 }
 
-// ---------------- 插入弹窗 ----------------
-const plusState = reactive<{ visible: boolean, holder: any, before: FNode | null }>({ visible: false, holder: null, before: null })
-function openPlus(holder: any, before: FNode | null) {
-  plusState.visible = true
-  plusState.holder = holder
-  plusState.before = before
-}
-function pickType(type: 'approver' | 'cc' | 'condition') {
-  insertNode(plusState.holder, plusState.before, type)
-  plusState.visible = false
-}
-
 // ---------------- 审批/抄送节点配置 ----------------
 const nodeCfgVisible = ref(false)
 const cfgNode = ref<FNode | null>(null)
+// 节点宿主 (child 指向该节点), 抽屉头部删除用
+const cfgHolder = ref<any>(null)
 const approverTypeOptions = [
   { label: '指定成员', value: 'user' },
   { label: '指定角色', value: 'role' },
@@ -151,14 +153,22 @@ const approverTypeOptions = [
   { label: '发起人本人', value: 'initiator' },
 ]
 const ccTypeOptions = approverTypeOptions.filter(o => o.value !== 'selfSelect')
-function openNodeCfg(node: FNode) {
+function openNodeCfg(node: FNode, holder?: any) {
   // 超时配置归一 (存量节点无这些字段): 期限 0=不限, 策略默认提醒
   if (node.type === 'approver') {
     if (node.timeoutHours === undefined || node.timeoutHours === null) node.timeoutHours = 0
     if (!node.timeoutAction) node.timeoutAction = 'remind'
   }
+  cfgHolder.value = holder ?? null
   cfgNode.value = node
   nodeCfgVisible.value = true
+}
+async function removeCfgNode() {
+  const node = cfgNode.value
+  const holder = cfgHolder.value
+  if (!node || !holder) return
+  nodeCfgVisible.value = false
+  await removeNode(holder, node)
 }
 const cfgOptions = computed(() => {
   if (!cfgNode.value) return []
@@ -217,52 +227,45 @@ function fieldOptionsOf(key: string): string[] {
   return f?.type === 'select' ? (f.options || []) : []
 }
 
-provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNodeCfg, openBranchCfg, nodeDesc })
+provide('flowDesigner', { insertNode, removeNode, removeBranch, addBranch, openNodeCfg, openBranchCfg, nodeDesc })
 </script>
 
 <template>
   <div class="flow-designer">
-    <div class="fd-scroller">
-    <div class="fd-canvas" :style="{ zoom: zoom }">
-      <div class="fd-pill start">
-        <el-icon :size="16"><Avatar /></el-icon>
-        <span>发起人</span>
-      </div>
-      <FlowNode :node="modelValue?.child ?? null" :holder="modelValue" />
-      <div class="fd-pill end">
-        <el-icon :size="16"><CircleCheckFilled /></el-icon>
-        <span>流程结束</span>
-      </div>
-    </div>
-    </div>
-
-    <!-- 缩放工具条 -->
-    <div class="fd-zoom">
-      <el-button size="small" :icon="ZoomOut" @click="zoomBy(-0.1)" />
-      <span class="fd-zoom-num" @dblclick="zoom = 1" title="双击复位 100%">{{ Math.round(zoom * 100) }}%</span>
-      <el-button size="small" :icon="ZoomIn" @click="zoomBy(0.1)" />
-    </div>
-
-    <!-- 添加节点选择 -->
-    <el-dialog v-model="plusState.visible" title="添加节点" width="460px" append-to-body>
-      <div class="fd-pick">
-        <div class="fd-pick-item approver" @click="pickType('approver')">
-          <div class="fd-pick-title">审批节点</div>
-          <div class="fd-pick-desc">成员 / 角色 / 岗位 / 自选 / 部门主管</div>
+    <div ref="scrollerRef" class="fdz-scroller">
+      <div ref="canvasRef" class="fdz-canvas" :style="{ zoom }">
+        <div class="fdz-pill start">
+          <el-icon :size="15"><Avatar /></el-icon>
+          <span>发起人</span>
         </div>
-        <div class="fd-pick-item cc" @click="pickType('cc')">
-          <div class="fd-pick-title">抄送节点</div>
-          <div class="fd-pick-desc">流程到达时通知指定人</div>
-        </div>
-        <div class="fd-pick-item condition" @click="pickType('condition')">
-          <div class="fd-pick-title">条件分支</div>
-          <div class="fd-pick-desc">按表单字段路由 (含默认分支)</div>
+        <FlowNode :node="modelValue?.child ?? null" :holder="modelValue" />
+        <div class="fdz-pill end">
+          <el-icon :size="15"><CircleCheckFilled /></el-icon>
+          <span>流程结束</span>
         </div>
       </div>
-    </el-dialog>
+    </div>
 
-    <!-- 审批/抄送节点配置 -->
-    <el-drawer v-model="nodeCfgVisible" :title="cfgNode?.type === 'cc' ? '抄送节点配置' : '审批节点配置'" size="420px" append-to-body>
+    <!-- 缩放工具条 (左下角, 钉钉式) -->
+    <div class="fdz-zoom">
+      <el-button link :icon="ZoomOut" @click="zoomBy(-0.1)" />
+      <span class="fdz-zoom-num" title="双击复位 100%" @dblclick="zoom = 1">{{ Math.round(zoom * 100) }}%</span>
+      <el-button link :icon="ZoomIn" @click="zoomBy(0.1)" />
+      <el-divider direction="vertical" />
+      <el-button link :icon="FullScreen" @click="fitView">适应</el-button>
+    </div>
+
+    <!-- 审批/抄送节点配置 (钉钉式彩色头部 + 头部删除) -->
+    <el-drawer v-model="nodeCfgVisible" size="480px" append-to-body class="fdz-drawer">
+      <template #header>
+        <div class="fdz-dhead">
+          <span class="fdz-dico" :class="cfgNode?.type === 'cc' ? 'cc' : 'approver'">
+            <el-icon :size="17"><Bell v-if="cfgNode?.type === 'cc'" /><User v-else /></el-icon>
+          </span>
+          <span class="fdz-dtitle">{{ cfgNode?.name || (cfgNode?.type === 'cc' ? '抄送节点' : '审批节点') }}</span>
+          <el-button v-if="cfgNode" link type="danger" :icon="Delete" @click="removeCfgNode">删除</el-button>
+        </div>
+      </template>
       <el-form v-if="cfgNode" label-width="90px">
         <el-form-item label="节点名称">
           <el-input v-model="cfgNode.name" maxlength="30" />
@@ -290,7 +293,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
           <el-divider content-position="left">超时处理</el-divider>
           <el-form-item label="办理期限">
             <el-input-number v-model="cfgNode.timeoutHours" :min="0" :max="720" :step="1" controls-position="right" />
-            <span class="fd-tip-inline">小时 (0=不限时)</span>
+            <span class="fdz-tip-inline">小时 (0=不限时)</span>
           </el-form-item>
           <el-form-item v-if="(cfgNode.timeoutHours || 0) > 0" label="超时策略">
             <el-radio-group v-model="cfgNode.timeoutAction">
@@ -304,19 +307,25 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
               <el-option v-for="u in users" :key="u.id" :label="u.nickname || u.username" :value="u.id" />
             </el-select>
           </el-form-item>
-          <div v-if="(cfgNode.timeoutHours || 0) > 0" class="fd-tip">
+          <div v-if="(cfgNode.timeoutHours || 0) > 0" class="fdz-tip">
             逾期后由定时任务处理: 提醒=通知审批人 (一次); 自动转办=系统转给指定人 (转办后不再计时);
             自动通过=系统代为同意并推进。未配置期限的节点不受影响。
           </div>
         </template>
-        <div v-if="cfgNode.approverType === 'superior'" class="fd-tip">
+        <div v-if="cfgNode.approverType === 'superior'" class="fdz-tip">
           从发起人所在组织起逐级向上查找挂「主管岗」的用户 (跳过发起人自己), 到根仍无则发起失败并提示。
         </div>
       </el-form>
     </el-drawer>
 
     <!-- 分支条件配置 -->
-    <el-drawer v-model="branchCfgVisible" title="分支条件配置" size="480px" append-to-body>
+    <el-drawer v-model="branchCfgVisible" size="500px" append-to-body class="fdz-drawer">
+      <template #header>
+        <div class="fdz-dhead">
+          <span class="fdz-dico condition"><el-icon :size="17"><Share /></el-icon></span>
+          <span class="fdz-dtitle">{{ cfgBranch?.name || '分支条件' }}</span>
+        </div>
+      </template>
       <el-form v-if="cfgBranch" label-width="90px">
         <el-form-item label="分支名称">
           <el-input v-model="cfgBranch.name" maxlength="30" />
@@ -327,7 +336,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
         </el-form-item>
         <el-divider content-position="left">条件 (同时满足)</el-divider>
         <div v-if="cfgBranch.isDefault" style="color:var(--el-text-color-secondary)">默认分支无需配置条件</div>
-        <div v-for="(c, i) in condGroup" :key="i" class="fd-cond-row">
+        <div v-for="(c, i) in condGroup" :key="i" class="fdz-cond-row">
           <el-select v-model="c.field" filterable placeholder="字段" style="width:130px">
             <el-option v-for="f in fields" :key="f.key" :label="f.label" :value="f.key" />
           </el-select>
@@ -357,102 +366,104 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
 }
-/* 画布滚动容器: 大流程在容器内横向/纵向滚动, 不再撑爆弹窗 */
-.fd-scroller {
+/* 画布滚动容器: 纯浅灰底 (钉钉式无网点), 大流程在容器内横向/纵向滚动 */
+.fdz-scroller {
   overflow: auto;
   max-height: 62vh;
   min-height: 300px;
-  padding: 20px 12px;
+  padding: 24px 12px;
   border-radius: 6px;
-  background-image: radial-gradient(var(--el-border-color-lighter) 1px, transparent 1px);
-  background-size: 16px 16px;
+  background: var(--el-fill-color-light);
 }
-.fd-canvas {
+.fdz-canvas {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: max-content;
   margin: 0 auto;
 }
-.fd-zoom {
+/* 缩放工具条 (左下角) */
+.fdz-zoom {
   position: absolute;
-  right: 10px;
+  left: 10px;
   bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 3px 8px;
-  box-shadow: 0 2px 6px rgba(31, 41, 55, 0.08);
+  box-shadow: var(--el-box-shadow-light);
 }
-.fd-zoom-num {
+.fdz-zoom-num {
   font-size: 12px;
-  width: 40px;
+  min-width: 38px;
   text-align: center;
   cursor: pointer;
   user-select: none;
 }
-.fd-canvas {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.fd-pill {
+
+/* ---- 发起/结束胶囊 ---- */
+.fdz-pill {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 26px;
-  border-radius: 20px;
-  color: #fff;
+  border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
   user-select: none;
 }
-.fd-pill.start {
-  background: var(--el-text-color-secondary);
+.fdz-pill.start {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-7);
 }
-.fd-pill.end {
-  background: var(--el-text-color-placeholder);
-  margin-top: 0;
-}
-/* FlowNode 尾部连线与结束节点之间留出间距 */
-.fd-canvas > :deep(.fd-link:last-of-type) {
-  margin-bottom: 0;
+.fdz-pill.end {
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
 }
 
-/* 添加节点弹窗 */
-.fd-pick {
+/* ---- 抽屉头部 (钉钉式彩色图标 + 标题 + 删除) ---- */
+.fdz-dhead {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.fdz-dico {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  flex: none;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  color: #fff;
 }
-.fd-pick-item {
+.fdz-dico.approver { background: var(--el-color-primary); }
+.fdz-dico.cc { background: var(--el-color-warning); }
+.fdz-dico.condition { background: var(--el-color-success); }
+.fdz-dtitle {
   flex: 1;
-  padding: 18px 10px;
-  text-align: center;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: box-shadow 0.15s;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.fd-pick-item:hover {
-  box-shadow: 0 3px 10px rgba(31, 41, 55, 0.12);
-}
-.fd-pick-item.approver { border-color: var(--el-color-primary-light-5); }
-.fd-pick-item.cc { border-color: var(--el-color-warning-light-5); }
-.fd-pick-item.condition { border-color: var(--el-color-success-light-5); }
-.fd-pick-title { font-weight: 600; }
-.fd-pick-desc { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 6px; }
 
-.fd-cond-row {
+.fdz-cond-row {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
 }
-.fd-tip {
+.fdz-tip {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.6;
@@ -460,7 +471,7 @@ provide('flowDesigner', { openPlus, removeNode, removeBranch, addBranch, openNod
   border-radius: 4px;
   padding: 8px 10px;
 }
-.fd-tip-inline {
+.fdz-tip-inline {
   margin-left: 8px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
