@@ -1,6 +1,6 @@
 /**
- * 布局设置 store (仿 RuoYi useSettingsStore): 主题色 / 暗黑模式 / 固定头部 /
- * 侧边栏 Logo / 多标签页 / 页面水印, 持久化到 localStorage (键 hinay_layout_setting)。
+ * 布局设置 store (仿 RuoYi useSettingsStore): 主题色 / 暗黑模式 / 布局模式 /
+ * 固定头部 / 侧边栏 Logo / 多标签页 / 页面水印, 持久化到 localStorage (键 hinay_layout_setting)。
  *
  * 主题副作用 (DOM class / CSS 变量) 在 action 内即时应用; 启动恢复走
  * plugins/settings.client.ts 的两阶段策略: 水合前只应用 DOM 副作用 (暗黑类/主题色变量),
@@ -16,6 +16,11 @@ export interface LayoutSettings {
   theme: string
   /** 暗黑模式 */
   isDark: boolean
+  /**
+   * 菜单布局模式: sidebar = 经典左侧整树菜单 (默认);
+   * dual = Snowy 式双层侧边栏 (窄图标栏放一级菜单, 子菜单面板放当前一级的二级)
+   */
+  layout: 'sidebar' | 'dual'
   /** 固定头部 (关闭后头部随内容滚动) */
   fixedHeader: boolean
   /** 侧边栏显示 Logo */
@@ -31,6 +36,7 @@ export interface LayoutSettings {
 export const DEFAULT_LAYOUT: LayoutSettings = {
   theme: '#409eff',
   isDark: false,
+  layout: 'sidebar',
   fixedHeader: true,
   showLogo: true,
   showTags: true,
@@ -71,6 +77,7 @@ export const useSettingsStore = defineStore('appSettings', {
           localStorage.setItem(SETTINGS_LS_KEY, JSON.stringify({
             theme: this.theme,
             isDark: this.isDark,
+            layout: this.layout,
             fixedHeader: this.fixedHeader,
             showLogo: this.showLogo,
             showTags: this.showTags,
@@ -92,6 +99,8 @@ export const useSettingsStore = defineStore('appSettings', {
         }
       }
       catch {}
+      // 旧版本 localStorage / 脏值容错: 布局模式仅认白名单值
+      this.layout = this.layout === 'dual' ? 'dual' : 'sidebar'
       applyDark(this.isDark)
       applyTheme(this.theme, this.isDark)
     },

@@ -2,6 +2,7 @@
 /**
  * 系统布局设置抽屉 (仿 RuoYi): 顶栏齿轮触发, el-drawer 承载全部个性化配置。
  * - 主题颜色: 预设色板 + 取色器, 运行时重写 Element Plus 主色 CSS 变量
+ * - 布局模式: 侧边菜单 (经典整树) / 双层菜单 (Snowy 式一级图标栏 + 二级面板)
  * - 布局开关: 暗黑模式 / 固定头部 / 侧边栏 Logo / 多标签页
  * - 页面水印: 开关 + 自定义文案 (留空默认取当前用户 "昵称(用户名)")
  * 所有设置即时生效并持久化 localStorage, 支持一键恢复默认。
@@ -85,6 +86,35 @@ function handleReset() {
       </div>
 
       <div class="setting-block">
+        <div class="setting-block__title">布局模式</div>
+        <div class="layout-modes">
+          <div
+            class="layout-mode"
+            :class="{ active: settings.layout === 'sidebar' }"
+            @click="settings.update({ layout: 'sidebar' })"
+          >
+            <div class="layout-mode__preview">
+              <div class="lp-bar" />
+              <div class="lp-main" />
+            </div>
+            <div class="layout-mode__name">侧边菜单</div>
+          </div>
+          <div
+            class="layout-mode"
+            :class="{ active: settings.layout === 'dual' }"
+            @click="settings.update({ layout: 'dual' })"
+          >
+            <div class="layout-mode__preview">
+              <div class="lp-rail" />
+              <div class="lp-panel" />
+              <div class="lp-main" />
+            </div>
+            <div class="layout-mode__name">双层菜单</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-block">
         <div class="setting-block__title">布局设置</div>
         <div class="setting-row">
           <span>暗黑模式</span>
@@ -159,6 +189,66 @@ function handleReset() {
 }
 .setting-block {
   margin-bottom: 24px;
+}
+/* 布局模式预览卡: 纯 div 迷你示意图, 选中态与主题色板同款主色描边 */
+.layout-modes {
+  display: flex;
+  gap: 12px;
+}
+.layout-mode {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  transition: border-color .2s, background-color .2s;
+}
+.layout-mode:hover {
+  border-color: var(--el-color-primary-light-5);
+}
+.layout-mode.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.layout-mode__preview {
+  width: 100%;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}
+.lp-bar {
+  width: 22%;
+  flex-shrink: 0;
+  background: var(--el-color-primary-light-5);
+}
+.lp-rail {
+  width: 12%;
+  flex-shrink: 0;
+  background: var(--el-color-primary-light-5);
+}
+.lp-panel {
+  width: 20%;
+  flex-shrink: 0;
+  background: var(--el-fill-color-darker);
+}
+.lp-main {
+  flex: 1;
+  background: var(--el-fill-color-light);
+}
+.layout-mode__name {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.layout-mode.active .layout-mode__name {
+  color: var(--el-color-primary);
+  font-weight: 500;
 }
 .theme-swatches {
   display: flex;

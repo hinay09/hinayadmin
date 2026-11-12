@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * 默认布局: el-container + 侧边栏菜单 + 顶部用户信息 + 面包屑。
- * 布局设置 (stores/settings) 驱动: 固定头部 / 侧边栏 Logo / 多标签页 / 全屏水印,
+ * 布局设置 (stores/settings) 驱动: 布局模式 (经典整树 / Snowy 式双层菜单) /
+ * 固定头部 / 侧边栏 Logo / 多标签页 / 全屏水印,
  * 顶栏齿轮 (SettingDrawer) 可切换暗黑模式与主题色。
  */
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import {
@@ -23,7 +24,7 @@ import { useConfigStore } from '~/stores/config'
 import { useSettingsStore } from '~/stores/settings'
 import { useAuthApi } from '~/composables/useApi'
 import { markSessionDead } from '~/composables/useRequest'
-import { filterDisplayMenus } from '~/utils/router'
+import { filterDisplayMenus, findRootByPath } from '~/utils/router'
 import type { MenuNode } from '~/stores/user'
 
 const userStore = useUserStore()
@@ -45,6 +46,49 @@ onMounted(() => {
 const menuTree = computed(() => filterDisplayMenus(menus.value))
 const activeMenu = computed(() => route.path)
 const collapse = ref(false)
+
+// 双层菜单布局 (Snowy 式): 窄图标栏放一级菜单, 子菜单面板放当前一级的二级
+const isMix = computed(() => settingsStore.layout === 'dual')
+
+/**
+ * 当前激活的一级菜单 (双层布局用): 路由命中菜单时更新;
+ * 菜单外页面 (如个人中心) 保持上一个激活项, 从未命中过则默认第一个根。
+ */
+const activeRoot = ref<MenuNode | null>(null)
+watch(
+  [() => route.path, menuTree],
+  () => {
+    const matched = findRootByPath(menuTree.value, route.path)
+    if (matched) {
+      activeRoot.value = matched
+      return
+    }
+    if (!activeRoot.value && menuTree.value.length) activeRoot.value = menuTree.value[0]
+  },
+  { immediate: true },
+)
+
+// 双层布局下当前一级是否有二级 (无二级时子菜单面板整个隐藏, 内容区通栏)
+const hasPanel = computed(() => !!(activeRoot.value?.children?.length))
+
+// 侧边菜单数据源: 经典模式渲染整树, 双层模式只渲染激活一级的二级
+const sidebarMenus = computed(() => (isMix.value ? activeRoot.value?.children || [] : menuTree.value))
+
+// aside 宽度: 经典 = 220/64 (collapse); 双层 = 图标栏 64 + 面板 220 (面板隐藏时仅 64)
+const asideWidth = computed(() => {
+  if (!isMix.value) return collapse.value ? '64px' : '220px'
+  return !hasPanel.value || collapse.value ? '64px' : '284px'
+})
+
+// 图标栏点击: 有二级仅切换面板内容不跳转 (收起时同样不跳, 交给悬浮附加框选择),
+// 由用户点选具体二级菜单后再导航; 无二级直接打开该页面
+function handleRailClick(node: MenuNode) {
+  if (node.children?.length) {
+    activeRoot.value = node
+    return
+  }
+  router.push(node.path)
+}
 
 /**
  * 根据当前路由 path 在菜单树中追溯路径, 用于面包屑显示。
@@ -108,47 +152,117 @@ function handleFullscreen() {
 
 <template>
   <el-container class="app-layout">
-    <el-aside :width="collapse ? '64px' : '220px'" class="app-aside">
-      <div v-if="showLogo" class="logo">
-        <div class="logo-badge">
-          <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
-          <el-icon v-else :size="17" class="logo-icon"><Histogram /></el-icon>
+    <el-aside :width="asideWidth" class="app-aside" :class="{ 'app-aside--dual': isMix }">
+      <!-- 双层菜单: 窄图标栏 (一级菜单, 图标+名称竖排, 面板收起时常驻) -->
+      <div v-if="isMix" class="rail">
+        <div v-if="showLogo" class="rail-logo">
+          <div class="logo-badge">
+            <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
+            <el-icon v-else :size="17" class="logo-icon"><Histogram /></el-icon>
+          </div>
         </div>
-        <span v-if="!collapse" class="logo-text">{{ siteName }}</span>
-      </div>
-      <el-menu
-        :default-active="activeMenu"
-        :collapse="collapse"
-        router
-        unique-opened
-        class="app-menu"
-      >
-        <template v-for="m in menuTree" :key="m.id">
-          <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
-            <template #title>
-              <el-icon><component :is="m.icon || 'Folder'" /></el-icon>
-              <span>{{ m.name }}</span>
+        <div class="rail-menu">
+          <el-popover
+            v-for="m in menuTree"
+            :key="m.id"
+            trigger="hover"
+            placement="right-start"
+            :show-arrow="false"
+            :offset="2"
+            :width="200"
+            :disabled="!collapse || !m.children?.length"
+            popper-class="rail-flyout-popper"
+          >
+            <template #reference>
+              <div
+                class="rail-item"
+                :class="{ 'is-active': activeRoot?.id === m.id }"
+                @click="handleRailClick(m)"
+              >
+                <el-icon :size="18"><component :is="m.icon || 'Menu'" /></el-icon>
+                <span class="rail-item__name">{{ m.name }}</span>
+              </div>
             </template>
-            <el-menu-item
-              v-for="c in m.children"
-              :key="c.id"
-              :index="c.path"
-            >
-              <el-icon><component :is="c.icon || 'Document'" /></el-icon>
-              <span>{{ c.name }}</span>
+            <!-- 收起面板时悬浮弹出二级附加框: 复用经典「收起菜单」的 el-menu 原生样式 -->
+            <div class="rail-flyout">
+              <el-menu
+                :default-active="activeMenu"
+                router
+                unique-opened
+                class="rail-flyout-menu"
+              >
+                <template v-for="c in m.children" :key="c.id">
+                  <el-sub-menu v-if="c.children && c.children.length" :index="String(c.id)">
+                    <template #title>
+                      <el-icon><component :is="c.icon || 'Folder'" /></el-icon>
+                      <span>{{ c.name }}</span>
+                    </template>
+                    <el-menu-item
+                      v-for="g in c.children"
+                      :key="g.id"
+                      :index="g.path"
+                    >
+                      <el-icon><component :is="g.icon || 'Document'" /></el-icon>
+                      <span>{{ g.name }}</span>
+                    </el-menu-item>
+                  </el-sub-menu>
+                  <el-menu-item v-else :index="c.path">
+                    <el-icon><component :is="c.icon || 'Document'" /></el-icon>
+                    <template #title>{{ c.name }}</template>
+                  </el-menu-item>
+                </template>
+              </el-menu>
+            </div>
+          </el-popover>
+        </div>
+      </div>
+      <!-- 菜单列: 经典模式 = Logo + 整树菜单; 双层模式 = 面板头 + 当前一级的二级 -->
+      <div v-show="!isMix || (hasPanel && !collapse)" class="menu-col">
+        <div v-if="isMix && activeRoot" class="panel-head">
+          <el-icon :size="16"><component :is="activeRoot.icon || 'Folder'" /></el-icon>
+          <span class="panel-head__name">{{ activeRoot.name }}</span>
+        </div>
+        <div v-else-if="!isMix && showLogo" class="logo">
+          <div class="logo-badge">
+            <img v-if="siteLogo" :src="siteLogo" class="logo-img" alt="logo">
+            <el-icon v-else :size="17" class="logo-icon"><Histogram /></el-icon>
+          </div>
+          <span v-if="!collapse" class="logo-text">{{ siteName }}</span>
+        </div>
+        <el-menu
+          :default-active="activeMenu"
+          :collapse="collapse && !isMix"
+          router
+          unique-opened
+          class="app-menu"
+        >
+          <template v-for="m in sidebarMenus" :key="m.id">
+            <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
+              <template #title>
+                <el-icon><component :is="m.icon || 'Folder'" /></el-icon>
+                <span>{{ m.name }}</span>
+              </template>
+              <el-menu-item
+                v-for="c in m.children"
+                :key="c.id"
+                :index="c.path"
+              >
+                <el-icon><component :is="c.icon || 'Document'" /></el-icon>
+                <span>{{ c.name }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="m.path">
+              <el-icon><component :is="m.icon || 'Menu'" /></el-icon>
+              <template #title>{{ m.name }}</template>
             </el-menu-item>
-          </el-sub-menu>
-          <el-menu-item v-else :index="m.path">
-            <el-icon><component :is="m.icon || 'Menu'" /></el-icon>
-            <template #title>{{ m.name }}</template>
-          </el-menu-item>
-        </template>
-      </el-menu>
+          </template>
+        </el-menu>
+      </div>
     </el-aside>
     <el-container class="app-body" :class="{ 'app-body--scroll': !fixedHeader }">
       <el-header class="app-header">
         <div class="header-left">
-          <el-tooltip :content="collapse ? '展开菜单' : '收起菜单'" placement="bottom">
+          <el-tooltip :content="isMix ? (collapse ? '展开面板' : '收起面板') : (collapse ? '展开菜单' : '收起菜单')" placement="bottom">
             <el-icon class="header-action" @click="collapse = !collapse">
               <component :is="collapse ? Expand : Fold" />
             </el-icon>
@@ -226,6 +340,128 @@ function handleFullscreen() {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 2px 0 10px rgba(24, 60, 120, 0.06);
+}
+/* 双层菜单布局: aside 变为横向两列 (窄图标栏 + 子菜单面板) */
+.app-aside--dual {
+  flex-direction: row;
+}
+/* 窄图标栏: 一级菜单, 图标+名称竖排, 常驻不随面板收起 */
+.rail {
+  width: 64px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+.rail-logo {
+  height: 60px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.rail-menu {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 4px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color-light) transparent;
+}
+.rail-menu::-webkit-scrollbar {
+  width: 5px;
+}
+.rail-menu::-webkit-scrollbar-thumb {
+  background: var(--el-border-color-light);
+  border-radius: 3px;
+}
+/* 一级菜单项: 激活态与菜单项同款主色系 */
+.rail-item {
+  width: 56px;
+  min-height: 52px;
+  padding: 7px 4px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--el-text-color-regular);
+  transition: background-color .2s, color .2s;
+}
+.rail-item:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.rail-item.is-active {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-8);
+  font-weight: 500;
+}
+/* 名称最多两行居中, 超出省略 */
+.rail-item__name {
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* 面板收起时悬浮一级菜单弹出的二级附加框 (el-popover teleport 到 body, 仅重置内边距) */
+:global(.rail-flyout-popper.el-popper) {
+  padding: 6px;
+}
+/* 宽度由 popover 的 width prop 显式给定, 内容 100% 填充, 悬浮高亮不会超出弹层 */
+.rail-flyout {
+  width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+/* 弹层内菜单: 复用经典「收起菜单」的 EP 原生样式, 仅去右边线 + 紧凑行高 */
+.rail-flyout-menu {
+  border-right: none;
+}
+.rail-flyout-menu :deep(.el-menu-item),
+.rail-flyout-menu :deep(.el-sub-menu__title) {
+  height: 40px;
+  line-height: 40px;
+}
+/* 菜单列: 经典模式 = Logo + 整树; 双层模式 = 面板头 + 当前一级的二级 */
+.menu-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-head {
+  height: 60px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.panel-head .el-icon {
+  color: var(--el-color-primary);
+}
+.panel-head__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .logo {
   height: 60px;

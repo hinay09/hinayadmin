@@ -55,3 +55,29 @@ export function flattenLeafPaths(tree: MenuNode[]): string[] {
   walk(tree)
   return out
 }
+
+/**
+ * 由路由 path 反查其所属的一级 (根) 菜单节点:
+ * 先在整树中精确匹配 path, 命中则返回它所在的根; 失败再按根 path 前缀兜底
+ * (覆盖不在菜单中的隐藏详情页)。均未命中返回 null。
+ */
+export function findRootByPath(tree: MenuNode[], path: string): MenuNode | null {
+  if (!path) return null
+  let found: MenuNode | null = null
+  const dfs = (arr: MenuNode[], root: MenuNode): boolean => {
+    for (const n of arr) {
+      if (n.path === path) {
+        found = root
+        return true
+      }
+      if (n.children?.length && dfs(n.children, root)) return true
+    }
+    return false
+  }
+  for (const root of tree) {
+    if (dfs([root], root)) break
+  }
+  if (found) return found
+  // 前缀兜底: 根 path 是路由前缀即视为该模块 (根 path 为 '/' 时忽略)
+  return tree.find(r => r.path && r.path !== '/' && path.startsWith(r.path)) || null
+}
