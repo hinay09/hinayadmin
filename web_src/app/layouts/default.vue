@@ -191,26 +191,7 @@ function handleFullscreen() {
                 unique-opened
                 class="rail-flyout-menu"
               >
-                <template v-for="c in m.children" :key="c.id">
-                  <el-sub-menu v-if="c.children && c.children.length" :index="String(c.id)">
-                    <template #title>
-                      <el-icon><component :is="c.icon || 'Folder'" /></el-icon>
-                      <span>{{ c.name }}</span>
-                    </template>
-                    <el-menu-item
-                      v-for="g in c.children"
-                      :key="g.id"
-                      :index="g.path"
-                    >
-                      <el-icon><component :is="g.icon || 'Document'" /></el-icon>
-                      <span>{{ g.name }}</span>
-                    </el-menu-item>
-                  </el-sub-menu>
-                  <el-menu-item v-else :index="c.path">
-                    <el-icon><component :is="c.icon || 'Document'" /></el-icon>
-                    <template #title>{{ c.name }}</template>
-                  </el-menu-item>
-                </template>
+                <SidebarItem v-for="c in m.children" :key="c.id" :item="c" />
               </el-menu>
             </div>
           </el-popover>
@@ -236,26 +217,7 @@ function handleFullscreen() {
           unique-opened
           class="app-menu"
         >
-          <template v-for="m in sidebarMenus" :key="m.id">
-            <el-sub-menu v-if="m.children && m.children.length" :index="String(m.id)">
-              <template #title>
-                <el-icon><component :is="m.icon || 'Folder'" /></el-icon>
-                <span>{{ m.name }}</span>
-              </template>
-              <el-menu-item
-                v-for="c in m.children"
-                :key="c.id"
-                :index="c.path"
-              >
-                <el-icon><component :is="c.icon || 'Document'" /></el-icon>
-                <span>{{ c.name }}</span>
-              </el-menu-item>
-            </el-sub-menu>
-            <el-menu-item v-else :index="m.path">
-              <el-icon><component :is="m.icon || 'Menu'" /></el-icon>
-              <template #title>{{ m.name }}</template>
-            </el-menu-item>
-          </template>
+          <SidebarItem v-for="m in sidebarMenus" :key="m.id" :item="m" />
         </el-menu>
       </div>
     </el-aside>
