@@ -3,10 +3,14 @@
  * 审批表单渲染器: 按 form_conf 字段定义渲染动态表单。
  * 发起弹窗 (可编辑) 与详情页 (只读) 共用。
  * 图片/附件字段值统一存 FlowFileItem[] (JSON 数组), 上传走系统文件接口。
+ * 字典下拉选项走 useDictOptions (全量缓存); 关联下拉按 relMod 惰性加载目标模块 /all。
  */
+import { ref, watch } from 'vue'
 import { CircleCloseFilled, Delete, Plus, UploadFilled } from '@element-plus/icons-vue'
+import * as useApiMod from '~/composables/useApi'
 import type { FlowFileItem, FlowFormField } from '~/composables/useApi/flow'
 import { parseFileItems } from '~/composables/useApi/flow'
+import { useDictOptions } from '~/composables/useDictOptions'
 
 const props = defineProps<{
   fields: FlowFormField[]
@@ -14,6 +18,8 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: Record<string, any>): void }>()
+
+const { options: dictOptions, label: dictLabel } = useDictOptions()
 
 function set(key: string, v: any) {
   emit('update:modelValue', { ...props.modelValue, [key]: v })
@@ -35,6 +41,41 @@ function onUploaded(key: string, res: any) {
 function removeFile(key: string, i: number) {
   set(key, filesOf(key).filter((_, idx) => idx !== i))
 }
+
+/* ---- 关联下拉选项: 按 relMod 惰性加载一次 (模块须暴露 all()), 失败静默为空 ---- */
+const relationOptions = ref<Record<string, any[]>>({})
+
+async function ensureRelation(f: FlowFormField) {
+  if (!f.relMod || relationOptions.value[f.relMod])
+    return
+  const fn = `use${f.relMod.charAt(0).toUpperCase()}${f.relMod.slice(1)}Api`
+  const loader = (useApiMod as any)[fn]
+  if (typeof loader !== 'function')
+    return
+  relationOptions.value = { ...relationOptions.value, [f.relMod]: [] } // 先占位防并发重复加载
+  try {
+    const res = await loader().all()
+    relationOptions.value = { ...relationOptions.value, [f.relMod!]: res.list || [] }
+  }
+  catch {}
+}
+
+watch(
+  () => props.fields,
+  (fs) => {
+    fs?.forEach(f => f.type === 'relation' && ensureRelation(f))
+  },
+  { immediate: true },
+)
+
+/** 关联字段只读文案: 选项名优先, 未加载到回落原值 */
+function relationDisplay(f: FlowFormField) {
+  const v = props.modelValue?.[f.key]
+  if (v === undefined || v === null || v === '')
+    return '-'
+  const hit = (relationOptions.value[f.relMod || ''] || []).find((o: any) => o.id === v)
+  return hit ? (hit.name || hit.title || String(v)) : String(v)
+}
 </script>
 
 <template>
@@ -55,6 +96,11 @@ function removeFile(key: string, i: number) {
             </div>
           </div>
         </template>
+        <el-tag v-else-if="f.type === 'switch'" :type="Number(modelValue?.[f.key]) === 1 ? 'success' : 'info'">
+          {{ Number(modelValue?.[f.key]) === 1 ? '是' : '否' }}
+        </el-tag>
+        <span v-else-if="f.type === 'dict'">{{ f.dictCode ? dictLabel(f.dictCode, modelValue?.[f.key]) : display(f.key) }}</span>
+        <span v-else-if="f.type === 'relation'">{{ relationDisplay(f) }}</span>
         <span v-else style="white-space:pre-wrap">{{ display(f.key) }}</span>
       </el-form-item>
 
@@ -69,6 +115,25 @@ function removeFile(key: string, i: number) {
         </el-select>
         <el-date-picker v-else-if="f.type === 'date'" type="date" value-format="YYYY-MM-DD" style="width:220px"
           :model-value="modelValue?.[f.key]" @update:model-value="(v: any) => set(f.key, v)" />
+
+        <!-- 开关: 是/否 (存 1/0) -->
+        <el-radio-group v-else-if="f.type === 'switch'"
+          :model-value="modelValue?.[f.key] ?? 1" @update:model-value="(v: any) => set(f.key, v)">
+          <el-radio :value="1">是</el-radio>
+          <el-radio :value="0">否</el-radio>
+        </el-radio-group>
+
+        <!-- 字典下拉: 选项来自字典管理 (useDictOptions 全量缓存) -->
+        <el-select v-else-if="f.type === 'dict'" style="width:220px"
+          :model-value="modelValue?.[f.key]" @update:model-value="(v: any) => set(f.key, v)">
+          <el-option v-for="o in (f.dictCode ? dictOptions(f.dictCode).value : [])" :key="o.dictValue" :label="o.dictLabel" :value="o.dictValue" />
+        </el-select>
+
+        <!-- 关联下拉: 选项来自目标模块 /all -->
+        <el-select v-else-if="f.type === 'relation'" style="width:220px" filterable
+          :model-value="modelValue?.[f.key]" @update:model-value="(v: any) => set(f.key, v)">
+          <el-option v-for="o in relationOptions[f.relMod || ''] || []" :key="o.id" :label="o.name || o.title || o.id" :value="o.id" />
+        </el-select>
 
         <!-- 图片: 缩略图 + 删除 + 追加上传 -->
         <template v-else-if="f.type === 'image'">

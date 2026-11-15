@@ -1,90 +1,74 @@
 <script setup lang="ts">
 /**
- * 审批表单设计器: 编辑 form_conf 字段列表 (key/label/类型/必填/选项)。
+ * 审批表单设计器: 基于共享拖拽壳 (FormDesignerShell) 编辑 form_conf 字段列表。
+ * 控件: 基础文本/数字/开关/日期 + select(静态选项) + dict(字典下拉) + relation(关联下拉) + image/file。
+ * 字段标识对外保持 key (与后端 FormField/流程条件配置对齐), 壳内部 prop 经适配层映射。
  */
 import { computed } from 'vue'
-import { Delete, Plus, Top, Bottom } from '@element-plus/icons-vue'
 import type { FlowFormField } from '~/composables/useApi/flow'
+import FormDesignerShell, { type DesignerField, type DesignerPaletteItem } from '~/components/FormDesignerShell.vue'
 
 const props = defineProps<{ modelValue: FlowFormField[] }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: FlowFormField[]): void }>()
 
-const fields = computed({
-  get: () => props.modelValue || [],
-  set: v => emit('update:modelValue', v),
-})
-
-const typeOptions = [
-  { label: '单行文本', value: 'input' },
-  { label: '数字', value: 'number' },
-  { label: '多行文本', value: 'textarea' },
-  { label: '单选', value: 'select' },
-  { label: '日期', value: 'date' },
-  { label: '图片', value: 'image' },
-  { label: '附件', value: 'file' },
+const palette: DesignerPaletteItem[] = [
+  { type: 'input', label: '单行文本', hint: '常规填写' },
+  { type: 'textarea', label: '多行文本', hint: '事由/说明' },
+  { type: 'number', label: '数字', hint: '天数/金额' },
+  { type: 'switch', label: '开关', hint: '是/否 (1/0)' },
+  { type: 'select', label: '单选(静态)', hint: '固定选项' },
+  { type: 'dict', label: '字典下拉', hint: '选项来自字典管理' },
+  { type: 'relation', label: '关联下拉', hint: '选项来自其他模块 /all' },
+  { type: 'date', label: '日期', hint: '日期选择' },
+  { type: 'image', label: '图片', hint: '上传图片' },
+  { type: 'file', label: '附件', hint: '上传附件' },
 ]
 
-function add() {
-  fields.value = [...fields.value, { key: `field_${fields.value.length + 1}`, label: '新字段', type: 'input', required: false }]
-}
-function update(i: number, patch: Partial<FlowFormField>) {
-  const list = [...fields.value]
-  list[i] = { ...list[i], ...patch }
-  fields.value = list
-}
-function remove(i: number) {
-  fields.value = fields.value.filter((_, idx) => idx !== i)
-}
-function move(i: number, dir: -1 | 1) {
-  const j = i + dir
-  if (j < 0 || j >= fields.value.length) return
-  const list = [...fields.value]
-  ;[list[i], list[j]] = [list[j], list[i]]
-  fields.value = list
-}
+/** FlowFormField[](key) ↔ 壳 DesignerField[](prop): 壳全量不可变 emit, 映射即整体转换 */
+const shellFields = computed<DesignerField[]>({
+  get: () => (props.modelValue || []).map(f => ({ ...f, prop: f.key })),
+  set: (list) => {
+    emit('update:modelValue', list.map(({ prop, ...rest }) => ({ ...rest, key: prop }) as FlowFormField))
+  },
+})
 </script>
 
 <template>
   <div>
-    <el-table :data="fields" border size="small">
-      <el-table-column label="字段标识 (key)" width="180">
-        <template #default="{ $index, row }">
-          <el-input :model-value="row.key" size="small" @update:model-value="(v: string) => update($index, { key: v })" placeholder="如 reason" />
-        </template>
-      </el-table-column>
-      <el-table-column label="显示名" width="160">
-        <template #default="{ $index, row }">
-          <el-input :model-value="row.label" size="small" @update:model-value="(v: string) => update($index, { label: v })" />
-        </template>
-      </el-table-column>
-      <el-table-column label="类型" width="130">
-        <template #default="{ $index, row }">
-          <el-select :model-value="row.type" size="small" @update:model-value="(v: any) => update($index, { type: v })">
-            <el-option v-for="t in typeOptions" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="选项 (单选用, 逗号分隔)" min-width="180">
-        <template #default="{ $index, row }">
-          <el-input v-if="row.type === 'select'" :model-value="(row.options || []).join(',')" size="small"
-            placeholder="如: 事假,病假,年假"
-            @update:model-value="(v: string) => update($index, { options: v.split(',').map(s => s.trim()).filter(Boolean) })" />
-          <span v-else style="color:var(--el-text-color-secondary)">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="必填" width="70" align="center">
-        <template #default="{ $index, row }">
-          <el-switch :model-value="!!row.required" size="small" @update:model-value="(v: any) => update($index, { required: !!v })" />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="130" align="center">
-        <template #default="{ $index }">
-          <el-button link type="primary" size="small" :icon="Top" :disabled="$index === 0" @click="move($index, -1)" />
-          <el-button link type="primary" size="small" :icon="Bottom" :disabled="$index === fields.length - 1" @click="move($index, 1)" />
-          <el-button link type="danger" size="small" :icon="Delete" @click="remove($index)" />
-        </template>
-      </el-table-column>
-    </el-table>
-    <el-button style="margin-top:10px" type="primary" plain :icon="Plus" size="small" @click="add">添加字段</el-button>
+    <FormDesignerShell v-model="shellFields" :palette="palette" prop-placeholder="字段标识, 如 reason">
+      <template #extra="{ field, patch }">
+        <el-form-item v-if="field.type === 'select'" label="选项">
+          <el-select
+            :model-value="field.options || []"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="输入后回车添加选项"
+            style="width:100%"
+            @update:model-value="(v: string[]) => patch({ options: v })"
+          />
+        </el-form-item>
+        <el-form-item v-if="field.type === 'dict'" label="字典编码">
+          <el-input :model-value="field.dictCode" placeholder="字典管理的类型编码" @update:model-value="(v: string) => patch({ dictCode: v })" />
+        </el-form-item>
+        <el-form-item v-if="field.type === 'relation'" label="关联模块">
+          <el-input :model-value="field.relMod" placeholder="如 post → usePostApi().all()" @update:model-value="(v: string) => patch({ relMod: v })" />
+        </el-form-item>
+      </template>
+    </FormDesignerShell>
+    <div class="fd-tip">
+      字典/关联下拉的选项在发起与审批时动态加载 (字典走字典管理, 关联模块须暴露 /all 接口);
+      条件分支可直接引用这些字段的值 (字典比较字典值, 关联比较 ID)。
+    </div>
   </div>
 </template>
+
+<style scoped>
+.fd-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+</style>

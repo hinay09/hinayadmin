@@ -44,9 +44,14 @@ export interface FlowCond {
 export interface FlowFormField {
   key: string
   label: string
-  /** input/number/textarea/select/date/image/file */
-  type: 'input' | 'number' | 'textarea' | 'select' | 'date' | 'image' | 'file'
+  /** input/number/textarea/select/date/image/file/switch/dict/relation */
+  type: 'input' | 'number' | 'textarea' | 'select' | 'date' | 'image' | 'file' | 'switch' | 'dict' | 'relation'
+  /** select 静态选项 */
   options?: string[]
+  /** dict: 字典类型编码 (选项来自字典管理) */
+  dictCode?: string
+  /** relation: 关联模块名 (选项来自 use{Xxx}Api().all()) */
+  relMod?: string
   required?: boolean
 }
 
