@@ -389,6 +389,9 @@ var publicPaths = map[string]struct{}{
 	// 公开租户信息 (登录页租户名提示条): 仅返回租户显示名, 不泄露其他信息,
 	// 按 IP 限流防租户码枚举 (docs/multi-tenant.md §4.3)。
 	"/api/v1/auth/tenant/info": {},
+	// 找回密码两步公开接口 (频控/防枚举/防爆破见 logic/auth/forgot.go)
+	"/api/v1/auth/password/forgot/send-code": {},
+	"/api/v1/auth/password/forgot/reset":     {},
 }
 
 // authWhitelist 基础会话类接口白名单。
@@ -551,20 +554,6 @@ func OperationLog(r *ghttp.Request) {
 		}
 
 		resource, action, resourceId := parseOperation(path, method)
-		switch path {
-		case "/api/v1/auth/login":
-			resource, action = "auth", "login"
-		case "/api/v1/auth/logout":
-			resource, action = "auth", "logout"
-		case "/api/v1/auth/refresh":
-			resource, action = "auth", "refresh"
-		case "/api/v1/auth/login/totp":
-			resource, action = "auth", "login_totp"
-		case "/api/v1/auth/totp/enable":
-			resource, action = "auth", "totp_enable"
-		case "/api/v1/auth/totp/disable":
-			resource, action = "auth", "totp_disable"
-		}
 
 		// multipart: detail 用上传逻辑暂存的文件摘要 (无摘要时给占位说明, 记录本身不缺)
 		if isMultipart {
@@ -802,55 +791,80 @@ func redactSensitiveValue(node interface{}) {
 	}
 }
 
+// modulePrefixes 模块命名空间前缀: 路由第一段为纯命名空间 (api/ 下的包名),
+// 真正的资源在其后一段 (/system/users -> users)。auth/message 等本身即业务
+// 资源的命名空间不剥离 (/auth/password -> auth)。
+var modulePrefixes = map[string]bool{
+	"system": true,
+	"biz":    true,
+	"cms":    true,
+	"flow":   true,
+	"ai":     true,
+}
+
+// methodActions HTTP method -> 基础动作映射 (操作日志仅覆盖写方法, GET 不入表)。
+var methodActions = map[string]string{
+	"POST":   "create",
+	"PUT":    "update",
+	"DELETE": "delete",
+}
+
+// specialPaths 特例路径 (剥离 /api/v1 后): 动作无法从 method 推导的认证类接口,
+// 显式给定 资源/动作 (登录/登出/续签/2FA 开关/头像上传)。
+var specialPaths = map[string][2]string{
+	"auth/login":        {"auth", "login"},
+	"auth/logout":       {"auth", "logout"},
+	"auth/refresh":      {"auth", "refresh"},
+	"auth/login/totp":   {"auth", "login_totp"},
+	"auth/totp/enable":  {"auth", "totp_enable"},
+	"auth/totp/disable": {"auth", "totp_disable"},
+	// 头像上传: multipart 写操作, method 语义是 POST 但动作是上传而非"创建 auth"
+	"auth/avatar": {"auth", "upload_avatar"},
+}
+
 // parseOperation 从 URL path + HTTP method 解析资源名与操作类型。
 func parseOperation(path, method string) (resource, action, resourceId string) {
 	// 去掉 /api/v1 前缀
 	p := strings.TrimPrefix(path, "/api/v1")
 	p = strings.TrimLeft(p, "/")
-
-	parts := strings.Split(p, "/")
-	if len(parts) == 0 {
+	if p == "" {
 		return "", "", ""
 	}
 
-	switch method {
-	case "POST":
-		action = "create"
-	case "PUT":
-		action = "update"
-	case "DELETE":
-		action = "delete"
+	// 特例路径优先: 整路径显式映射, 不走通用推导
+	if v, ok := specialPaths[p]; ok {
+		return v[0], v[1], ""
 	}
 
-	// 资源名: 第一段
-	if len(parts) > 0 {
-		resource = parts[0]
+	parts := strings.Split(p, "/")
+
+	action = methodActions[method]
+
+	// 资源名: 剥离模块命名空间前缀后的第一个业务段
+	// /system/users -> users; /leaves -> leaves (无前缀时取第一段)
+	idx := 0
+	if len(parts) > 1 && parts[1] != "" && modulePrefixes[parts[0]] {
+		idx = 1
 	}
+	resource = parts[idx]
 
 	// 特殊处理: URL 末段为 "upload" 时, 操作类型覆盖为 upload
-	if len(parts) > 0 && parts[len(parts)-1] == "upload" && method == "POST" {
+	if parts[len(parts)-1] == "upload" && method == "POST" {
 		action = "upload"
 	}
 
-	// 尝试提取 ID
-	// /system/users/123  -> resourceId=123
-	// /system/users/123/password -> resourceId=123
-	if len(parts) >= 2 {
-		// 最后一段或倒数第二段可能是 ID
-		for i, part := range parts {
-			if isNumeric(part) {
-				resourceId = part
-				// 如果 ID 后面还有路径段, 细化 action 描述
-				if i < len(parts)-1 && parts[i+1] != "" {
-					action = action + "_" + parts[i+1]
-				}
-				break
+	// 尝试提取 ID (资源段之后扫描第一个纯数字段)
+	// /system/users/123           -> resourceId=123
+	// /system/users/123/password  -> resourceId=123, action=update_password
+	for i := idx + 1; i < len(parts); i++ {
+		if isNumeric(parts[i]) {
+			resourceId = parts[i]
+			// ID 后面还有路径段时, 细化 action 描述 (仅写方法有基础动作可拼)
+			if action != "" && i < len(parts)-1 && parts[i+1] != "" {
+				action = action + "_" + parts[i+1]
 			}
+			break
 		}
-	}
-
-	if resource == "" {
-		resource = parts[0]
 	}
 
 	return
