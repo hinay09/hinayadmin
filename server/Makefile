@@ -50,14 +50,14 @@ tidy:
 	@go mod tidy
 
 # CRUD 代码生成器: 从 init.sql 解析表 DDL, 生成前后端完整增删改查 + 种子 SQL
-# 用法: make gen-crud TABLE=biz_article TITLE="文章管理" [MOD=article] [DRY=1]
+# 用法: make gen-crud TABLE=biz_article TITLE="文章管理" [MOD=article] [NO_SCOPE=1] [DRY=1]
 .PHONY: gen-crud
 gen-crud:
-	@if [ -z "$(TABLE)" ]; then echo "用法: make gen-crud TABLE=<表名> TITLE=\"中文标题\" [MOD=模块名] [DRY=1]"; exit 1; fi
+	@if [ -z "$(TABLE)" ]; then echo "用法: make gen-crud TABLE=<表名> TITLE=\"中文标题\" [MOD=模块名] [NO_SCOPE=1] [DRY=1]"; exit 1; fi
 	@if [ -n "$(DRY)" ]; then \
-		go run ./tools/crudgen -table $(TABLE) -title "$(TITLE)" $(if $(MOD),-mod $(MOD),) -dry; \
+		go run ./tools/crudgen -table $(TABLE) -title "$(TITLE)" $(if $(MOD),-mod $(MOD),) $(if $(NO_SCOPE),-no-scope,) -dry; \
 	else \
-		go run ./tools/crudgen -table $(TABLE) -title "$(TITLE)" $(if $(MOD),-mod $(MOD),); \
+		go run ./tools/crudgen -table $(TABLE) -title "$(TITLE)" $(if $(MOD),-mod $(MOD),) $(if $(NO_SCOPE),-no-scope,); \
 	fi
 
 # sys_api 种子 SQL 生成器: 扫描 api/ 的 g.Meta 路由自动生成 INSERT IGNORE (补齐手写 API 的种子)

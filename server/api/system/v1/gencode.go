@@ -9,12 +9,16 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// GencodeColumnIn 列配置 (预览/下载/写入口透传; 覆盖默认勾选)。
+// GencodeColumnIn 列配置 (预览/下载/写入口透传; 覆盖默认勾选与控件类型)。
 type GencodeColumnIn struct {
 	Name     string `json:"name"`
 	InList   *bool  `json:"inList"`
 	InForm   *bool  `json:"inForm"`
 	InSearch *bool  `json:"inSearch"`
+	// Kind 表单控件覆盖 (空=按列注释指令/类型推导; 见 crudgen.ValidKinds)
+	Kind string `json:"kind" dc:"input/textarea/number/switch/dict/relation/date"`
+	// Required 必填覆盖 (空=默认: 无必填列时首列必填)
+	Required *bool `json:"required"`
 }
 
 // GencodeTablesReq 表清单。
@@ -64,6 +68,7 @@ type GencodePreviewReq struct {
 	Table   string            `json:"table" v:"required#缺少表名"`
 	Mod     string            `json:"mod" dc:"模块名 (默认表名去前缀)"`
 	Title   string            `json:"title" dc:"中文标题"`
+	NoScope bool              `json:"noScope" dc:"关闭组织数据权限 (默认: 表含 org_id 列即开启)"`
 	Columns []GencodeColumnIn `json:"columns" dc:"列勾选覆盖 (为空用默认)"`
 }
 
@@ -80,11 +85,12 @@ type GencodeFileItem struct {
 
 // GencodeDownloadReq zip 下载 (列配置经 cols 传 JSON 字符串)。
 type GencodeDownloadReq struct {
-	g.Meta `path:"/system/gencode/download" tags:"SystemGencode" method:"get" summary:"下载生成代码(zip)"`
-	Table  string `json:"table"    in:"query" v:"required#缺少表名"`
-	Mod    string `json:"mod"      in:"query"`
-	Title  string `json:"title"    in:"query"`
-	Cols   string `json:"cols"     in:"query" dc:"列勾选覆盖 JSON (可空)"`
+	g.Meta  `path:"/system/gencode/download" tags:"SystemGencode" method:"get" summary:"下载生成代码(zip)"`
+	Table   string `json:"table"    in:"query" v:"required#缺少表名"`
+	Mod     string `json:"mod"      in:"query"`
+	Title   string `json:"title"    in:"query"`
+	NoScope bool   `json:"noScope"  in:"query" dc:"关闭组织数据权限"`
+	Cols    string `json:"cols"     in:"query" dc:"列勾选覆盖 JSON (可空)"`
 }
 
 // GencodeDownloadRes 下载响应 (zip 流直接写入响应)。
@@ -96,6 +102,7 @@ type GencodeWriteReq struct {
 	Table   string            `json:"table" v:"required#缺少表名"`
 	Mod     string            `json:"mod"`
 	Title   string            `json:"title"`
+	NoScope bool              `json:"noScope" dc:"关闭组织数据权限"`
 	Columns []GencodeColumnIn `json:"columns"`
 }
 

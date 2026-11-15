@@ -36,15 +36,16 @@ func findServerRoot() string {
 
 func main() {
 	var (
-		table = flag.String("table", "", "目标表名 (必填, 需存在于 -sql 指向的 DDL 中)")
-		mod   = flag.String("mod", "", "模块名 (go 包名兼前端目录, 默认取表名去前缀去复数)")
-		title = flag.String("title", "", "中文标题 (默认表名)")
-		sqlF  = flag.String("sql", "manifest/sql/init.sql", "DDL 来源 SQL 文件")
-		dry   = flag.Bool("dry", false, "仅预览, 不写文件")
+		table   = flag.String("table", "", "目标表名 (必填, 需存在于 -sql 指向的 DDL 中)")
+		mod     = flag.String("mod", "", "模块名 (go 包名兼前端目录, 默认取表名去前缀去复数)")
+		title   = flag.String("title", "", "中文标题 (默认表名)")
+		sqlF    = flag.String("sql", "manifest/sql/init.sql", "DDL 来源 SQL 文件")
+		noScope = flag.Bool("no-scope", false, "关闭组织数据权限 (默认: 表含 org_id 列即自动套用)")
+		dry     = flag.Bool("dry", false, "仅预览, 不写文件")
 	)
 	flag.Parse()
 	if *table == "" {
-		fmt.Println("用法: crudgen -table <表名> [-mod 模块名] -title <中文标题> [-sql DDL文件] [-dry]")
+		fmt.Println("用法: crudgen -table <表名> [-mod 模块名] -title <中文标题> [-sql DDL文件] [-no-scope] [-dry]")
 		os.Exit(1)
 	}
 
@@ -64,6 +65,7 @@ func main() {
 		Inputs:     inputs,
 		MenuMaxId:  menuMax,
 		UpgradeSeq: crudgen.NextUpgradeSeq(filepath.Join(serverRoot, "manifest/sql/gen")),
+		NoScope:    *noScope,
 	})
 	check(err)
 

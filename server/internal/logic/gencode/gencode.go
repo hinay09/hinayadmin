@@ -86,7 +86,7 @@ func (s *sGencode) Columns(ctx context.Context, req *v1.GencodeColumnsReq) (res 
 		}
 		if !skip {
 			item.GoType = crudgen.GoTypeOf(in.DataType, in.ColumnType)
-			item.Kind = crudgen.KindOf(in.Name, in.DataType)
+			item.Kind = crudgen.KindOf(in.Name, in.DataType, in.Comment)
 			item.InList = businessIdx < 8
 			item.InSearch = item.GoType == "string"
 			businessIdx++
@@ -101,7 +101,7 @@ func (s *sGencode) Preview(ctx context.Context, req *v1.GencodePreviewReq) (res 
 	if err = s.enabled(ctx); err != nil {
 		return nil, err
 	}
-	m, err := s.build(ctx, req.Table, req.Mod, req.Title, req.Columns)
+	m, err := s.build(ctx, req.Table, req.Mod, req.Title, req.NoScope, req.Columns)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (s *sGencode) Download(ctx context.Context, req *v1.GencodeDownloadReq) (re
 			return nil, xerror.New(xerror.CodeParamInvalid, "cols 参数不是合法 JSON")
 		}
 	}
-	m, err := s.build(ctx, req.Table, req.Mod, req.Title, cols)
+	m, err := s.build(ctx, req.Table, req.Mod, req.Title, req.NoScope, cols)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (s *sGencode) Write(ctx context.Context, req *v1.GencodeWriteReq) (res *v1.
 		return nil, xerror.New(xerror.CodeForbidden,
 			"直写模式仅支持从源码目录启动的服务实例 (当前运行环境未检测到 go.mod), 请改用 zip 下载")
 	}
-	m, err := s.build(ctx, req.Table, req.Mod, req.Title, req.Columns)
+	m, err := s.build(ctx, req.Table, req.Mod, req.Title, req.NoScope, req.Columns)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (s *sGencode) loadInputs(ctx context.Context, table string) ([]crudgen.Colu
 }
 
 // build 组装渲染模型 (菜单 ID 取自库中 sys_menu 最大值)。
-func (s *sGencode) build(ctx context.Context, table, mod, title string, cols []v1.GencodeColumnIn) (*crudgen.Model, error) {
+func (s *sGencode) build(ctx context.Context, table, mod, title string, noScope bool, cols []v1.GencodeColumnIn) (*crudgen.Model, error) {
 	if !validTableName(table) {
 		return nil, xerror.New(xerror.CodeParamInvalid, "表名不合法")
 	}
@@ -231,6 +231,8 @@ func (s *sGencode) build(ctx context.Context, table, mod, title string, cols []v
 				inputs[i].InList = c.InList
 				inputs[i].InForm = c.InForm
 				inputs[i].InSearch = c.InSearch
+				inputs[i].Kind = c.Kind
+				inputs[i].Required = c.Required
 			}
 		}
 	}
@@ -247,7 +249,7 @@ func (s *sGencode) build(ctx context.Context, table, mod, title string, cols []v
 	}
 	m, err := crudgen.Build(crudgen.BuildOptions{
 		Table: table, Mod: mod, Title: title,
-		Inputs: inputs, MenuMaxId: menuMaxId, UpgradeSeq: seq,
+		Inputs: inputs, MenuMaxId: menuMaxId, UpgradeSeq: seq, NoScope: noScope,
 	})
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeParamInvalid, err)

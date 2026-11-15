@@ -3,10 +3,11 @@
  * 岗位管理: 岗位 CRUD + 岗位成员 (谁在哪个组织担任该岗位)。
  * 岗位是审批人解析依据: "指定岗位"按岗位找人; "部门主管"取组织内挂主管岗者。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
-import { Search, Plus, Edit, Delete, User } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, User } from '@element-plus/icons-vue'
 import { usePostApi, useUserApi, useOrgApi, type PostItem, type PostMemberItem } from '~/composables/useApi'
+import type { ProColumn } from '~/components/ProTable.vue'
 
 definePageMeta({ title: '岗位管理' })
 defineOptions({ name: 'system-posts' })
@@ -22,20 +23,26 @@ const userApi = useUserApi()
 const orgApi = useOrgApi()
 
 // ============================================================
-// 岗位列表
+// 岗位列表 (表格/分页/搜索样板收编进 ProTable/QueryForm)
 // ============================================================
-const loading = ref(false)
-const list = ref<PostItem[]>([])
-const total = ref(0)
-const query = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 10 })
+const tableRef = ref<InstanceType<typeof ProTable>>()
+const query = reactive({ keyword: '', status: undefined as number | undefined })
 
-async function load() {
-  loading.value = true
-  try {
-    const res = await api.list({ ...query })
-    list.value = res.list || []
-    total.value = res.total || 0
-  } finally { loading.value = false }
+const columns = computed<ProColumn[]>(() => [
+  { prop: 'postCode', label: '岗位编码', width: 160 },
+  ...(showTenantCol.value ? [{ prop: 'tenantName', label: '所属租户', minWidth: 110 }] : []),
+  { prop: 'postName', label: '岗位名称', width: 160 },
+  { prop: 'postKind', label: '类型', width: 100, slot: 'kind' },
+  { prop: 'members', label: '成员数', width: 80 },
+  { prop: 'status', label: '状态', width: 80, tag: true },
+  { prop: 'sort', label: '排序', width: 70 },
+  { prop: 'remark', label: '备注', minWidth: 140 },
+])
+
+function onReset() {
+  query.keyword = ''
+  query.status = undefined
+  tableRef.value?.search()
 }
 
 // ============================================================
@@ -93,7 +100,7 @@ async function handleSubmit() {
       ElMessage.success('新增成功')
     }
     drawerVisible.value = false
-    load()
+    tableRef.value?.reload()
   } catch {} finally { submitting.value = false }
 }
 
@@ -102,7 +109,7 @@ async function handleDelete(row: PostItem) {
   try {
     await api.remove(row.id)
     ElMessage.success('已删除')
-    load()
+    tableRef.value?.reload()
   } catch {}
 }
 
@@ -157,7 +164,7 @@ async function handleMemberAdd() {
     ElMessage.success('已添加')
     memberForm.userId = undefined
     loadMembers()
-    load()
+    tableRef.value?.reload()
   } catch {} finally { memberSubmitting.value = false }
 }
 
@@ -166,11 +173,9 @@ async function handleMemberRemove(row: PostMemberItem) {
     await api.memberRemove(row.id)
     ElMessage.success('已移除')
     loadMembers()
-    load()
+    tableRef.value?.reload()
   } catch {}
 }
-
-onMounted(load)
 </script>
 
 <template>
@@ -179,10 +184,9 @@ onMounted(load)
       <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px"
         title="岗位用于审批人解析: 审批节点可选「指定岗位」; 标记为主管岗的岗位用于「部门主管」解析 (发起人组织起逐级向上)。" />
 
-      <el-form inline @submit.prevent>
+      <QueryForm :query="query" @search="() => tableRef?.search()" @reset="onReset">
         <el-form-item label="搜索">
-          <el-input v-model="query.keyword" placeholder="编码/名称" clearable
-            @keyup.enter="() => { query.page = 1; load() }" />
+          <el-input v-model="query.keyword" placeholder="编码/名称" clearable style="width:200px" @keyup.enter="() => tableRef?.search()" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width:110px">
@@ -191,45 +195,22 @@ onMounted(load)
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search" @click="() => { query.page = 1; load() }">查询</el-button>
           <el-button v-permission="'system:post:create'" type="success" :icon="Plus" @click="openCreate">新增岗位</el-button>
         </el-form-item>
-      </el-form>
+      </QueryForm>
 
-      <el-table v-loading="loading" :data="list" border stripe style="margin-top:8px">
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="postCode" label="岗位编码" width="160" />
-        <el-table-column v-if="showTenantCol" prop="tenantName" label="所属租户" min-width="110" />
-        <el-table-column prop="postName" label="岗位名称" width="160" />
-        <el-table-column label="类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.postKind === 2 ? 'warning' : 'info'" size="small">
-              {{ row.postKind === 2 ? '主管岗' : '普通岗' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="members" label="成员数" width="80" align="center" />
-        <el-table-column label="状态" width="80">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="sort" label="排序" width="70" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column label="操作" width="250" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" :icon="User" @click="openMembers(row)">成员</el-button>
-            <el-button v-permission="'system:post:update'" link type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>
-            <el-button v-permission="'system:post:delete'" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-pagination v-model:current-page="query.page" v-model:page-size="query.pageSize"
-        :total="total" :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        style="margin-top:16px;justify-content:flex-end"
-        @current-change="load" @size-change="load" />
+      <ProTable ref="tableRef" :fetch="api.list" :columns="columns" :query="query" :action-width="250" :show-created-at="false">
+        <template #kind="{ row }">
+          <el-tag :type="row.postKind === 2 ? 'warning' : 'info'" size="small">
+            {{ row.postKind === 2 ? '主管岗' : '普通岗' }}
+          </el-tag>
+        </template>
+        <template #actions="{ row }">
+          <el-button link type="primary" :icon="User" @click="openMembers(row)">成员</el-button>
+          <el-button v-permission="'system:post:update'" link type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>
+          <el-button v-permission="'system:post:delete'" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
+        </template>
+      </ProTable>
     </el-card>
 
     <!-- 岗位编辑 -->

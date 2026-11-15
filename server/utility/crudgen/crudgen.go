@@ -8,6 +8,8 @@
 package crudgen
 
 import (
+	"slices"
+
 	"archive/zip"
 	"bytes"
 	"fmt"
@@ -23,12 +25,19 @@ import (
 
 // Column 单列元数据。
 type Column struct {
-	Name    string // snake_case 列名
-	GoName  string // PascalCase
-	GoType  string // Go 类型
-	Comment string // 中文说明
-	Kind    string // 表单类型: input/textarea/number/switch
+	Name     string // snake_case 列名
+	GoName   string // PascalCase
+	GoType   string // Go 类型
+	Comment  string // 中文说明
+	Kind     string // 表单类型: input/textarea/number/switch/dict/relation
+	DictCode string // Kind=dict 时的字典类型编码 (注释指令 字典:code)
+	RelMod   string // Kind=relation 时的关联模块名 (useXxxApi().all() 的 Xxx)
+	RelGuess bool   // relation 由 _id 后缀猜测 (未显式声明 关联:mod), 前端生成 TODO 桩
+	Required bool   // 必填 (表单校验/API v:required/导入非空)
 }
+
+// ValidKinds 允许的表单控件类型 (Kind 覆盖白名单, 表单设计器可选项)。
+var ValidKinds = []string{"input", "textarea", "number", "switch", "dict", "relation", "date"}
 
 // ColumnInput 列输入 (DDL 解析或 information_schema 查询结果 + 可选前端覆盖)。
 type ColumnInput struct {
@@ -36,9 +45,11 @@ type ColumnInput struct {
 	DataType   string // SQL 类型 (varchar/bigint/...)
 	ColumnType string // 完整类型定义 (含 unsigned 等)
 	Comment    string
-	InList     *bool // 覆盖: 是否进列表 (默认前 8 列)
-	InForm     *bool // 覆盖: 是否进表单 (默认全部, switch 置尾)
-	InSearch   *bool // 覆盖: 是否进关键词搜索 (默认字符串列)
+	InList     *bool  // 覆盖: 是否进列表 (默认前 8 列)
+	InForm     *bool  // 覆盖: 是否进表单 (默认全部, switch 置尾)
+	InSearch   *bool  // 覆盖: 是否进关键词搜索 (默认字符串列)
+	Kind       string // 覆盖: 表单控件类型 (空=自动推导; 见 ValidKinds)
+	Required   *bool  // 覆盖: 是否必填 (默认: 无必填列时首列必填)
 }
 
 // Model 渲染数据。
@@ -55,10 +66,27 @@ type Model struct {
 	FormColumns []Column
 	FirstGoName string
 
+	// HasScope List/Export 是否套组织数据权限 (表含 org_id 列且未传 NoScope)
+	HasScope bool
+	// StatusCol 第一个开关列 (status/xxx_status), 驱动批量启用停用端点; 无则 nil
+	StatusCol    *Column
+	HasStatusCol bool
+
 	MenuId     uint64
 	ButtonBase uint64
+	// MenuIds 菜单+全部按钮 ID (种子 SQL 幂等 DELETE 用, 含条件生成的批量按钮)
+	MenuIds []uint64
+	// Btns 各权限按钮的菜单 ID (种子 SQL 按钮 INSERT 用)
+	Btns struct {
+		Create, Update, Delete, BatchDelete, BatchStatus, Export, Import uint64
+	}
+
 	UpgradeSeq string
 	PermPrefix string
+
+	// RelApis 显式声明关联 (关联:mod, 非猜测) 去重后的模块名列表,
+	// 前端页面按 use{Xxx}Api().all() 接线选项数据源
+	RelApis []string
 }
 
 // BuildOptions 模型构建参数。
@@ -69,6 +97,7 @@ type BuildOptions struct {
 	Inputs     []ColumnInput
 	MenuMaxId  uint64 // 已占用最大菜单 ID (CLI 解析 SQL / 网页查 DB)
 	UpgradeSeq string // 为空时按时间戳兜底
+	NoScope    bool   // 关闭组织数据权限 (默认: 表含 org_id 列即开启)
 }
 
 // GeneratedFile 单个生成文件。
@@ -105,8 +134,72 @@ func camel(s string) string {
 // GoTypeOf SQL 类型 -> Go 类型 (导出供网页端列信息展示)。
 func GoTypeOf(sqlType, columnType string) string { return goType(sqlType, columnType) }
 
-// KindOf 列名/类型 -> 表单控件类型 (导出供网页端列信息展示)。
-func KindOf(name, sqlType string) string { return formKind(name, sqlType) }
+// KindOf 列名/类型/注释 -> 表单控件类型 (导出供网页端列信息展示)。
+func KindOf(name, sqlType, comment string) string {
+	k, _, _, _ := detectKind(name, sqlType, comment)
+	return k
+}
+
+// 列注释指令 (DDL COMMENT 中声明控件数据源):
+//
+//	状态(字典:order_status)  -> 字典下拉, 编码 order_status (useDictOptions)
+//	用户ID(关联:user)        -> 关联下拉, 调 useUserApi().all() 取选项
+//
+// 未声明指令的 *_id 列退化为猜测模式的关系下拉 (前端出 TODO 桩, 保证可编译)。
+var (
+	reDictCode = regexp.MustCompile(`字典[:：]\s*([A-Za-z0-9_-]+)`)
+	reRelMod   = regexp.MustCompile(`关联[:：]\s*([a-z][a-z0-9_]*)`)
+)
+
+// detectKind 推导表单控件类型与数据源参数 (kind/dictCode/relMod/relGuess)。
+func detectKind(name, sqlType, comment string) (kind, dictCode, relMod string, relGuess bool) {
+	switch {
+	case name == "status" || strings.HasSuffix(name, "_status"):
+		// 状态列仍可被 字典: 指令升级为字典下拉
+		if m := reDictCode.FindStringSubmatch(comment); m != nil {
+			return "dict", m[1], "", false
+		}
+		return "switch", "", "", false
+	case strings.Contains(name, "remark") || strings.Contains(name, "content") ||
+		strings.Contains(name, "description") || name == "desc":
+		return "textarea", "", "", false
+	}
+	// 显式指令优先 (任意列均可声明字典/关联)
+	if m := reDictCode.FindStringSubmatch(comment); m != nil {
+		return "dict", m[1], "", false
+	}
+	if m := reRelMod.FindStringSubmatch(comment); m != nil {
+		return "relation", "", m[1], false
+	}
+	if strings.HasSuffix(name, "_id") {
+		// 猜测关联模块: user_id -> user (仅生成下拉+TODO桩, 未显式声明不硬接 API)
+		return "relation", "", strings.TrimSuffix(name, "_id"), true
+	}
+	switch strings.ToUpper(sqlType) {
+	case "BIGINT", "INT", "TINYINT", "SMALLINT", "MEDIUMINT", "DECIMAL", "FLOAT", "DOUBLE":
+		return "number", "", "", false
+	case "DATETIME", "TIMESTAMP", "DATE":
+		return "date", "", "", false
+	}
+	return "input", "", "", false
+}
+
+// validKindSet ValidKinds 的集合形态。
+var validKindSet = func() map[string]bool {
+	m := make(map[string]bool, len(ValidKinds))
+	for _, k := range ValidKinds {
+		m[k] = true
+	}
+	return m
+}()
+
+// applyKindOverride 应用 Kind 覆盖: 白名单外忽略并回落自动推导结果。
+func applyKindOverride(detected, override string) string {
+	if override == "" || !validKindSet[override] {
+		return detected
+	}
+	return override
+}
 
 // goType SQL 类型 → Go 类型 (无符号 BIGINT → uint64, 其余整型归并 int, 时间 → *gtime.Time)。
 func goType(sqlType, columnType string) string {
@@ -125,23 +218,6 @@ func goType(sqlType, columnType string) string {
 		return "*gtime.Time"
 	default:
 		return "string"
-	}
-}
-
-// formKind 按列名/类型启发式推导表单控件: 状态列 → 开关, 备注类 → 多行文本,
-// 外键/整型 → 数字输入, 其余默认单行输入。
-func formKind(name, sqlType string) string {
-	switch {
-	case name == "status" || strings.HasSuffix(name, "_status"):
-		return "switch"
-	case strings.Contains(name, "remark") || strings.Contains(name, "content") ||
-		strings.Contains(name, "description") || name == "desc":
-		return "textarea"
-	case strings.HasSuffix(name, "_id") || strings.HasPrefix(strings.ToUpper(sqlType), "BIGINT") ||
-		strings.HasPrefix(strings.ToUpper(sqlType), "INT") || strings.HasPrefix(strings.ToUpper(sqlType), "TINYINT"):
-		return "number"
-	default:
-		return "input"
 	}
 }
 
@@ -195,20 +271,57 @@ func Build(opts BuildOptions) (*Model, error) {
 	}
 
 	cols := make([]Column, 0, len(opts.Inputs))
+	hasOrgCol := false
 	for _, in := range opts.Inputs {
 		if SkipColumn(in.Name) {
 			continue
 		}
+		if in.Name == "org_id" {
+			hasOrgCol = true
+		}
+		kind, dictCode, relMod, relGuess := detectKind(in.Name, in.DataType, in.Comment)
+		kind = applyKindOverride(kind, in.Kind)
+		if kind != "dict" {
+			dictCode = ""
+		}
+		if kind != "relation" {
+			relMod, relGuess = "", false
+		}
+		if kind == "relation" && relMod == "" {
+			relMod, relGuess = strings.TrimSuffix(in.Name, "_id"), true
+		}
 		cols = append(cols, Column{
-			Name:    in.Name,
-			GoName:  Pascal(in.Name),
-			GoType:  goType(in.DataType, in.ColumnType),
-			Comment: in.Comment,
-			Kind:    formKind(in.Name, in.DataType),
+			Name:     in.Name,
+			GoName:   Pascal(in.Name),
+			GoType:   goType(in.DataType, in.ColumnType),
+			Comment:  in.Comment,
+			Kind:     kind,
+			DictCode: dictCode,
+			RelMod:   relMod,
+			RelGuess: relGuess,
+			Required: in.Required != nil && *in.Required,
 		})
 	}
 	if len(cols) == 0 {
 		return nil, fmt.Errorf("表 %s 未解析出业务列", opts.Table)
+	}
+
+	// 必填默认: 无任何必填列时保留旧语义 (首个文本列必填), 保证生成页面始终有校验锚点。
+	// 须在 FormColumns 拷贝之前落定 (拷贝发生在下方循环, 晚于此处修改不会传导)。
+	hasRequired := false
+	for _, c := range cols {
+		if c.Required {
+			hasRequired = true
+			break
+		}
+	}
+	if !hasRequired {
+		for i := range cols {
+			if cols[i].Kind == "input" {
+				cols[i].Required = true
+				break
+			}
+		}
 	}
 
 	menuId := (opts.MenuMaxId/1000 + 1) * 1000
@@ -222,6 +335,7 @@ func Build(opts BuildOptions) (*Model, error) {
 		Title: title, Tag: Pascal(mod),
 		Columns: cols, MenuId: menuId, ButtonBase: menuId*10 + 1,
 		UpgradeSeq: seq, PermPrefix: mod + ":" + entity,
+		HasScope: hasOrgCol && !opts.NoScope,
 	}
 
 	var switches []Column
@@ -229,6 +343,10 @@ func Build(opts BuildOptions) (*Model, error) {
 	for _, c := range cols {
 		if c.Kind == "switch" {
 			switches = append(switches, c)
+			if m.StatusCol == nil {
+				sc := c // 循环变量副本
+				m.StatusCol = &sc
+			}
 		} else {
 			m.FormColumns = append(m.FormColumns, c)
 			if m.FirstGoName == "" && c.Kind == "input" {
@@ -246,6 +364,35 @@ func Build(opts BuildOptions) (*Model, error) {
 	m.FormColumns = append(m.FormColumns, switches...)
 	if m.FirstGoName == "" {
 		m.FirstGoName = cols[0].GoName
+	}
+	m.HasStatusCol = m.StatusCol != nil
+
+	// 显式声明的关联模块去重 (前端 useXxxApi().all() 选项源)
+	for _, c := range cols {
+		if c.Kind == "relation" && !c.RelGuess && !slices.Contains(m.RelApis, c.RelMod) {
+			m.RelApis = append(m.RelApis, c.RelMod)
+		}
+	}
+
+	// 按钮集: 新增/修改/删除/批量删除/(批量启用停用)/导出/导入
+	// (批量启用停用仅在有状态列时生成, 顺序固定保证 ID 稳定)
+	m.Btns.Create = m.ButtonBase
+	m.Btns.Update = m.ButtonBase + 1
+	m.Btns.Delete = m.ButtonBase + 2
+	m.Btns.BatchDelete = m.ButtonBase + 3
+	next := uint64(4)
+	if m.HasStatusCol {
+		m.Btns.BatchStatus = m.ButtonBase + next
+		next++
+	}
+	m.Btns.Export = m.ButtonBase + next
+	next++
+	m.Btns.Import = m.ButtonBase + next
+	next++
+	m.MenuIds = make([]uint64, 0, int(next)+1)
+	m.MenuIds = append(m.MenuIds, menuId)
+	for i := uint64(0); i < next; i++ {
+		m.MenuIds = append(m.MenuIds, m.ButtonBase+i)
 	}
 
 	// 应用前端覆盖 (inList/inForm/inSearch)
@@ -341,7 +488,7 @@ func containsCol(cols []Column, goName string) bool {
 
 var (
 	reCreateStart = regexp.MustCompile("(?i)CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`([\\w]+)`\\s*\\(")
-	reColumn      = regexp.MustCompile("^`([\\w]+)`\\s+([A-Za-z]+)([^,]*),?$")
+	reColumn      = regexp.MustCompile("^`([\\w]+)`\\s+([A-Za-z]+)(.*)$")
 	reComment     = regexp.MustCompile("COMMENT\\s+'((?:[^']|'')*)'")
 	reMenuRow     = regexp.MustCompile(`(?m)^\s*\((\d+),\s*\d+,`)
 )
@@ -359,7 +506,10 @@ func ParseSQL(sqlText, table string) ([]ColumnInput, uint64, error) {
 		}
 		inputs := make([]ColumnInput, 0)
 		for _, line := range strings.Split(rest[:end], "\n") {
-			m := reColumn.FindStringSubmatch(strings.TrimSpace(line))
+			l := strings.TrimSpace(line)
+			// 先剥行尾逗号: DECIMAL(12,2) 等类型定义内含逗号, 若不剥离会因 [^,]* 提前截断而失配
+			l = strings.TrimSuffix(l, ",")
+			m := reColumn.FindStringSubmatch(l)
 			if m == nil {
 				continue
 			}
@@ -410,7 +560,20 @@ func NextUpgradeSeq(upgradeDir string) string {
 // 渲染与产出
 // ---------------------------------------------------------------------------
 
-var funcMap = template.FuncMap{"bt": func() string { return "`" }, "camel": camel, "add1": func(u uint64) uint64 { return u + 1 }}
+var funcMap = template.FuncMap{
+	"bt":     func() string { return "`" },
+	"camel":  camel,
+	"pascal": Pascal,
+	"add1":   func(u uint64) uint64 { return u + 1 },
+	// label 列显示名: 注释为空回退列名; 剥离引号/反引号防破坏生成代码的字面量
+	"label": func(c Column) string {
+		name := c.Comment
+		if name == "" {
+			name = c.GoName
+		}
+		return strings.NewReplacer("\"", "", "`", "", "'", "").Replace(name)
+	},
+}
 
 // Render 渲染全部生成文件 (CLI 与网页端一致)。
 func Render(m *Model) ([]GeneratedFile, error) {
@@ -457,7 +620,11 @@ func Render(m *Model) ([]GeneratedFile, error) {
 			return nil, err
 		}
 	}
-	for _, act := range []string{"List", "Create", "Update", "Delete"} {
+	acts := []string{"List", "Create", "Update", "Delete", "BatchDelete", "Export", "ImportTemplate", "Import"}
+	if m.HasStatusCol {
+		acts = append(acts, "BatchStatus")
+	}
+	for _, act := range acts {
 		s, err := render("ctrl-"+act, ctrlMethodTmpl, struct {
 			Model
 			Act string

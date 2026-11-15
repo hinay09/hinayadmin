@@ -5,10 +5,11 @@
  */
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, View, Download, DocumentChecked } from '@element-plus/icons-vue'
+import { Search, View, Download, DocumentChecked, SetUp } from '@element-plus/icons-vue'
 import { useGencodeApi, type GencodeColumnConf } from '~/composables/useApi'
 
 definePageMeta({ title: '代码生成' })
+const router = useRouter()
 defineOptions({ name: 'system-gencode' })
 
 const api = useGencodeApi()
@@ -49,14 +50,22 @@ interface ColRow {
   comment: string
   goType: string
   kind: string
+  required: boolean
   skip: boolean
   inList: boolean
   inForm: boolean
   inSearch: boolean
 }
+
+/** 表单控件类型 (与后端 crudgen.ValidKinds 对齐) */
+const kindOptions = ['input', 'textarea', 'number', 'switch', 'dict', 'relation', 'date']
+
+/** 表单设计器 schema 契约键: designer 页写入, 本页选表后按列名套用 */
+const FORM_SCHEMA_KEY = 'hinay_form_schema'
+
 const colLoading = ref(false)
 const colRows = ref<ColRow[]>([])
-const form = reactive({ mod: '', title: '' })
+const form = reactive({ mod: '', title: '', noScope: false })
 
 async function selectTable(name: string) {
   selectedTable.value = name
@@ -67,9 +76,38 @@ async function selectTable(name: string) {
     // 默认模块名: 表名去前缀去复数
     form.mod = name.replace(/^(biz_|sys_)/, '').replace(/s$/, '')
     form.title = ''
+    applyDesignerSchema()
   }
   finally {
     colLoading.value = false
+  }
+}
+
+/** 套用表单设计器 schema (按列名匹配, 控件/必填覆盖); 无 schema 或无命中则静默 */
+function applyDesignerSchema() {
+  const raw = sessionStorage.getItem(FORM_SCHEMA_KEY)
+  if (!raw) return
+  let fields: Array<{ prop: string, type: string, required?: boolean }>
+  try {
+    fields = JSON.parse(raw)
+  }
+  catch {
+    return
+  }
+  if (!Array.isArray(fields) || !fields.length) return
+  const byName = new Map(fields.map(f => [f.prop, f]))
+  let hit = 0
+  for (const row of colRows.value) {
+    const f = byName.get(row.name)
+    if (!f) continue
+    if (kindOptions.includes(f.type) && f.type !== row.kind) row.kind = f.type
+    if (f.required) row.required = true
+    row.inForm = true
+    hit++
+  }
+  if (hit > 0) {
+    sessionStorage.removeItem(FORM_SCHEMA_KEY)
+    ElMessage.success(`已套用表单设计器配置 (${hit} 列)`)
   }
 }
 
@@ -77,6 +115,8 @@ async function selectTable(name: string) {
 function columnConf(): GencodeColumnConf[] {
   return colRows.value.map(c => ({
     name: c.name,
+    kind: c.kind,
+    required: c.required || undefined,
     inList: c.inList,
     inForm: c.inForm,
     inSearch: c.inSearch,
@@ -99,6 +139,7 @@ async function handlePreview() {
       table: selectedTable.value,
       mod: form.mod || undefined,
       title: form.title || undefined,
+      noScope: form.noScope || undefined,
       columns: columnConf(),
     })
     previewFiles.value = res.files || []
@@ -112,7 +153,7 @@ async function handlePreview() {
 
 // ---- 下载 / 直写 ----
 async function handleDownload() {
-  await api.download(selectedTable.value, form.mod || '', form.title || '', columnConf())
+  await api.download(selectedTable.value, form.mod || '', form.title || '', columnConf(), form.noScope)
   ElMessage.success('已开始下载')
 }
 
@@ -126,6 +167,7 @@ async function handleWrite() {
     table: selectedTable.value,
     mod: form.mod || undefined,
     title: form.title || undefined,
+    noScope: form.noScope || undefined,
     columns: columnConf(),
   })
   ElMessage.success(`已写入 ${res.written?.length || 0} 个文件, 重启后端生效 (接线已自动完成)`)
@@ -176,7 +218,11 @@ const ready = computed(() => !!selectedTable.value && !colLoading.value)
               <el-form-item label="中文标题">
                 <el-input v-model="form.title" placeholder="如 文章管理" style="width:160px" />
               </el-form-item>
+              <el-form-item label="数据权限">
+                <el-checkbox v-model="form.noScope">关闭 (无组织维度表勾选)</el-checkbox>
+              </el-form-item>
               <el-form-item>
+                <el-button :icon="SetUp" @click="router.push('/system/gencode/designer')">表单设计器</el-button>
                 <el-button v-permission="'system:gencode:preview'" type="primary" :icon="View" :disabled="!ready" :loading="previewLoading" @click="handlePreview">预览</el-button>
                 <el-button v-permission="'system:gencode:download'" type="success" :icon="Download" :disabled="!ready" @click="handleDownload">下载 zip</el-button>
                 <el-button v-permission="'system:gencode:write'" type="warning" :icon="DocumentChecked" :disabled="!ready" @click="handleWrite">写入源码</el-button>
@@ -188,9 +234,16 @@ const ready = computed(() => !!selectedTable.value && !colLoading.value)
               <el-table-column prop="comment" label="注释" min-width="110" show-overflow-tooltip />
               <el-table-column prop="dataType" label="类型" width="100" />
               <el-table-column prop="goType" label="Go 类型" width="90" />
-              <el-table-column label="控件" width="90">
+              <el-table-column label="控件" width="120">
                 <template #default="{ row }">
-                  <el-tag size="small" type="info">{{ row.kind }}</el-tag>
+                  <el-select v-model="row.kind" size="small">
+                    <el-option v-for="k in kindOptions" :key="k" :value="k" :label="k" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="必填" width="55" align="center">
+                <template #default="{ row }">
+                  <el-checkbox v-model="row.required" />
                 </template>
               </el-table-column>
               <el-table-column label="列表" width="70" align="center">
