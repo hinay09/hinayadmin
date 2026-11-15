@@ -25,6 +25,10 @@ type (
 		// 密码为前端用一次性公钥加密的 RSA 密文, 服务端解密后再走 bcrypt 校验。
 		// 带 IP+用户名 双维度失败计数防暴力破解: 窗口内失败超过 consts.LoginFailMax 次后临时锁定。
 		Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
+		// ForgotSendCode 找回密码-发送短信验证码 (公开接口, 防枚举/频控见 logic/auth/forgot.go)。
+		ForgotSendCode(ctx context.Context, req *v1.ForgotSendCodeReq) (res *v1.ForgotSendCodeRes, err error)
+		// ForgotReset 找回密码-验证码重置密码 (公开接口, demo 模式拦截)。
+		ForgotReset(ctx context.Context, req *v1.ForgotResetReq) (res *v1.ForgotResetRes, err error)
 		// TotpLogin 两步验证登录第二步: 携带第一步签发的票据与 TOTP 动态码换取 token。
 		// 票据 TTL 见 consts.TotpTicketTTLSec; 单票据动态码失败超过 consts.TotpTicketFailMax 次
 		// 即作废票据 (需重新走密码登录), 防止对 6 位码空间在线爆破。

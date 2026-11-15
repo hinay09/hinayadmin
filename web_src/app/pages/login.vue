@@ -137,6 +137,118 @@ const totpRules: FormRules = {
   ],
 }
 
+/* ---- 忘记密码 (短信验证码找回, 两步弹窗) ---- */
+const forgotVisible = ref(false)
+const forgotLoading = ref(false)
+const forgotSent = ref(false)
+const forgotCountdown = ref(0)
+const maskedPhone = ref('')
+const forgotRef = ref<FormInstance>()
+const forgotForm = reactive({ account: '', code: '', password: '' })
+const forgotRules = computed<FormRules>(() => ({
+  account: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  ...(forgotSent.value
+    ? {
+        code: [
+          { required: true, message: '请输入短信验证码', trigger: 'blur' },
+          { pattern: /^\d{6}$/, message: '验证码为 6 位数字', trigger: 'blur' },
+        ],
+        password: [
+          { required: true, message: '请输入新密码', trigger: 'blur' },
+          { min: 6, max: 32, message: '密码长度 6-32', trigger: 'blur' },
+        ],
+      }
+    : {}),
+}))
+let forgotTimer: ReturnType<typeof setInterval> | null = null
+
+function openForgot() {
+  // 预填当前输入的账号, 减少一次输入
+  forgotForm.account = form.username || ''
+  forgotForm.code = ''
+  forgotForm.password = ''
+  forgotSent.value = false
+  maskedPhone.value = ''
+  forgotVisible.value = true
+}
+
+function closeForgot() {
+  forgotVisible.value = false
+  if (forgotTimer) {
+    clearInterval(forgotTimer)
+    forgotTimer = null
+  }
+  forgotCountdown.value = 0
+}
+
+/** 回到第一步 (换账号重发), 保留倒计时计时器避免立刻可重发 */
+function backForgot() {
+  forgotSent.value = false
+  forgotForm.code = ''
+  forgotForm.password = ''
+}
+
+function startCountdown() {
+  forgotCountdown.value = 60
+  if (forgotTimer) clearInterval(forgotTimer)
+  forgotTimer = setInterval(() => {
+    forgotCountdown.value--
+    if (forgotCountdown.value <= 0 && forgotTimer) {
+      clearInterval(forgotTimer)
+      forgotTimer = null
+    }
+  }, 1000)
+}
+
+async function handleForgotSend() {
+  if (!forgotRef.value) return
+  const valid = await forgotRef.value.validateField('account').catch(() => false)
+  if (!valid) return
+  forgotLoading.value = true
+  try {
+    const tenantCode = multiTenant.value ? tenantForm.code.trim() : undefined
+    const res = await api.forgotSendCode(forgotForm.account.trim(), tenantCode)
+    if (res.maskedPhone) {
+      maskedPhone.value = res.maskedPhone
+      ElMessage.success(`验证码已发送至 ${res.maskedPhone}`)
+    }
+    else {
+      // 防枚举口径: 后端对不存在的账号也返回成功; 前端统一提示
+      ElMessage.success('若该账号存在且已绑定手机号, 验证码已发送')
+    }
+    forgotSent.value = true
+    startCountdown()
+  }
+  finally {
+    forgotLoading.value = false
+  }
+}
+
+async function handleForgotReset() {
+  if (!forgotRef.value) return
+  const valid = await forgotRef.value.validate().catch(() => false)
+  if (!valid) return
+  forgotLoading.value = true
+  try {
+    // 新密码与登录同款: 一次性公钥 RSA 加密
+    const { keyId, cipher } = await encryptPassword(forgotForm.password)
+    const tenantCode = multiTenant.value ? tenantForm.code.trim() : undefined
+    await api.forgotReset({
+      account: forgotForm.account.trim(),
+      code: forgotForm.code.trim(),
+      keyId,
+      password: cipher,
+      tenantCode,
+    })
+    ElMessage.success('密码已重置, 请使用新密码登录')
+    closeForgot()
+    form.password = ''
+  }
+  finally {
+    forgotLoading.value = false
+  }
+}
+
 /** TOTP_TICKET_INVALID 后端票据失效错误码: 回到第一步重新走密码登录 */
 const TOTP_CODE_TICKET_INVALID = 50021
 
@@ -424,6 +536,9 @@ function backToPassword() {
               <span>还没有账号?</span>
               <el-link type="primary" :underline="false" @click="router.push('/register')">注册账号</el-link>
             </div>
+            <div class="register-entry">
+              <el-link type="primary" :underline="false" @click="openForgot">忘记密码?</el-link>
+            </div>
           </el-form>
           <!-- 默认凭据提示仅在开发构建渲染, 生产构建(import.meta.dev=false)不输出 -->
           <div v-if="showDefaultHint" class="tips">默认账号: admin / 123456 (仅开发环境)</div>
@@ -477,6 +592,89 @@ function backToPassword() {
 
       <div v-if="copyright" class="form-copyright">{{ copyright }}</div>
     </main>
+
+    <!-- 忘记密码 (短信验证码找回): 账号 → 验证码 + 新密码, 与登录同款 RSA 加密 -->
+    <el-dialog
+      v-model="forgotVisible"
+      title="找回密码"
+      width="420px"
+      :close-on-click-modal="false"
+      @closed="closeForgot"
+    >
+      <el-alert
+        v-if="forgotSent && maskedPhone"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`验证码已发送至 ${maskedPhone}`"
+        style="margin-bottom:14px"
+      />
+      <el-form
+        ref="forgotRef"
+        :model="forgotForm"
+        :rules="forgotRules"
+        label-width="0"
+        @submit.prevent
+      >
+        <el-form-item prop="account">
+          <el-input
+            v-model="forgotForm.account"
+            placeholder="用户名或手机号"
+            :disabled="forgotSent"
+            size="large"
+            @keyup.enter="forgotSent ? handleForgotReset() : handleForgotSend()"
+          />
+        </el-form-item>
+        <template v-if="forgotSent">
+          <el-form-item prop="code">
+            <div class="forgot-code-row">
+              <el-input
+                v-model="forgotForm.code"
+                placeholder="短信验证码"
+                maxlength="6"
+                size="large"
+              />
+              <el-button
+                :disabled="forgotCountdown > 0"
+                :loading="forgotLoading && !forgotForm.code"
+                @click="handleForgotSend"
+              >
+                {{ forgotCountdown > 0 ? `${forgotCountdown}s` : '重新发送' }}
+              </el-button>
+            </div>
+          </el-form-item>
+          <el-form-item prop="password">
+            <el-input
+              v-model="forgotForm.password"
+              type="password"
+              show-password
+              placeholder="新密码 (6-32 位)"
+              size="large"
+              @keyup.enter="handleForgotReset"
+            />
+          </el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="forgotSent ? backForgot() : closeForgot()">{{ forgotSent ? '上一步' : '取消' }}</el-button>
+        <el-button
+          v-if="!forgotSent"
+          type="primary"
+          :loading="forgotLoading"
+          @click="handleForgotSend"
+        >
+          发送验证码
+        </el-button>
+        <el-button
+          v-else
+          type="primary"
+          :loading="forgotLoading"
+          @click="handleForgotReset"
+        >
+          重置密码
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -934,6 +1132,17 @@ function backToPassword() {
   font-size: 12px;
   color: #909399;
   text-align: center;
+}
+
+/* 忘记密码弹窗: 验证码输入与发送按钮同行 */
+.forgot-code-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.forgot-code-row .el-input {
+  flex: 1;
 }
 
 /* 注册入口: 开放注册(sys.allow_register)时展示在登录按钮下 */

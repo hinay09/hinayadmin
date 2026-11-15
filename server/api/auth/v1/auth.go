@@ -240,3 +240,31 @@ type UploadAvatarReq struct {
 type UploadAvatarRes struct {
 	Url string `json:"url" dc:"头像访问路径"`
 }
+
+// ForgotSendCodeReq 找回密码第一步: 发送短信验证码 (公开接口)。
+type ForgotSendCodeReq struct {
+	g.Meta `path:"/auth/password/forgot/send-code" tags:"Auth" method:"post" summary:"找回密码-发送短信验证码"`
+	// Account 登录账号 (用户名或手机号, 与登录同口径: 用户名优先, 手机号一号多户会被拒)。
+	Account    string `json:"account" v:"required#请输入账号" dc:"用户名或手机号"`
+	TenantCode string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
+}
+
+// ForgotSendCodeRes 发码响应。
+// MaskedPhone 为空表示账号不存在或未绑定手机号 (防枚举: 仍返回成功, 不发码)。
+type ForgotSendCodeRes struct {
+	MaskedPhone string `json:"maskedPhone" dc:"接收验证码的手机号(打码), 空串=未发送"`
+}
+
+// ForgotResetReq 找回密码第二步: 验证码 + 新密码重置 (公开接口)。
+// Password 为前端用 /auth/public-key 一次性公钥加密的 RSA 密文 (与登录同款)。
+type ForgotResetReq struct {
+	g.Meta     `path:"/auth/password/forgot/reset" tags:"Auth" method:"post" summary:"找回密码-重置密码"`
+	Account    string `json:"account" v:"required#请输入账号" dc:"用户名或手机号"`
+	Code       string `json:"code"    v:"required#请输入验证码" dc:"短信验证码"`
+	KeyId      string `json:"keyId"   v:"required#缺少加密密钥标识" dc:"一次性公钥 keyId"`
+	Password   string `json:"password" v:"required#请输入新密码" dc:"新密码(RSA 密文)"`
+	TenantCode string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
+}
+
+// ForgotResetRes 重置响应。
+type ForgotResetRes struct{}

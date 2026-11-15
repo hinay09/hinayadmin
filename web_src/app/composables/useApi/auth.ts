@@ -25,6 +25,10 @@ export function useAuthApi() {
       ),
     /** 登录 (账号支持用户名或手机号; 密码须用 publicKey 返回的公钥加密后提交;
      * tenantCode 多租户开启时的租户识别, 缺省走 X-Tenant-Code 头/平台租户) */
+    forgotSendCode: (account: string, tenantCode?: string) =>
+      r.post<{ maskedPhone: string }>('/auth/password/forgot/send-code', { account, tenantCode }),
+    forgotReset: (data: { account: string; code: string; keyId: string; password: string; tenantCode?: string }) =>
+      r.post('/auth/password/forgot/reset', data),
     login: (account: string, password: string, keyId: string, captchaId?: string, captchaCode?: string, tenantCode?: string) =>
       r.post<LoginResult>('/auth/login', { username: account, password, keyId, captchaId, captchaCode, tenantCode }),
     /** 查询注册开关 (公开接口; multiTenant 随此口下发供登录/注册页渲染租户码输入) */

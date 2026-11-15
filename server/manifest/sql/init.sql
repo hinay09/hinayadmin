@@ -776,6 +776,35 @@ INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `n
   ('file.storage.path_style',     'true',     2, '路径风格寻址',     'MinIO/OSS/COS 需开启; AWS S3 官方Endpoint可关闭', 16),
   ('file.storage.presign_expire', '60',       1, '预签名有效期(分)', 'S3模式下载/预览链接的有效期(分钟)',        17);
 
+-- 通知渠道配置 (logic/notify 渠道分发): 系统通知在站内信/SSE 之外按此配置
+-- 异步投递到邮件或群机器人 (尽力而为, 失败仅记日志)。默认全部关闭。
+-- email 为定向渠道 (收件人=消息目标用户的 sys_user.email);
+-- webhook 为广播渠道 (每条系统通知投递一次到配置的群)。
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('notify.email.enable',             'false', 2, '邮件通知开关',      '开启后系统通知异步投递到目标用户邮箱',                 20),
+  ('notify.email.host',               '',      0, 'SMTP服务器',       '如 smtp.exmail.qq.com',                               21),
+  ('notify.email.port',               '465',   1, 'SMTP端口',         '465=隐式TLS, 587/25=自动尝试STARTTLS',                22),
+  ('notify.email.username',           '',      0, 'SMTP账号',         '认证用户名, 内网中继可留空',                           23),
+  ('notify.email.password',           '',      0, 'SMTP密码',         '认证密码或授权码(出参自动脱敏)',                       24),
+  ('notify.email.from',               '',      0, '发件人地址',       '如 no-reply@example.com',                              25),
+  ('notify.webhook.dingtalk.enable',  'false', 2, '钉钉机器人开关',   '开启后系统通知投递到钉钉群机器人',                     26),
+  ('notify.webhook.dingtalk.url',     '',      0, '钉钉Webhook地址',  'https://oapi.dingtalk.com/robot/send?access_token=…',  27),
+  ('notify.webhook.dingtalk.secret',  '',      0, '钉钉加签密钥',     '机器人安全设置选"加签"时的 SEC 开头密钥, 可空(出参自动脱敏)', 28),
+  ('notify.webhook.wecom.enable',     'false', 2, '企微机器人开关',   '开启后系统通知投递到企业微信群机器人',                 29),
+  ('notify.webhook.wecom.url',        '',      0, '企微Webhook地址',  'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…', 30);
+
+-- 短信服务配置 (internal/sms, 找回密码验证码): provider 空或未识别=短信未启用。
+-- 模板须为验证码模板 (单变量 code); 阿里云模板参数 {"code":"123456"}, 腾讯云按序 ["123456"]。
+INSERT IGNORE INTO `sys_config` (`config_key`, `config_value`, `config_type`, `name`, `remark`, `sort`) VALUES
+  ('sms.provider',               '',      0, '短信服务商',       'aliyun / tencent, 留空=未启用',                     35),
+  ('sms.sign_name',              '',      0, '短信签名',         '控制台报备的签名',                                   36),
+  ('sms.template_id',            '',      0, '短信模板ID',       '阿里云 TemplateCode / 腾讯云 TemplateId',            37),
+  ('sms.aliyun.access_key_id',   '',      0, '阿里云AccessKeyID', 'RAM 用户密钥(出参自动脱敏)',                        38),
+  ('sms.aliyun.access_key_secret','',     0, '阿里云AccessKeySecret', 'RAM 用户密钥 Secret(出参自动脱敏)',              39),
+  ('sms.tencent.secret_id',      '',      0, '腾讯云SecretId',   'TC3 密钥 ID(出参自动脱敏)',                          40),
+  ('sms.tencent.secret_key',     '',      0, '腾讯云SecretKey',  'TC3 密钥 Key(出参自动脱敏)',                         41),
+  ('sms.tencent.sdk_app_id',     '',      0, '腾讯云SdkAppId',   '短信应用 ID',                                        42);
+
 -- 菜单: 全局配置 (挂在系统管理目录下, id=1)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
   (17, 1, '全局配置', 2, '/system/configs', 'system/configs/index', 'Tools', 'system:config:list', 17, 1, 1);
@@ -881,6 +910,7 @@ CREATE TABLE IF NOT EXISTS `sys_job` (
   `handler`    VARCHAR(128) NOT NULL                COMMENT '处理器名称(需已注册)',
   `cron_expr`  VARCHAR(64)  NOT NULL                COMMENT 'cron表达式(6位: 秒 分 时 日 月 周)',
   `params`     VARCHAR(512) NOT NULL DEFAULT ''     COMMENT '任务参数(JSON, 可空)',
+  `concurrent_policy` VARCHAR(16) NOT NULL DEFAULT 'allow' COMMENT '并发策略:allow=各实例并行,skip=跨实例互斥(Redis锁,多副本部署推荐)',
   `status`     TINYINT      NOT NULL DEFAULT 0      COMMENT '状态:1=启动,0=暂停',
   `remark`     VARCHAR(255) NOT NULL DEFAULT ''     COMMENT '备注',
   `create_id`  BIGINT UNSIGNED NOT NULL DEFAULT 0      COMMENT '创建人ID(ORM自动填充)',
