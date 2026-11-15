@@ -139,15 +139,25 @@ func (s *sMessage) SystemCreate(ctx context.Context, in *v1.MessageSystemCreateR
 	if err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
-	// 实时推送 (尽力而为, 失败不影响消息落库)
+	// 实时推送 (尽力而为, 失败不影响消息落库): 本地直投 + Redis 跨实例广播。
+	// 角色目标先展开为用户 ID 集, SSE 推送与出站渠道共用一次展开结果。
+	reachAll := in.TargetScope == model.MessageScopeAll
+	var reachUserIds []uint64
 	switch in.TargetScope {
 	case model.MessageScopeAll:
-		notify.PublishAll(in.Title, in.Level)
+		notify.PublishAll(ctx, in.Title, in.Level)
 	case model.MessageScopeUser:
-		notify.PublishTo(in.TargetIds, in.Title, in.Level)
+		reachUserIds = in.TargetIds
+		notify.PublishTo(ctx, in.TargetIds, in.Title, in.Level)
 	case model.MessageScopeRole:
-		notify.PublishTo(s.roleMemberUserIds(ctx, in.TargetIds), in.Title, in.Level)
+		reachUserIds = s.roleMemberUserIds(ctx, in.TargetIds)
+		notify.PublishTo(ctx, reachUserIds, in.Title, in.Level)
 	}
+	// 出站渠道分发 (邮件/webhook, 按渠道配置异步尽力而为, 不阻塞响应)
+	notify.DispatchChannels(context.WithoutCancel(ctx), notify.OutMessage{
+		Title: in.Title, Content: in.Content, Level: in.Level,
+		All: reachAll, UserIds: reachUserIds,
+	})
 	return &v1.MessageSystemCreateRes{Id: newId}, nil
 }
 
@@ -221,7 +231,7 @@ func (s *sMessage) PrivateCreate(ctx context.Context, in *v1.MessagePrivateCreat
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err)
 	}
 	// 实时推送接收人 (尽力而为)
-	notify.PublishTo([]uint64{in.ReceiverId}, in.Title, in.Level)
+	notify.PublishTo(ctx, []uint64{in.ReceiverId}, in.Title, in.Level)
 	return &v1.MessagePrivateCreateRes{Id: uint64(id)}, nil
 }
 

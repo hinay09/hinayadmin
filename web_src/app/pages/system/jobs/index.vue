@@ -47,8 +47,15 @@ const form = reactive({
   handler: '',
   cronExpr: '',
   params: '',
+  concurrentPolicy: 'allow',
   remark: '',
 })
+
+// 并发策略 (多副本部署推荐 skip: 跨实例 Redis 锁互斥, 未抢到锁的实例跳过本次触发)
+const concurrentPolicyOptions = [
+  { label: '允许并行', value: 'allow' },
+  { label: '跨实例互斥', value: 'skip' },
+]
 const formRules: FormRules = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
   handler: [{ required: true, message: '请选择处理器', trigger: 'change' }],
@@ -57,7 +64,7 @@ const formRules: FormRules = {
 
 function openCreate() {
   editingId.value = 0
-  Object.assign(form, { name: '', handler: '', cronExpr: '', params: '', remark: '' })
+  Object.assign(form, { name: '', handler: '', cronExpr: '', params: '', concurrentPolicy: 'allow', remark: '' })
   dialogVisible.value = true
 }
 
@@ -68,6 +75,7 @@ function openEdit(row: any) {
     handler: row.handler,
     cronExpr: row.cronExpr,
     params: row.params || '',
+    concurrentPolicy: row.concurrentPolicy || 'allow',
     remark: row.remark || '',
   })
   dialogVisible.value = true
@@ -225,6 +233,13 @@ onMounted(async () => {
             <span v-else>-</span>
           </template>
         </el-table-column>
+        <el-table-column label="并发策略" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.concurrentPolicy === 'skip' ? 'warning' : 'info'" size="small">
+              {{ row.concurrentPolicy === 'skip' ? '跨实例互斥' : '允许并行' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <el-switch
@@ -310,6 +325,19 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="任务参数">
           <el-input v-model="form.params" type="textarea" :rows="2" placeholder='JSON 参数, 如 {"days": 90} (可空)' />
+        </el-form-item>
+        <el-form-item label="并发策略">
+          <el-select v-model="form.concurrentPolicy" style="width:100%">
+            <el-option
+              v-for="o in concurrentPolicyOptions"
+              :key="o.value"
+              :label="o.label"
+              :value="o.value"
+            />
+          </el-select>
+          <div class="preset-row" style="line-height:1.6;color:var(--el-text-color-secondary);font-size:12px">
+            单实例部署两者等效; 多副本部署选「跨实例互斥」可避免同刻重复执行 (Redis 锁)
+          </div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="任务用途说明 (可空)" />

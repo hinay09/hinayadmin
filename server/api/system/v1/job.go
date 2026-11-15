@@ -20,12 +20,13 @@ type JobListRes response.PageResult
 
 // JobCreateReq 新增定时任务。
 type JobCreateReq struct {
-	g.Meta   `path:"/system/jobs" tags:"SystemJob" method:"post" summary:"新增定时任务"`
-	Name     string `v:"required#请输入任务名称" json:"name"     dc:"任务名称"`
-	Handler  string `v:"required#请选择处理器" json:"handler"   dc:"处理器名称(需已注册)"`
-	CronExpr string `v:"required#请输入cron表达式" json:"cronExpr" dc:"cron表达式(6位: 秒 分 时 日 月 周)"`
-	Params   string `json:"params"  dc:"任务参数(JSON, 可空)"`
-	Remark   string `json:"remark"  dc:"备注"`
+	g.Meta           `path:"/system/jobs" tags:"SystemJob" method:"post" summary:"新增定时任务"`
+	Name             string `v:"required#请输入任务名称" json:"name"     dc:"任务名称"`
+	Handler          string `v:"required#请选择处理器" json:"handler"   dc:"处理器名称(需已注册)"`
+	CronExpr         string `v:"required#请输入cron表达式" json:"cronExpr" dc:"cron表达式(6位: 秒 分 时 日 月 周)"`
+	Params           string `json:"params"  dc:"任务参数(JSON, 可空)"`
+	ConcurrentPolicy string `json:"concurrentPolicy" v:"in:allow,skip#并发策略取值仅能为 allow/skip" d:"allow" dc:"并发策略:allow=各实例并行,skip=跨实例互斥(Redis锁)"`
+	Remark           string `json:"remark"  dc:"备注"`
 }
 
 // JobCreateRes 新增响应。
@@ -33,13 +34,14 @@ type JobCreateRes struct{}
 
 // JobUpdateReq 修改定时任务。
 type JobUpdateReq struct {
-	g.Meta   `path:"/system/jobs/:id" tags:"SystemJob" method:"put" summary:"修改定时任务"`
-	Id       uint64 `v:"min:1" in:"path" dc:"任务ID"`
-	Name     string `v:"required#请输入任务名称" json:"name"     dc:"任务名称"`
-	Handler  string `v:"required#请选择处理器" json:"handler"   dc:"处理器名称"`
-	CronExpr string `v:"required#请输入cron表达式" json:"cronExpr" dc:"cron表达式"`
-	Params   string `json:"params"  dc:"任务参数(JSON, 可空)"`
-	Remark   string `json:"remark"  dc:"备注"`
+	g.Meta           `path:"/system/jobs/:id" tags:"SystemJob" method:"put" summary:"修改定时任务"`
+	Id               uint64 `v:"min:1" in:"path" dc:"任务ID"`
+	Name             string `v:"required#请输入任务名称" json:"name"     dc:"任务名称"`
+	Handler          string `v:"required#请选择处理器" json:"handler"   dc:"处理器名称"`
+	CronExpr         string `v:"required#请输入cron表达式" json:"cronExpr" dc:"cron表达式"`
+	Params           string `json:"params"  dc:"任务参数(JSON, 可空)"`
+	ConcurrentPolicy string `json:"concurrentPolicy" v:"in:allow,skip#并发策略取值仅能为 allow/skip" d:"allow" dc:"并发策略:allow=各实例并行,skip=跨实例互斥"`
+	Remark           string `json:"remark"  dc:"备注"`
 }
 
 // JobUpdateRes 修改响应。

@@ -240,7 +240,7 @@ func (s *sJob) schedule(ctx context.Context, row *model.SysJob) error {
 		return nil
 	}
 	if _, err := s.cron.AddSingleton(ctx, row.CronExpr, func(ctx context.Context) {
-		s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params)
+		s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params, row.ConcurrentPolicy)
 	}, name); err != nil {
 		return err
 	}
@@ -255,7 +255,16 @@ func (s *sJob) unschedule(id uint64) {
 // runJob 执行一次任务并落执行日志。
 // 多租户 (§6-job): 按任务行 tenant_id 构造带注入的租户上下文 —— 处理器内的
 // A 类表读写自动限界在该租户; 禁用/到期租户的任务跳过并写明原因 (评审四)。
-func (s *sJob) runJob(id, tenantId uint64, name, handler, params string) {
+// 并发策略 skip: 先抢分布式锁, 未抢到 (其他实例执行中) 静默跳过, 由持锁实例落日志。
+func (s *sJob) runJob(id, tenantId uint64, name, handler, params, concurrentPolicy string) {
+	if concurrentPolicy == consts.JobConcurrentSkip {
+		ok, release := tryLock(context.Background(), tenantId, id)
+		if !ok {
+			g.Log().Debugf(context.Background(), "定时任务[%s#%d]被其他实例持有锁, 跳过本次触发", name, id)
+			return
+		}
+		defer release()
+	}
 	ctx, skip := buildJobCtx(context.Background(), tenantId)
 	start := time.Now()
 	var out string
@@ -358,7 +367,8 @@ func (s *sJob) List(ctx context.Context, req *v1.JobListReq) (res *v1.JobListRes
 		items = append(items, &model.JobItem{
 			Id: r.Id, TenantId: r.TenantId, TenantName: tnMap[r.TenantId],
 			Name: r.Name, Handler: r.Handler, CronExpr: r.CronExpr,
-			Params: r.Params, Status: r.Status, Remark: r.Remark,
+			Params: r.Params, ConcurrentPolicy: r.ConcurrentPolicy,
+			Status: r.Status, Remark: r.Remark,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 	}
@@ -406,12 +416,13 @@ func (s *sJob) Create(ctx context.Context, req *v1.JobCreateReq) (res *v1.JobCre
 		return nil, err
 	}
 	if _, err = dao.SysJob.Ctx(ctx).Data(g.Map{
-		"name":      req.Name,
-		"handler":   req.Handler,
-		"cron_expr": req.CronExpr,
-		"params":    req.Params,
-		"status":    consts.StatusDisabled,
-		"remark":    req.Remark,
+		"name":              req.Name,
+		"handler":           req.Handler,
+		"cron_expr":         req.CronExpr,
+		"params":            req.Params,
+		"concurrent_policy": normalizeConcurrentPolicy(req.ConcurrentPolicy),
+		"status":            consts.StatusDisabled,
+		"remark":            req.Remark,
 	}).Insert(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "新增任务失败")
 	}
@@ -428,15 +439,17 @@ func (s *sJob) Update(ctx context.Context, req *v1.JobUpdateReq) (res *v1.JobUpd
 		return nil, err
 	}
 	if _, err = dao.SysJob.Ctx(ctx).Where("id", req.Id).Data(g.Map{
-		"name":      req.Name,
-		"handler":   req.Handler,
-		"cron_expr": req.CronExpr,
-		"params":    req.Params,
-		"remark":    req.Remark,
+		"name":              req.Name,
+		"handler":           req.Handler,
+		"cron_expr":         req.CronExpr,
+		"params":            req.Params,
+		"concurrent_policy": normalizeConcurrentPolicy(req.ConcurrentPolicy),
+		"remark":            req.Remark,
 	}).Update(); err != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, err, "修改任务失败")
 	}
-	row.Name, row.Handler, row.CronExpr, row.Params, row.Remark = req.Name, req.Handler, req.CronExpr, req.Params, req.Remark
+	row.Name, row.Handler, row.CronExpr = req.Name, req.Handler, req.CronExpr
+	row.Params, row.ConcurrentPolicy, row.Remark = req.Params, normalizeConcurrentPolicy(req.ConcurrentPolicy), req.Remark
 	if rerr := s.schedule(ctx, row); rerr != nil {
 		return nil, xerror.Wrap(xerror.CodeBusinessError, rerr, "重新调度失败")
 	}
@@ -474,7 +487,7 @@ func (s *sJob) Run(ctx context.Context, req *v1.JobRunReq) (res *v1.JobRunRes, e
 	if err != nil {
 		return nil, err
 	}
-	go s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params)
+	go s.runJob(row.Id, row.TenantId, row.Name, row.Handler, row.Params, row.ConcurrentPolicy)
 	return &v1.JobRunRes{}, nil
 }
 

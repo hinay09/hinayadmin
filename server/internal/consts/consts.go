@@ -71,6 +71,26 @@ const (
 	PubKeyMaxPerMin = 20
 )
 
+// 找回密码 (短信验证码)。Redis 键均带租户维度 (多租户 §9 缓存键规约)。
+const (
+	// PwdResetCodePrefix 验证码键前缀, 完整键 +租户ID+":"+用户ID, 值=6位验证码, GETDEL 单次消费。
+	PwdResetCodePrefix = "hinay:pwd:reset:"
+	// PwdResetCodeTTLSec 验证码有效期(秒)。
+	PwdResetCodeTTLSec = 300
+	// PwdResetFailPrefix 重置失败计数键前缀, +租户ID+":"+账号 (验证码爆破防护)。
+	PwdResetFailPrefix = "hinay:pwd:reset:fail:"
+	// PwdResetFailMax 单账号重置失败上限, 超出临时锁定。
+	PwdResetFailMax = 5
+	// PwdResetGapPrefix 发码间隔锁键前缀, +租户ID+":"+账号。
+	PwdResetGapPrefix = "hinay:pwd:reset:gap:"
+	// PwdResetGapSec 两次发码最小间隔(秒)。
+	PwdResetGapSec = 60
+	// PwdResetDailyPrefix 当日发码计数键前缀, +租户ID+":"+账号。
+	PwdResetDailyPrefix = "hinay:pwd:reset:daily:"
+	// PwdResetDailyMax 单账号每日发码上限。
+	PwdResetDailyMax = 10
+)
+
 // 图形验证码 (登录/注册公开入口的人机挑战, 开源库 base64Captcha) 配置。
 const (
 	// CaptchaPrefix Redis 中验证码答案 Key 前缀 (值为答案, GETDEL 一次性消费)。
@@ -85,7 +105,7 @@ const (
 
 // TOTP 两步验证配置。
 const (
-	// TotpTicketPrefix Redis 中两步验证登录票据 Key 前缀 (值=用户ID)。
+	// TotpTicketPrefix Redis 中两步验证登录票据 Key 前缀 (值为用户ID)。
 	TotpTicketPrefix = "hinay:totp:ticket:"
 	// TotpTicketFailPrefix Redis 中两步验证票据失败计数 Key 前缀。
 	TotpTicketFailPrefix = "hinay:totp:fail:"
@@ -93,6 +113,31 @@ const (
 	TotpTicketTTLSec = 300
 	// TotpTicketFailMax 单票据允许的动态码最大失败次数, 超出后票据作废需重新走密码登录。
 	TotpTicketFailMax = 5
+)
+
+// 定时任务并发策略 (sys_job.concurrent_policy)。
+const (
+	// JobConcurrentAllow 各实例并行执行 (单实例默认语义, 进程内仍由 gcron AddSingleton 防重叠)。
+	JobConcurrentAllow = "allow"
+	// JobConcurrentSkip 跨实例互斥: Redis 锁内执行, 未抢到锁的实例跳过本次触发 (多副本部署推荐)。
+	JobConcurrentSkip = "skip"
+)
+
+// 定时任务分布式锁 (Redis)。
+const (
+	// JobLockPrefix 分布式锁 Key 前缀, 完整键为 前缀+租户ID+":"+任务ID
+	// (多租户 §9 缓存键规约: Redis 键须带租户维度)。
+	JobLockPrefix = "hinay:job:lock:"
+	// JobLockTTLSec 锁基线 TTL (秒), 执行期间由看门狗按 1/3 周期续期, 结束即释放。
+	JobLockTTLSec = 60
+)
+
+// 站内消息 Redis 广播 (SSE 跨实例触达)。
+const (
+	// NotifyBusPattern 广播频道模式, 实际频道为 前缀+租户ID (多租户 §9: 频道带租户维度)。
+	NotifyBusPattern = "hinay:notify:bus:*"
+	// NotifyBusPrefix 广播频道前缀 (拼租户ID)。
+	NotifyBusPrefix = "hinay:notify:bus:"
 )
 
 // 通用状态
