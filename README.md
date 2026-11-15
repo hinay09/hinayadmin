@@ -37,6 +37,7 @@
 - 审计字段自动填充: 业务表统一带 `create_id`/`update_id` (`internal/logic/ormfill` 按 gdb 接口回调重写 mysql 驱动 DoInsert/DoUpdate), INSERT/UPDATE 自动记录操作人, 业务层零感知, `gf gen dao` 免维护
 - 密码策略 (配置驱动 `sys.password.*`): 复杂度校验(长度/大小写/数字/特殊字符) + 有效期 + 管理员创建/重置/导入后首登强制改密, 前端锁定改密页 + 后端中间件拦截业务 API 直至完成 (账号禁用/删除亦实时失效)
 - 个人中心: 资料修改 + 密码修改 + 头像上传 + 上次登录时间/IP + 安全设置
+- 找回密码 (短信验证码): 登录页"忘记密码"两步弹窗 (账号 → 验证码+新密码), 账号支持用户名/手机号 (与登录同口径), 新密码走一次性 RSA 加密 + 密码策略校验; 验证码 6 位/5 分钟/单次消费, 防爆破(单账号 5 次锁定)与防刷量(60s 间隔/日 10 条), demo 模式拦截 (`logic/auth/forgot.go`); 短信服务阿里云/腾讯云双实现 (`internal/sms`, 全局配置 `sms.*`, 未配置时报"短信服务未配置")
 - 登录两步验证 (TOTP 2FA): 个人中心扫码/手输密钥绑定, 解绑须校验动态码; 登录密码通过后签发一次性票据换取动态码二次验证 (票据 5 分钟有效 + 单票据 5 次失败上限 + 时间步防重放), 演示模式下禁止绑定/解绑 (`logic/twofactor`)
 - 字典管理 (类型 + 数据项, 支持批量排序)
 - 文件管理 (上传 / 列表 / MIME 过滤)
@@ -52,7 +53,7 @@
 - 中间件链: CORS / RequestId / 全局限流 / 安全响应头 / 操作日志 / 访问日志 / JWT 鉴权 / Casbin 权限
 - 代码生成器 (CLI + 网页版): 见下方「CRUD 代码生成」
 - GoFrame 工程化分层: `api -> controller -> service -> logic -> dao` (gen ctrl / gen dao / gen service)
-- 自由审批流: 表单/流程可视化设计器, 发起/撤回/撤销/审批/驳回/转办/委派/加签/减签/中止/催办, 会签与或签, 审批人支持指定岗位与部门主管解析, 审批中心 (我的审批 / 实例管理); 业务审批标准模板见 `docs/flow-template.md` (内置请假申请 Demo)
+- 自由审批流: 表单/流程可视化设计器, 发起/撤回/撤销/审批/驳回/转办/委派/加签/减签/中止/催办, 会签与或签, 审批人支持指定岗位与部门主管解析, 审批中心 (我的审批 / 实例管理); 业务审批标准模板见 `docs/flow-template.md` (内置请假申请 Demo)。审批**表单设计器与代码生成共用同一拖拽壳** (`FormDesignerShell`): 左组件库拖入画布/拖动排序/属性面板, 控件含 单行/多行/数字/开关(1|0)/静态单选/日期/图片/附件 + **字典下拉** (字典编码, 选项走字典管理) 与 **关联下拉** (关联模块, 选项走目标模块 /all), 字典/关联选项在发起与审批时动态加载, 条件分支可直接引用其值; 已有定义的 form_conf 向后兼容
 - 审批流高级动作: 撤回 `POST /flow/instances/{id}/withdraw` (尚无审批人同意时收回修改后重提, 区别于撤销终态)、委派 `POST /flow/tasks/{id}/delegate` 与委派处理 `POST /flow/tasks/{id}/delegateResolve` (被委托人提交意见后回到原审批人终审, 区别于转办换人)、节点超时处理 (审批节点配置办理期限与策略: 逾期提醒 / 自动转办 / 自动通过, 由定时任务 `flow.timeoutScan` 扫描执行)
 - 岗位管理 (`sys_post`): 用户挂多岗位, 作为审批流「指定岗位」审批人的解析依据
 - AI 智能对话: OpenAI 兼容接口 (eino react agent), 会话 MySQL 持久化, 推理思考过程 / 工具调用 / token 用量展示
@@ -544,28 +545,47 @@ CORS -> RequestId -> MiddlewareHandlerResponse -> Auth -> Casbin -> Controller
 5. **验证上线**: 点"执行"立即跑一次 → 日志抽屉看输出摘要 → 确认后打开开关启动;
    之后每次触发 (定时/手动) 均有执行日志 (结果/输出/耗时)。
 
-边界提醒: 多副本部署时每个实例**各自跑一份** (gcron 单机调度), 同步任务在该部署下需自行加分布式锁
-(如 Redis SETNX); 依赖外部系统时把超时控制在自己手里, 避免一轮卡死表现为执行耗时异常长。
+边界提醒: 多副本部署时每个实例**各自跑一份** (gcron 单机调度) —— 任务页可为任务选**并发策略**:
+`允许并行` (默认, 兼容单实例语义) 或 `跨实例互斥` (Redis SET NX + TTL 分布式锁, 未抢到锁的实例跳过本次触发;
+执行期间看门狗续期, 实例崩溃后锁按 TTL 自然过期由他实例接管; Redis 不可用时 fail-open 退化为无锁执行)。
+依赖外部系统时把超时控制在自己手里, 避免一轮卡死表现为执行耗时异常长。
 
 脚手架内置处理器可直接使用: `demo.echo` 与 `job.cleanLoginLog` / `job.cleanAuditLog` / `job.cleanJobLog`
 (params: `{"days": 90}`, 输出形如"清理 sys_login_log 90 天前日志, 删除 N 行")。
+
+**水平扩展 (多副本部署)**: 三处单实例假设已分别补齐 ——
+- **SSE 消息实时推送** (`logic/notify`): 发布方双写 (本地直投 + Redis 频道 `hinay:notify:bus:{tenantId}`,
+  频道带租户维度遵守多租户 §9 缓存键规约), 各实例惰性订阅 (首个 SSE 连接建立时启动, 断线指数退避重连),
+  收到广播回放本地 hub; 广播消息带发布实例标识自过滤, 本实例用户不会重复收到。Redis 不可用时自动退化为
+  原单实例行为 (未触达用户由前端轮询兜底), 不影响本地直投。
+- **定时任务跨实例互斥**: 见上文"并发策略"。
+- **消息出站渠道** (`logic/notify/channel*.go`): 系统通知在站内信/SSE 之外, 按全局配置页的 `notify.*` 平台键
+  异步投递 (尽力而为, 失败仅记日志): `notify.email.*` SMTP 邮件 (标准库实现, 465 隐式 TLS / 587 自动 STARTTLS,
+  收件人=消息目标用户的 sys_user.email, 逐人独立发送) 与 `notify.webhook.dingtalk.*` / `notify.webhook.wecom.*`
+  群机器人 (text 消息, 钉钉支持加签 secret)。渠道实现 `Channel` 接口注册即用, 默认全部关闭。
 
 **Excel 导入导出接入** (工具: `utility/excelx`):
 
 - **导出**: 组好 `headers []string` 与 `rows [][]any` 后调用 `excelx.Build("Sheet名", headers, rows)` 得到字节流, 再 `excelx.WriteToResponse(ctx, "文件名.xlsx", content)` 直接写入响应 (GoFrame 检测到缓冲已有内容时自动跳过 JSON 包装)。示例见 `logic/system/user.go` 的 `Export`。
 - **导入**: 接口入参用 `*ghttp.UploadFile`, `excelx.Read(content)` 取回字符串二维表 (含表头), 逐行校验后写入; 建议提供配套模板下载端点 (同样用 `Build` 生成) 并返回行级错误明细。示例见 `Import` / `ImportTemplate`。
 
-**网页版代码生成** ("代码生成"页, 配置开关 `gencode.enable`, 默认关闭): 从 `information_schema` 选表 → 配置模块名/标题/列勾选(列表/表单/搜索) → 预览全部生成文件 → **zip 下载**(含 README 接线说明, 任何环境可用) 或 **直写源码树**(自动接线, 仅后端从源码目录启动的开发环境, 容器内自动拒绝)。生成产物与 CLI 完全一致 (共用 `utility/crudgen` 核心)。
+**网页版代码生成** ("代码生成"页, 配置开关 `gencode.enable`, 默认关闭): 从 `information_schema` 选表 → 配置模块名/标题/数据权限开关/列勾选(列表/表单/搜索)与**控件/必填覆盖** → 预览全部生成文件 → **zip 下载**(含 README 接线说明, 任何环境可用) 或 **直写源码树**(自动接线, 仅后端从源码目录启动的开发环境, 容器内自动拒绝)。生成产物与 CLI 完全一致 (共用 `utility/crudgen` 核心)。控件可选 `input/textarea/number/switch/dict/relation/date`(覆盖自动推导), 必填会传导到 API `v:required` 校验、前端表单规则与 Excel 导入非空校验; `date` 控件 (datetime 列自动推导) 生成 el-date-picker。
 
-**CRUD 代码生成器 CLI** (`server/tools/crudgen`, 无需连库): 从 `init.sql` 解析表 DDL, 一条命令生成完整增删改查——API 契约/控制器/service/logic/model 三件套/DAO 两件套/前端 API+页面/菜单按钮 API Casbin 种子 SQL, 并自动接线 `logic.go`、`cmd.go`、`useApi/index.ts`:
+**表单设计器** ("代码生成"页 → 表单设计器, gin-vue-admin 风格, 基于 `FormDesignerShell` 共享拖拽壳——与审批流表单设计器同源): 左组件库拖拽到画布 → 右属性面板配置字段名/标签/控件/必填 (字典编码/关联模块按控件出现) → 一键"应用到代码生成"。schema 可导入/导出 (JSON 数组), 支持"从数据表导入"按列注释指令与类型自动预填控件; 草稿自动存 localStorage, 应用经 sessionStorage 传递并在代码生成页选表后按列名自动套用 (控件/必填/进表单)。
+
+**CRUD 代码生成器 CLI** (`server/tools/crudgen`, 无需连库): 从 `init.sql` 解析表 DDL, 一条命令生成完整增删改查——API 契约/控制器/service/logic/model 三件套/DAO 两件套/前端 API+页面/菜单按钮 API Casbin 种子 SQL, 并自动接线 `logic.go`、`cmd.go`、`useApi/index.ts`。生成物不止 CRUD: List/Export 自动套**组织数据权限**, 带状态列的表生成**批量删除/批量启用停用**, 全表生成 **Excel 导出/导入模板/导入** (行级错误报告, 范式同用户管理), 前端页面基于 **ProTable/QueryForm** 公共组件 (自带多选/批量/导入导出按钮):
 
 ```bash
 cd server
 make gen-crud TABLE=biz_article TITLE="文章管理"          # 生成 (mod 默认取表名去前缀)
 make gen-crud TABLE=biz_article TITLE="文章管理" DRY=1    # 仅预览
+make gen-crud TABLE=biz_log TITLE="操作日志" NO_SCOPE=1   # 关闭组织数据权限
 ```
 
 生成约定: 表需含 `id` 主键与 `created_at/updated_at/deleted_at`; 菜单 ID 自动选取空闲千位块; `create_id/update_id` 由 ormfill 自动填充; 生成后执行 `manifest/sql/gen/` 下产出的 SQL 并分配角色权限即可。演示见 `-dry` 输出。
+
+- **数据权限**: 表含 `org_id` 列时 List/Export 自动调 `service.DataScope().Apply(ctx, q, "org_id", "create_id")` (与用户管理一致); 无 `org_id` 列的表自动跳过, `NO_SCOPE=1`/网页版勾选"关闭"可强制关闭。
+- **字典/关联下拉**: 列注释里写指令即可替代数字输入框——`(字典:order_type)` 生成 el-select 选项取自字典管理 (类型编码 `order_type`, 前端 `useDictOptions` 全局缓存); `(关联:post)` 生成关联下拉, 自动调 `usePostApi().all()` 取选项 (要求目标模块的 useApi 暴露 `all()`)。仅以 `_id` 结尾但未写 `关联:` 的列生成下拉骨架 + TODO 注释 (保证可编译, 数据源自行接线)。
 
 **sys_api 种子 SQL 生成器** (`server/tools/genapi`, 无需连库): CRUD 生成器产出的升级 SQL 自带 sys_api 行, 但**手写** API 契约 (如审批流加签/减签) 的 `sys_api` INSERT 行此前需手工编写, 路径/方法/描述容易抄漏。本工具扫描 `api/` 目录下所有 `g.Meta` 路由标签, 自动生成幂等的 `INSERT IGNORE` 种子块:
 
