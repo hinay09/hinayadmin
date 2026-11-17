@@ -24,7 +24,11 @@ MYSQL_USER="${MYSQL_USER:-root}"
 MYSQL_DATABASE="${MYSQL_DATABASE:-hinay_admin}"
 REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 DEMO_MODE="${DEMO_MODE:-false}"
+
+# sed 替换串转义: 密码/密钥值可能含 & | \ 等替换元字符, 不转义会把配置写坏
+sed_esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 
 if [ -f "$CONFIG_FILE" ]; then
     # 数据库连接
@@ -32,14 +36,15 @@ if [ -f "$CONFIG_FILE" ]; then
     sed -i "s|\${MYSQL_PORT}|${MYSQL_PORT}|g" "$CONFIG_FILE"
     sed -i "s|\${MYSQL_USER}|${MYSQL_USER}|g" "$CONFIG_FILE"
     sed -i "s|\${MYSQL_DATABASE}|${MYSQL_DATABASE}|g" "$CONFIG_FILE"
-    sed -i "s|\${MYSQL_PASSWORD}|${MYSQL_PASSWORD}|g" "$CONFIG_FILE"
+    sed -i "s|\${MYSQL_PASSWORD}|$(sed_esc "$MYSQL_PASSWORD")|g" "$CONFIG_FILE"
 
-    # Redis 连接
+    # Redis 连接 (留空密码 = 无认证)
     sed -i "s|\${REDIS_HOST}|${REDIS_HOST}|g" "$CONFIG_FILE"
     sed -i "s|\${REDIS_PORT}|${REDIS_PORT}|g" "$CONFIG_FILE"
+    sed -i "s|\${REDIS_PASSWORD}|$(sed_esc "$REDIS_PASSWORD")|g" "$CONFIG_FILE"
 
     # 替换 JWT 密钥占位符
-    sed -i "s|\${JWT_SECRET}|${JWT_SECRET}|g" "$CONFIG_FILE"
+    sed -i "s|\${JWT_SECRET}|$(sed_esc "$JWT_SECRET")|g" "$CONFIG_FILE"
 
     # 替换演示模式开关占位符
     sed -i "s|\${DEMO_MODE}|${DEMO_MODE}|g" "$CONFIG_FILE"

@@ -31,6 +31,8 @@ database:
 redis:
   default:
     address: "${REDIS_HOST}:${REDIS_PORT}"
+    # 密码由 REDIS_PASSWORD 注入 (无密码时替换为空串 = 不认证)
+    pass: "${REDIS_PASSWORD}"
     db:      0
 
 # CORS 跨域来源白名单: 容器内由 nginx 同源反代, 无跨域需求, 保持为空

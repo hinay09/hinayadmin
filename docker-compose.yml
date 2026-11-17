@@ -26,10 +26,17 @@ services:
     image: redis:8.10.0
     profiles: ["bundled"]
     restart: unless-stopped
+    # 密码注入: .env 设置 REDIS_PASSWORD 时要求认证; 留空 = 无密码 (redis 对空 requirepass 视为关闭认证)
+    command: ["--requirepass", "${REDIS_PASSWORD:-}"]
+    environment:
+      # 仅供 healthcheck 认证使用 (见下)
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # 有密码时经 REDISCLI_AUTH 环境变量认证 (不用 -a, 避免密码出现在进程列表);
+      # grep PONG 保证 NOAUTH 错误响应被判为失败
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; fi; redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,6 +59,8 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-hinay_admin}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      # Redis 密码: 内置模式与 redis 容器的 requirepass 同源; 外部模式填外部 Redis 的密码, 留空 = 无密码
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET (openssl rand -hex 32)}
       # 演示模式: true 时全局禁止修改/重置密码 (演示环境部署时在 .env 中开启)
       DEMO_MODE: ${DEMO_MODE:-false}

@@ -297,6 +297,7 @@ MYSQL_DATABASE=hinay_admin                    # 数据库名 (默认 hinay_admin
 # MYSQL_PORT=3306
 # REDIS_HOST=host.docker.internal
 # REDIS_PORT=6379
+# REDIS_PASSWORD=                           # Redis 密码: 内置模式填写后 Redis 以该密码启动; 外部模式填外部 Redis 密码; 留空 = 无密码
 ```
 
 > 外部 MySQL/Redis **以容器方式运行**时, 能否直接用容器名作 `MYSQL_HOST` 取决于网络:
