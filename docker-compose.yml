@@ -23,7 +23,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:8.10.0
+    image: redis:8.10.2
     profiles: ["bundled"]
     restart: unless-stopped
     # 密码注入: .env 设置 REDIS_PASSWORD 时要求认证; 留空 = 无密码 (redis 对空 requirepass 视为关闭认证)
