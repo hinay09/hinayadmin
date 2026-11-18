@@ -9,7 +9,10 @@
 //   - INSERT 无条件覆盖载荷中的 tenant_id (租户归属只信 ctx, 不信载荷);
 //   - UPDATE/DELETE 在 condition 末尾追加 AND `tenant_id` = ? (软删转 UPDATE 天然覆盖);
 //   - SELECT 为"受控改写": 白名单表 + 首关键词门禁 + 字面量遮蔽 + 顶层定位 +
-//     括号内出现白名单表一律 fail-close (宁拒勿漏);
+//     WHERE 条件整体包裹 (原条件) AND tenant_id=? (租户条件在括号外, 顶层 OR
+//     分支不漏过滤) + 顶层 JOIN (LEFT/INNER, 隔离表须别名化) 逐表 ON 包裹注入 +
+//     gdb 分页 COUNT 包装 (SELECT COUNT(1) FROM (…) alias) 递归改写内层 +
+//     其余括号内出现白名单表一律 fail-close (宁拒勿漏);
 //   - 平台超管未切换 (Inject=false)、非白名单表 → 原样放行;
 //   - 开关关闭 → 恒注入平台租户 (关闭 = 全部限定平台租户): 关闭前遗留的他租户
 //     行不可见、其用户不可登录, 跨租户同名用户名在 tenant_id=1 下天然唯一不再歧义。
@@ -91,9 +94,22 @@ func errTenantRefused(reason string) error {
 // ---------------------------------------------------------------------------
 
 // tenantInjectSelect 对最终 SELECT SQL 做保守租户条件改写。
-// 返回改写后的 sql 与 args (租户值插入 args 头部); changed=false 表示无需改写 (原样放行);
+// 返回改写后的 sql 与 args; changed=false 表示无需改写 (原样放行);
 // err != nil 表示 fail-close (拒绝执行)。
+//
+// 支持形态: 顶层单表 + 顶层 JOIN 序列 (gdb 结构化 LeftJoin/InnerJoin 生成的
+// "JOIN `tbl` [AS ]`alias` ON (cond)" 形态, 隔离表对端逐表在 ON 括号内追加
+// 别名限定租户条件 —— LEFT 保持外连接语义不丢主表行, INNER 等价于 WHERE 过滤),
+// 以及 gdb 对 GROUP BY 模型分页计数的固定包装 SELECT COUNT(1) FROM (…) alias
+// (递归改写内层)。其余形态 (子查询/派生表/UNION/逗号多表/RIGHT JOIN 隔离表等)
+// 一律 fail-close。
 func tenantInjectSelect(sql string, args []any, tid uint64) (outSQL string, outArgs []any, changed bool, err error) {
+	return tenantInjectSelectDepth(sql, args, tid, 0)
+}
+
+const maxWrapperDepth = 2 // COUNT 包装递归上限 (gdb 只产一层, 手写嵌套按深度熔断)
+
+func tenantInjectSelectDepth(sql string, args []any, tid uint64, depth int) (outSQL string, outArgs []any, changed bool, err error) {
 	masked, merr := maskLiterals(sql)
 	if merr != nil {
 		// 引号未闭合等无法分析的形态: 保守拒绝 (该语句本身也过不了 MySQL 解析)
@@ -125,55 +141,220 @@ func tenantInjectSelect(sql string, args []any, tid uint64) (outSQL string, outA
 		return "", nil, false, errTenantRefused("语句含分号")
 	}
 
-	// 顶层 FROM 解析主表 (去反引号/库名前缀/别名)
+	// gdb 分页 COUNT 包装 (GROUP BY 模型): SELECT COUNT(1) FROM (<inner>) alias ——
+	// 外层不引用任何表, 隔离只能落在内层 → 递归改写内层, 内层拒则整体拒。
+	if inStart, inEnd, ok := unwrapCountWrapper(masked); ok {
+		if depth >= maxWrapperDepth {
+			return "", nil, false, errTenantRefused("COUNT 包装嵌套超深 (非 gdb 生成形态)")
+		}
+		innerOut, innerArgs, innerChanged, ierr := tenantInjectSelectDepth(sql[inStart:inEnd], args, tid, depth+1)
+		if ierr != nil {
+			return "", nil, false, ierr
+		}
+		if !innerChanged {
+			return sql, args, false, nil
+		}
+		out := "/*tenant:" + uitoa(tid) + "*/ " + sql[:inStart] + innerOut + sql[inEnd:]
+		return out, innerArgs, true, nil
+	}
+
+	// 顶层 FROM 解析主表 (去反引号/库名前缀, 保留别名)
 	fromPos := keywordAtDepth0(masked, 0, "FROM")
 	if fromPos < 0 {
 		return "", nil, false, errTenantRefused("未找到顶层 FROM 子句")
 	}
-	tok, nameStart, nameEnd, next, perr := parseFromTable(masked, fromPos+4)
+	main, perr := parseTableRef(masked, fromPos+4)
 	if perr != nil {
 		return "", nil, false, errTenantRefused(perr.Error())
 	}
-	mainTable := normalizeTable(tok)
-	if _, ok := tenantTables[mainTable]; !ok {
-		return "", nil, false, errTenantRefused("主表 " + mainTable + " 非租户隔离表但语句引用了隔离表 (JOIN/子查询对端)")
+	if _, ok := tenantTables[main.name]; !ok {
+		return "", nil, false, errTenantRefused("主表 " + main.name + " 非租户隔离表但语句引用了隔离表 (JOIN/子查询对端)")
 	}
 
-	// 白名单表名唯一出现校验: 每处出现必须恰好是顶层主表裸名本身
-	// (防 A-join-A / EXISTS/IN 子查询 / 派生表 / UNION 分支 / 字段区引用漏注入)。
-	for _, oc := range occurs {
-		if oc.pos < nameStart || oc.pos >= nameEnd || oc.name != mainTable {
-			return "", nil, false, errTenantRefused("白名单表 " + oc.name + " 出现在 JOIN/子查询/字段区 (仅允许顶层主表)")
+	// FROM 区域边界 (WHERE / 尾部子句关键词之前) 与逗号多表 fail-close
+	wherePos := keywordAtDepth0(masked, main.compEnd, "WHERE")
+	tailPos := earliestTailKeyword(masked, main.compEnd)
+	regionEnd := len(masked)
+	if wherePos >= 0 && wherePos < regionEnd {
+		regionEnd = wherePos
+	}
+	if tailPos >= 0 && tailPos < regionEnd {
+		regionEnd = tailPos
+	}
+	if commaAtDepth0(masked, main.next, regionEnd) {
+		return "", nil, false, errTenantRefused("FROM 多表逗号形式")
+	}
+
+	// 顶层 JOIN 序列解析 (gdb 结构化形态)
+	joins, jerr := parseFromJoins(masked, main.next, regionEnd)
+	if jerr != nil {
+		return "", nil, false, errTenantRefused(jerr.Error())
+	}
+	for i := range joins {
+		jr := &joins[i]
+		_, jr.isolated = tenantTables[jr.ref.name]
+		if !jr.isolated {
+			continue
+		}
+		// 隔离表 JOIN 的可注入形态校验: 只支持 LEFT/INNER + 显式 ON + 别名
+		// (RIGHT JOIN 由对端表驱动行可见性、CROSS/无 ON/USING 无注入点、
+		//  无别名时 ON 只能以裸表名引用会撞白名单出现校验)。
+		switch jr.jtype {
+		case "LEFT", "INNER":
+		default:
+			return "", nil, false, errTenantRefused("隔离表 " + jr.ref.name + " 为 " + jr.jtype + " JOIN, 无安全注入点 (仅支持 LEFT/INNER JOIN)")
+		}
+		if jr.usingClose >= 0 {
+			return "", nil, false, errTenantRefused("隔离表 " + jr.ref.name + " 的 JOIN 使用 USING (请改用 ON 条件)")
+		}
+		if jr.onClose < 0 {
+			return "", nil, false, errTenantRefused("隔离表 " + jr.ref.name + " 的 JOIN 缺少 ON 条件")
+		}
+		if jr.ref.alias == "" {
+			return "", nil, false, errTenantRefused("隔离表 " + jr.ref.name + " 的 JOIN 缺少别名 (ON 以裸表名引用无法安全注入)")
+		}
+	}
+	anyIsolatedJoin := false
+	for i := range joins {
+		if joins[i].isolated {
+			anyIsolatedJoin = true
+			break
 		}
 	}
 
-	// 注入点定位 (括号深度 0, 主表 token 之后)
-	var injectAt int
-	var frag string
-	if wherePos := keywordAtDepth0(masked, next, "WHERE"); wherePos >= 0 {
-		injectAt = wherePos + len("WHERE")
-		frag = " `" + tenantColumn + "`=? AND"
-	} else if kwPos := earliestTailKeyword(masked, next); kwPos >= 0 {
-		injectAt = kwPos // 前一字符必为空格, 无需再补前导空格
-		frag = "WHERE `" + tenantColumn + "`=? "
+	// 白名单表名出现位置校验: 每处出现必须是主表裸名或某个隔离 JOIN 表裸名本身
+	// (防 EXISTS/IN 子查询 / 派生表 / UNION 分支 / 字段区 / ON 条件内裸表名引用漏注入)。
+	for _, oc := range occurs {
+		inMain := oc.pos >= main.compStart && oc.pos < main.compEnd
+		inJoin := false
+		for i := range joins {
+			if joins[i].isolated && oc.pos >= joins[i].ref.compStart && oc.pos < joins[i].ref.compEnd {
+				inJoin = true
+				break
+			}
+		}
+		if !inMain && !inJoin {
+			return "", nil, false, errTenantRefused("白名单表 " + oc.name + " 出现在子查询/字段区/ON 条件 (仅允许顶层主表与 JOIN 表)")
+		}
+	}
+
+	// 字段区 (FROM 之前) 占位符 fail-close: 注入值按位插入 args, 字段区占位子查询
+	// 虽可按位拼接, 但属非 gdb 生成形态, 维持保守拒绝; JOIN ON 内占位符为 gdb 合法
+	// 产物, 由按位拼接保证顺序。
+	if strings.IndexByte(masked[:fromPos], '?') >= 0 {
+		return "", nil, false, errTenantRefused("字段区存在占位符, 参数顺序无法保证")
+	}
+	// 占位符与参数数量必须一致 (按位拼接的前置不变量; gdb 生成语句天然满足,
+	// 手写错配语句防越界, 交给 MySQL 也过不了)。
+	if strings.Count(masked, "?") != len(args) {
+		return "", nil, false, errTenantRefused("占位符与参数数量不一致, 无法安全注入")
+	}
+
+	// 注入点组装: 隔离 JOIN 逐表改写为 ON ((原条件) AND `alias`.`tenant_id`=?)
+	// (整体加括号防 OR 分支漏隔离)。主表条件必须置于原 WHERE 条件整体之外 ——
+	// gdb 的 WhereLike/WhereOrLike 混用链在顶层产 OR (实测关键词搜索列表页:
+	// WHERE (code LIKE ?) OR (name LIKE ?) AND (type_id IN ...)), 若按头插
+	// "tenant=? AND <条件>" 会因 AND 优先级高于 OR 留下未过滤的 OR 分支
+	// (既有多租户隔离漏洞, 本轮 e2e 实测发现) —— 故 WHERE 分支包裹改写:
+	// WHERE (<原条件>) AND `alias`.`tenant_id`=?; 无 WHERE 时注入条件为唯一
+	// 条件, 无 OR 风险, 维持尾部子句前/串尾单点插入。
+	// 无隔离 JOIN 对端时维持裸列形态, 有隔离 JOIN 对端时别名限定防列名歧义。
+	mainQual := main.name
+	if main.alias != "" {
+		mainQual = main.alias
+	}
+	mainCol := "`" + tenantColumn + "`=?"
+	if anyIsolatedJoin {
+		mainCol = "`" + mainQual + "`.`" + tenantColumn + "`=?"
+	}
+
+	type injectPoint struct {
+		pos  int    // 插入位置 (原始语句坐标)
+		frag string // 可不含 ? (纯括号包裹点)
+		k    int    // 该位置之前原有占位符个数 (args 插入下标基准)
+	}
+	points := make([]injectPoint, 0, 2*len(joins)+1)
+	for i := range joins {
+		if !joins[i].isolated {
+			continue
+		}
+		q := joins[i].ref.alias
+		// 包裹注入: ON (X) → ON ((X) AND `alias`.`tenant_id`=?)。
+		// 不能直接在 X 尾部追加 AND —— gdb 原样透传业务 ON 串, X 含 OR 时
+		// AND 优先级更高会留下未过租户的 OR 分支 (a=b OR c=d AND tenant ⇒
+		// a=b OR (c=d AND tenant), a=b 分支漏隔离), 故整体加括号后再 AND。
+		points = append(points,
+			injectPoint{pos: joins[i].onOpen + 1, frag: "("},
+			injectPoint{
+				pos:  joins[i].onClose,
+				frag: ") AND `" + q + "`.`" + tenantColumn + "`=?",
+				k:    strings.Count(masked[:joins[i].onClose], "?"),
+			},
+		)
+	}
+	if wherePos >= 0 {
+		tailPoint := len(sql)
+		if tailPos >= 0 {
+			tailPoint = tailPos
+		}
+		// WHERE (原条件整体) AND tenant=? —— 租户条件在括号外, 顶层 OR 分支全受控;
+		// 尾部子句存在时补尾随空格 (原语句的空格落在包裹括号之前)
+		frag := ") AND " + mainCol
+		if tailPos >= 0 {
+			frag += " "
+		}
+		points = append(points,
+			injectPoint{pos: wherePos + len("WHERE"), frag: " ("},
+			injectPoint{
+				pos:  tailPoint,
+				frag: frag,
+				k:    strings.Count(masked[:tailPoint], "?"),
+			},
+		)
+	} else if tailPos >= 0 {
+		// 无 WHERE: 注入条件为唯一条件无 OR 风险, 尾部子句前单点插入
+		// (前一字符必为空格, 无需再补前导空格)
+		points = append(points, injectPoint{
+			pos:  tailPos,
+			frag: "WHERE " + mainCol + " ",
+			k:    strings.Count(masked[:tailPos], "?"),
+		})
 	} else {
-		injectAt = len(sql)
-		frag = " WHERE `" + tenantColumn + "`=?"
+		points = append(points, injectPoint{
+			pos:  len(sql),
+			frag: " WHERE " + mainCol,
+			k:    strings.Count(masked, "?"),
+		})
 	}
 
-	// 参数顺序校验: 注入点之前 (含 SELECT 字段区) 的 ? 计数必须为 0,
-	// 否则说明字段区带占位子查询, 租户值不能安全地插到 args 头部 → fail-close。
-	if strings.Count(masked[:injectAt], "?") != 0 {
-		return "", nil, false, errTenantRefused("注入点之前存在占位符 (字段区带占位子查询), 参数顺序无法保证")
+	// SQL 拼接: 注入点按构建序天然位置升序, 降序应用互不影响坐标
+	out := sql
+	for i := len(points) - 1; i >= 0; i-- {
+		out = out[:points[i].pos] + points[i].frag + out[points[i].pos:]
 	}
 
-	out := sql[:injectAt] + frag + sql[injectAt:]
+	// args 合并: 含 ? 的注入点按 (k, pos) 升序插入租户值 —— k 为插入点之前原有
+	// 占位符个数, 同 k 时按语句位置排, 与最终 SQL 中占位符出现顺序一一对应
+	// (覆盖 JOIN ON 自带占位符的语句); 纯括号包裹点不含 ? 不参与。
+	newArgs := make([]any, 0, len(args)+len(joins)+1)
+	oi := 0
+	flush := func(upto int) {
+		for ; oi < upto; oi++ {
+			newArgs = append(newArgs, args[oi])
+		}
+	}
+	for i := range points {
+		if !strings.ContainsRune(points[i].frag, '?') {
+			continue
+		}
+		flush(points[i].k)
+		newArgs = append(newArgs, tid)
+	}
+	flush(len(args))
+
 	// 观测归因: 语句头部追加 /*tenant:N*/ 注释, Slow Query Log / RDS 性能洞察
 	// 即可按租户归因慢查询 (放行路径不加注释, 零开销)。
 	out = "/*tenant:" + uitoa(tid) + "*/ " + out
-	newArgs := make([]any, 0, len(args)+1)
-	newArgs = append(newArgs, tid)
-	newArgs = append(newArgs, args...)
 	return out, newArgs, true, nil
 }
 
@@ -424,12 +605,60 @@ func earliestTailKeyword(masked string, from int) int {
 	return best
 }
 
-// parseFromTable 解析 FROM 后的主表 token。
-// 返回: 原始 token (可含 `db`.`tbl`)、裸表名在语句中的起止位置、token 结束位置、
-// 错误 (逗号多表 / 派生表)。
-func parseFromTable(masked string, from int) (tok string, nameStart, nameEnd, next int, err error) {
+// tableRef 解析后的表引用 (主表或 JOIN 对端)。
+type tableRef struct {
+	tok       string // 原始 token (可含 `db`.`tbl` 与反引号)
+	name      string // 裸表名 (去反引号/库名前缀, 与 tenantTables 键同口径)
+	compStart int    // 裸表名组件在语句中的起始位置 (含引导反引号)
+	compEnd   int    // 裸表名组件结束位置 (含收尾反引号)
+	alias     string // 别名 ("" 表示无)
+	next      int    // 别名之后的位置
+}
+
+// fromClauseStopWords 表引用后不能视为别名的关键词 (MySQL 保留字本身也不能做裸别名)。
+var fromClauseStopWords = map[string]struct{}{
+	"WHERE": {}, "LEFT": {}, "RIGHT": {}, "INNER": {}, "CROSS": {}, "STRAIGHT": {},
+	"JOIN": {}, "ON": {}, "USING": {}, "GROUP": {}, "ORDER": {}, "HAVING": {},
+	"LIMIT": {}, "OFFSET": {}, "UNION": {}, "FOR": {}, "LOCK": {}, "WINDOW": {},
+	"AND": {}, "OR": {}, "NOT": {}, "AS": {}, "SET": {}, "INTO": {},
+}
+
+// isSpaceMasked 空白字符 (遮蔽后语句内的排版空白)。
+func isSpaceMasked(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
+}
+
+// readWordOrQuoted 在 i 处读取一个词 (裸标识符或 `反引号词`), 返回去除反引号的内容与结束位置。
+// 非词首字符返回 ok=false (逗号/括号等结构符号)。
+func readWordOrQuoted(masked string, i int) (word string, next int, ok bool) {
+	if i >= len(masked) {
+		return "", i, false
+	}
+	if masked[i] == '`' {
+		j := i + 1
+		for j < len(masked) && masked[j] != '`' {
+			j++
+		}
+		if j >= len(masked) {
+			return "", i, false // 反引号未闭合
+		}
+		return masked[i+1 : j], j + 1, true
+	}
+	if isIdentChar(masked[i]) {
+		j := i
+		for j < len(masked) && isIdentChar(masked[j]) {
+			j++
+		}
+		return masked[i:j], j, true
+	}
+	return "", i, false
+}
+
+// parseTableRef 解析 FROM/JOIN 后的表引用: <token> [AS alias | alias]。
+// token 支持反引号与库名前缀; 别名不被子句关键词误吞; '(' 开头 (派生表/子查询) 报错。
+func parseTableRef(masked string, from int) (tableRef, error) {
 	i := from
-	for i < len(masked) && (masked[i] == ' ' || masked[i] == '\t' || masked[i] == '\n' || masked[i] == '\r') {
+	for i < len(masked) && isSpaceMasked(masked[i]) {
 		i++
 	}
 	start := i
@@ -442,39 +671,254 @@ func parseFromTable(masked string, from int) (tok string, nameStart, nameEnd, ne
 		break
 	}
 	if i == start {
-		return "", 0, 0, 0, gerror.New("FROM 后无表名 (派生表/子查询)")
+		return tableRef{}, gerror.New("FROM/JOIN 后无表名 (派生表/子查询)")
 	}
-	tok = masked[start:i]
-	// 裸表名位置: 去库名前缀
-	ns, ne := start, i
+	tok := masked[start:i]
+	compStart, compEnd := start, i
 	if p := strings.LastIndex(tok, "."); p >= 0 {
-		ns = start + p + 1
+		compStart = start + p + 1
 	}
-	// 跳过可选别名 (AS x / x) 后探测逗号多表
+	ref := tableRef{tok: tok, name: normalizeTable(tok), compStart: compStart, compEnd: compEnd, next: i}
+
 	j := i
-	skipSpaces := func() {
-		for j < len(masked) && (masked[j] == ' ' || masked[j] == '\t' || masked[j] == '\r' || masked[j] == '\n') {
+	for j < len(masked) && isSpaceMasked(masked[j]) {
+		j++
+	}
+	if j >= len(masked) {
+		return ref, nil
+	}
+	if masked[j] != '`' && !isIdentChar(masked[j]) {
+		return ref, nil // 结构符号 (逗号/括号等), 无别名
+	}
+	w, wEnd, ok := readWordOrQuoted(masked, j)
+	if !ok {
+		return tableRef{}, gerror.New("别名反引号未闭合")
+	}
+	if strings.EqualFold(w, "AS") {
+		j = wEnd
+		for j < len(masked) && isSpaceMasked(masked[j]) {
 			j++
 		}
+		a, aEnd, aok := readWordOrQuoted(masked, j)
+		if !aok {
+			return tableRef{}, gerror.New("AS 后缺少别名")
+		}
+		ref.alias, ref.next = a, aEnd
+		return ref, nil
 	}
-	skipIdent := func() {
-		for j < len(masked) && isIdentChar(masked[j]) {
-			j++
+	if _, stop := fromClauseStopWords[strings.ToUpper(w)]; !stop {
+		ref.alias, ref.next = w, wEnd
+	}
+	return ref, nil
+}
+
+// joinRef 顶层 JOIN 子句。
+type joinRef struct {
+	jtype      string // LEFT / INNER / RIGHT / CROSS / STRAIGHT (裸 JOIN 记 INNER)
+	ref        tableRef
+	onOpen     int // ON 条件左括号位置; -1 无 ON (gdb 结构化形态恒有括号)
+	onClose    int // ON 条件右括号位置; -1 无 ON
+	usingClose int // USING 列表右括号位置; -1 无 USING
+	isolated   bool
+}
+
+// parseFromJoins 解析 FROM 区域 (主表之后) 的顶层 JOIN 序列 (gdb 结构化形态)。
+// 仅接受 <TYPE> JOIN <表引用> [ON (cond) | USING (cols)]; JOIN 目标为子查询由
+// parseTableRef 报错; 其他 token 一律 fail-close。
+func parseFromJoins(masked string, from, regionEnd int) ([]joinRef, error) {
+	var joins []joinRef
+	i := from
+	for {
+		for i < len(masked) && isSpaceMasked(masked[i]) {
+			i++
+		}
+		if i >= regionEnd || i >= len(masked) {
+			return joins, nil
+		}
+		w, wEnd, ok := readWordOrQuoted(masked, i)
+		if !ok || w == "" {
+			return nil, gerror.New("FROM 子句无法解析 (仅允许 JOIN 序列)")
+		}
+		var jt string
+		switch strings.ToUpper(w) {
+		case "JOIN":
+			jt = "INNER"
+			i = wEnd
+		case "LEFT", "RIGHT", "INNER", "CROSS", "STRAIGHT":
+			j := wEnd
+			for j < len(masked) && isSpaceMasked(masked[j]) {
+				j++
+			}
+			w2, w2End, ok2 := readWordOrQuoted(masked, j)
+			if !ok2 || !strings.EqualFold(w2, "JOIN") {
+				return nil, gerror.New("JOIN 关键词形态无法解析")
+			}
+			jt = strings.ToUpper(w)
+			i = w2End
+		default:
+			return nil, gerror.New("FROM 子句存在非 JOIN 形态 token (子查询/手写片段)")
+		}
+		ref, err := parseTableRef(masked, i)
+		if err != nil {
+			return nil, err
+		}
+		i = ref.next
+		for i < len(masked) && isSpaceMasked(masked[i]) {
+			i++
+		}
+		jr := joinRef{jtype: jt, ref: ref, onClose: -1, usingClose: -1}
+		if w, wEnd, ok := readWordOrQuoted(masked, i); ok {
+			switch strings.ToUpper(w) {
+			case "ON":
+				i = wEnd
+				for i < len(masked) && isSpaceMasked(masked[i]) {
+					i++
+				}
+				if i >= len(masked) || masked[i] != '(' {
+					// gdb 结构化 JOIN 恒生成 ON (cond) 括号形态; 无括号必为手写 → fail-close
+					return nil, gerror.New("ON 后缺少条件括号 (仅支持 gdb 结构化形态)")
+				}
+				cp := matchParen(masked, i)
+				if cp < 0 {
+					return nil, gerror.New("ON 条件括号不闭合")
+				}
+				jr.onOpen, jr.onClose = i, cp
+				i = cp + 1
+			case "USING":
+				i = wEnd
+				for i < len(masked) && isSpaceMasked(masked[i]) {
+					i++
+				}
+				if i >= len(masked) || masked[i] != '(' {
+					return nil, gerror.New("USING 后缺少列括号")
+				}
+				cp := matchParen(masked, i)
+				if cp < 0 {
+					return nil, gerror.New("USING 括号不闭合")
+				}
+				jr.usingClose = cp
+				i = cp + 1
+			}
+		}
+		joins = append(joins, jr)
+	}
+}
+
+// matchParen 返回 open 处 '(' 的配对 ')' 位置; 不闭合返回 -1。
+func matchParen(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
 		}
 	}
-	skipSpaces()
-	if j < len(masked) && isIdentChar(masked[j]) {
-		if j+2 < len(masked) && strings.EqualFold(masked[j:j+2], "AS") && !isIdentChar(masked[j+2]) {
-			j += 2
-			skipSpaces()
+	return -1
+}
+
+// commaAtDepth0 检查 [from, end) 顶层 (括号深度 0) 是否出现逗号多表。
+func commaAtDepth0(masked string, from, end int) bool {
+	if end > len(masked) {
+		end = len(masked)
+	}
+	depth := 0
+	for i := from; i < end; i++ {
+		switch masked[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				return true
+			}
 		}
-		skipIdent()
-		skipSpaces()
 	}
-	if j < len(masked) && masked[j] == ',' {
-		return "", 0, 0, 0, gerror.New("FROM 多表逗号形式")
+	return false
+}
+
+// unwrapCountWrapper 识别 gdb 对 GROUP BY 模型分页计数的固定包装
+// (gdb_model_select.go): SELECT COUNT(1) FROM (<inner>) alias —— 外层除包装外
+// 不引用任何表, 隔离条件安全落点唯一 (内层)。命中返回 inner 起止位置;
+// 不匹配返回 false, 交由常规门禁 (其余派生表形态仍 fail-close)。
+func unwrapCountWrapper(masked string) (innerStart, innerEnd int, ok bool) {
+	i := 0
+	readKw := func(w string) bool {
+		for i < len(masked) && isSpaceMasked(masked[i]) {
+			i++
+		}
+		if i+len(w) > len(masked) || !strings.EqualFold(masked[i:i+len(w)], w) {
+			return false
+		}
+		if i+len(w) < len(masked) && isIdentChar(masked[i+len(w)]) {
+			return false
+		}
+		i += len(w)
+		return true
 	}
-	return tok, ns, ne, i, nil
+	skipWs := func() {
+		for i < len(masked) && isSpaceMasked(masked[i]) {
+			i++
+		}
+	}
+	if !readKw("SELECT") || !readKw("COUNT") {
+		return 0, 0, false
+	}
+	skipWs()
+	if i >= len(masked) || masked[i] != '(' {
+		return 0, 0, false
+	}
+	i++
+	skipWs()
+	switch {
+	case i < len(masked) && masked[i] == '1':
+		i++
+	case i < len(masked) && masked[i] == '*':
+		i++
+	default:
+		return 0, 0, false
+	}
+	skipWs()
+	if i >= len(masked) || masked[i] != ')' {
+		return 0, 0, false
+	}
+	i++
+	if !readKw("FROM") {
+		return 0, 0, false
+	}
+	skipWs()
+	if i >= len(masked) || masked[i] != '(' {
+		return 0, 0, false
+	}
+	open := i
+	closePos := matchParen(masked, open)
+	if closePos < 0 {
+		return 0, 0, false
+	}
+	// 尾部仅允许一个可选别名标识符
+	j := closePos + 1
+	skipWsAt := func(at int) int {
+		for at < len(masked) && isSpaceMasked(masked[at]) {
+			at++
+		}
+		return at
+	}
+	j = skipWsAt(j)
+	if _, wEnd, wok := readWordOrQuoted(masked, j); wok {
+		j = skipWsAt(wEnd)
+	}
+	if j != len(masked) {
+		return 0, 0, false
+	}
+	if firstKeyword(masked[open+1:closePos]) != "SELECT" {
+		return 0, 0, false
+	}
+	return open + 1, closePos, true
 }
 
 // uitoa 十进制无符号整数转字符串。

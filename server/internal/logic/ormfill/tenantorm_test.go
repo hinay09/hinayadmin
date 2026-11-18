@@ -6,6 +6,7 @@ package ormfill
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -42,8 +43,8 @@ func TestTenantInjectSelectAllowed(t *testing.T) {
 			name: "单表带WHERE",
 			sql:  "SELECT * FROM sys_user WHERE id=?",
 			args: []any{uint64(5)}, tid: 3,
-			want:     "/*tenant:3*/ SELECT * FROM sys_user WHERE `tenant_id`=? AND id=?",
-			wantArgs: []any{uint64(3), uint64(5)},
+			want:     "/*tenant:3*/ SELECT * FROM sys_user WHERE ( id=?) AND `tenant_id`=?",
+			wantArgs: []any{uint64(5), uint64(3)},
 		},
 		{
 			name: "无WHERE串尾追加",
@@ -67,53 +68,121 @@ func TestTenantInjectSelectAllowed(t *testing.T) {
 			name: "主表别名",
 			sql:  "SELECT u.id, u.username FROM sys_user AS u WHERE u.status=?",
 			args: []any{1}, tid: 4,
-			want:     "/*tenant:4*/ SELECT u.id, u.username FROM sys_user AS u WHERE `tenant_id`=? AND u.status=?",
-			wantArgs: []any{uint64(4), 1},
+			want:     "/*tenant:4*/ SELECT u.id, u.username FROM sys_user AS u WHERE ( u.status=?) AND `tenant_id`=?",
+			wantArgs: []any{1, uint64(4)},
 		},
 		{
 			name: "小写关键词与反引号表名",
 			sql:  "select `id` from `sys_config` where `config_key`=?",
 			args: []any{"sys.name"}, tid: 6,
-			want:     "/*tenant:6*/ select `id` from `sys_config` where `tenant_id`=? AND `config_key`=?",
-			wantArgs: []any{uint64(6), "sys.name"},
+			want:     "/*tenant:6*/ select `id` from `sys_config` where ( `config_key`=?) AND `tenant_id`=?",
+			wantArgs: []any{"sys.name", uint64(6)},
 		},
 		{
 			name: "库名前缀",
 			sql:  "SELECT id FROM `hinay_admin`.`sys_org` WHERE parent_id=?",
 			args: []any{0}, tid: 5,
-			want:     "/*tenant:5*/ SELECT id FROM `hinay_admin`.`sys_org` WHERE `tenant_id`=? AND parent_id=?",
-			wantArgs: []any{uint64(5), 0},
+			want:     "/*tenant:5*/ SELECT id FROM `hinay_admin`.`sys_org` WHERE ( parent_id=?) AND `tenant_id`=?",
+			wantArgs: []any{0, uint64(5)},
 		},
 		{
-			name: "JOIN C类表(已读关系)主表注入",
-			sql:  "SELECT m.* FROM biz_message m LEFT JOIN biz_message_read r ON (r.message_id = m.id AND r.user_id = 5) WHERE m.deleted_at IS NULL AND m.status=1",
-			tid:  8,
-			want: "/*tenant:8*/ SELECT m.* FROM biz_message m LEFT JOIN biz_message_read r ON (r.message_id = m.id AND r.user_id = 5) WHERE `tenant_id`=? AND m.deleted_at IS NULL AND m.status=1",
+			name:     "JOIN C类表(已读关系)主表注入",
+			sql:      "SELECT m.* FROM biz_message m LEFT JOIN biz_message_read r ON (r.message_id = m.id AND r.user_id = 5) WHERE m.deleted_at IS NULL AND m.status=1",
+			tid:      8,
+			want:     "/*tenant:8*/ SELECT m.* FROM biz_message m LEFT JOIN biz_message_read r ON (r.message_id = m.id AND r.user_id = 5) WHERE ( m.deleted_at IS NULL AND m.status=1) AND `tenant_id`=?",
+			wantArgs: []any{uint64(8)},
 		},
 		{
-			name: "WHERE内EXISTS非隔离表放行注入",
-			sql:  "SELECT m.* FROM biz_message m WHERE m.deleted_at IS NULL AND EXISTS (SELECT 1 FROM biz_message_target t WHERE t.message_id=m.id)",
-			tid:  8,
-			want: "/*tenant:8*/ SELECT m.* FROM biz_message m WHERE `tenant_id`=? AND m.deleted_at IS NULL AND EXISTS (SELECT 1 FROM biz_message_target t WHERE t.message_id=m.id)",
+			name:     "WHERE内EXISTS非隔离表放行注入",
+			sql:      "SELECT m.* FROM biz_message m WHERE m.deleted_at IS NULL AND EXISTS (SELECT 1 FROM biz_message_target t WHERE t.message_id=m.id)",
+			tid:      8,
+			want:     "/*tenant:8*/ SELECT m.* FROM biz_message m WHERE ( m.deleted_at IS NULL AND EXISTS (SELECT 1 FROM biz_message_target t WHERE t.message_id=m.id)) AND `tenant_id`=?",
+			wantArgs: []any{uint64(8)},
 		},
 		{
 			name: "OR条件与软删组合",
 			sql:  "SELECT * FROM sys_user WHERE deleted_at IS NULL AND (nickname LIKE ? OR username LIKE ?) ORDER BY id DESC",
 			args: []any{"%a%", "%b%"}, tid: 11,
-			want:     "/*tenant:11*/ SELECT * FROM sys_user WHERE `tenant_id`=? AND deleted_at IS NULL AND (nickname LIKE ? OR username LIKE ?) ORDER BY id DESC",
-			wantArgs: []any{uint64(11), "%a%", "%b%"},
+			want:     "/*tenant:11*/ SELECT * FROM sys_user WHERE ( deleted_at IS NULL AND (nickname LIKE ? OR username LIKE ?) ) AND `tenant_id`=? ORDER BY id DESC",
+			wantArgs: []any{"%a%", "%b%", uint64(11)},
 		},
 		{
-			name: "字面量内含WHERE字样不漂移",
-			sql:  "SELECT * FROM sys_config WHERE config_key='why WHERE matters' AND status=1",
-			tid:  2,
-			want: "/*tenant:2*/ SELECT * FROM sys_config WHERE `tenant_id`=? AND config_key='why WHERE matters' AND status=1",
+			name:     "字面量内含WHERE字样不漂移",
+			sql:      "SELECT * FROM sys_config WHERE config_key='why WHERE matters' AND status=1",
+			tid:      2,
+			want:     "/*tenant:2*/ SELECT * FROM sys_config WHERE ( config_key='why WHERE matters' AND status=1) AND `tenant_id`=?",
+			wantArgs: []any{uint64(2)},
 		},
 		{
-			name: "字面量内含隔离表名不算出现",
-			sql:  "SELECT * FROM sys_config WHERE config_key='sys_user demo' LIMIT 1",
-			tid:  2,
-			want: "/*tenant:2*/ SELECT * FROM sys_config WHERE `tenant_id`=? AND config_key='sys_user demo' LIMIT 1",
+			name:     "字面量内含隔离表名不算出现",
+			sql:      "SELECT * FROM sys_config WHERE config_key='sys_user demo' LIMIT 1",
+			tid:      2,
+			want:     "/*tenant:2*/ SELECT * FROM sys_config WHERE ( config_key='sys_user demo' ) AND `tenant_id`=? LIMIT 1",
+			wantArgs: []any{uint64(2)},
+		},
+		// ---- 顶层 JOIN 形态 (gdb 结构化 LeftJoin/InnerJoin 产物; 表名取两仓库白名单共有表, 形态与业务模块实测语句一致) ----
+		{
+			name:     "A-join-A gdb两参别名形态(隔离表互连)",
+			sql:      "SELECT `i`.`id`,`t`.`name` FROM `sys_user` AS `i` LEFT JOIN `sys_role` `t` ON (t.id=i.type_id) WHERE (`i`.`deleted_at` IS NULL) ORDER BY `i`.`id` DESC LIMIT 0,10",
+			tid:      3,
+			want:     "/*tenant:3*/ SELECT `i`.`id`,`t`.`name` FROM `sys_user` AS `i` LEFT JOIN `sys_role` `t` ON ((t.id=i.type_id) AND `t`.`tenant_id`=?) WHERE ( (`i`.`deleted_at` IS NULL) ) AND `i`.`tenant_id`=? ORDER BY `i`.`id` DESC LIMIT 0,10",
+			wantArgs: []any{uint64(3), uint64(3)},
+		},
+		{
+			name:     "A-join-A 裸别名小写形态",
+			sql:      "SELECT u.id FROM sys_user u LEFT JOIN sys_role r ON (r.id=u.org_id) WHERE u.id=1",
+			tid:      3,
+			want:     "/*tenant:3*/ SELECT u.id FROM sys_user u LEFT JOIN sys_role r ON ((r.id=u.org_id) AND `r`.`tenant_id`=?) WHERE ( u.id=1) AND `u`.`tenant_id`=?",
+			wantArgs: []any{uint64(3), uint64(3)},
+		},
+		{
+			name:     "A类表自连接",
+			sql:      "SELECT a.id FROM sys_user a JOIN sys_user b ON (a.id=b.id) WHERE a.id=1",
+			tid:      3,
+			want:     "/*tenant:3*/ SELECT a.id FROM sys_user a JOIN sys_user b ON ((a.id=b.id) AND `b`.`tenant_id`=?) WHERE ( a.id=1) AND `a`.`tenant_id`=?",
+			wantArgs: []any{uint64(3), uint64(3)},
+		},
+		{
+			name:     "INNER JOIN ON 带额外AND条件",
+			sql:      "select ut.id, i.name from `wf_task` ut inner join `sys_user` i on (i.id=ut.item_id and i.consumable=1) where ut.qty>0",
+			tid:      9,
+			want:     "/*tenant:9*/ select ut.id, i.name from `wf_task` ut inner join `sys_user` i on ((i.id=ut.item_id and i.consumable=1) AND `i`.`tenant_id`=?) where ( ut.qty>0) AND `ut`.`tenant_id`=?",
+			wantArgs: []any{uint64(9), uint64(9)},
+		},
+		{
+			name: "ON 内占位符参数按位插入",
+			sql:  "SELECT i.id FROM `sys_user` i INNER JOIN `sys_post` sp ON (sp.item_id=i.id AND sp.is_default=?) WHERE i.status=?",
+			args: []any{1, 0}, tid: 5,
+			want:     "/*tenant:5*/ SELECT i.id FROM `sys_user` i INNER JOIN `sys_post` sp ON ((sp.item_id=i.id AND sp.is_default=?) AND `sp`.`tenant_id`=?) WHERE ( i.status=?) AND `i`.`tenant_id`=?",
+			wantArgs: []any{1, uint64(5), 0, uint64(5)},
+		},
+		{
+			name: "多级JOIN链带WHERE占位符(库存导出形态)",
+			sql:  "SELECT k.*, i.code, l.name FROM `sys_org` AS `k` LEFT JOIN `sys_user` `i` ON (i.id=k.item_id) LEFT JOIN `sys_file` `l` ON (l.id=k.location_id) WHERE (i.code LIKE ? OR l.name LIKE ?) AND k.location_id IN (?,?,?) ORDER BY k.id DESC LIMIT 10,20",
+			args: []any{"%a%", "%b%", 11, 12, 13}, tid: 8,
+			want:     "/*tenant:8*/ SELECT k.*, i.code, l.name FROM `sys_org` AS `k` LEFT JOIN `sys_user` `i` ON ((i.id=k.item_id) AND `i`.`tenant_id`=?) LEFT JOIN `sys_file` `l` ON ((l.id=k.location_id) AND `l`.`tenant_id`=?) WHERE ( (i.code LIKE ? OR l.name LIKE ?) AND k.location_id IN (?,?,?) ) AND `k`.`tenant_id`=? ORDER BY k.id DESC LIMIT 10,20",
+			wantArgs: []any{uint64(8), uint64(8), "%a%", "%b%", 11, 12, 13, uint64(8)},
+		},
+		{
+			name:     "无WHERE尾部GROUP BY前注入",
+			sql:      "SELECT l.code AS id, l.name, COUNT(*) AS n FROM `sys_user` AS `r` LEFT JOIN `sys_file` `l` ON (l.id=r.location_id) GROUP BY l.code, l.name ORDER BY n DESC",
+			tid:      4,
+			want:     "/*tenant:4*/ SELECT l.code AS id, l.name, COUNT(*) AS n FROM `sys_user` AS `r` LEFT JOIN `sys_file` `l` ON ((l.id=r.location_id) AND `l`.`tenant_id`=?) WHERE `r`.`tenant_id`=? GROUP BY l.code, l.name ORDER BY n DESC",
+			wantArgs: []any{uint64(4), uint64(4)},
+		},
+		{
+			name:     "主表无别名时以表名限定注入",
+			sql:      "SELECT location_id, i.code FROM `sys_org` LEFT JOIN `sys_user` `i` ON (i.id=item_id) WHERE qty>0 AND i.consumable=1",
+			tid:      6,
+			want:     "/*tenant:6*/ SELECT location_id, i.code FROM `sys_org` LEFT JOIN `sys_user` `i` ON ((i.id=item_id) AND `i`.`tenant_id`=?) WHERE ( qty>0 AND i.consumable=1) AND `sys_org`.`tenant_id`=?",
+			wantArgs: []any{uint64(6), uint64(6)},
+		},
+		{
+			name:     "gdb分页COUNT包装递归改写内层",
+			sql:      "SELECT COUNT(1) FROM (SELECT l.code, COUNT(*) AS n FROM `sys_user` AS `r` LEFT JOIN `sys_file` `l` ON (l.id=r.location_id) WHERE r.status=1 GROUP BY l.code) count_alias",
+			tid:      8,
+			want:     "/*tenant:8*/ SELECT COUNT(1) FROM (/*tenant:8*/ SELECT l.code, COUNT(*) AS n FROM `sys_user` AS `r` LEFT JOIN `sys_file` `l` ON ((l.id=r.location_id) AND `l`.`tenant_id`=?) WHERE ( r.status=1 ) AND `r`.`tenant_id`=? GROUP BY l.code) count_alias",
+			wantArgs: []any{uint64(8), uint64(8)},
 		},
 	}
 	for _, c := range cases {
@@ -128,7 +197,14 @@ func TestTenantInjectSelectAllowed(t *testing.T) {
 			if got != c.want {
 				t.Fatalf("sql mismatch:\n got:  %s\n want: %s", got, c.want)
 			}
-			// 租户值插入 args 头部: gotArgs[0] 恒为 tid, 其余与原 args 一致
+			if c.wantArgs != nil {
+				// JOIN 形态: 注入值按占位符出现位置插入 args (含 ON 内前置)
+				if !reflect.DeepEqual(gotArgs, c.wantArgs) {
+					t.Fatalf("args mismatch: got %v want %v", gotArgs, c.wantArgs)
+				}
+				return
+			}
+			// 单表形态: 租户值插入 args 头部, gotArgs[0] 恒为 tid, 其余与原 args 一致
 			if len(gotArgs) != len(c.args)+1 || gotArgs[0] != c.tid {
 				t.Fatalf("args mismatch: got %v, want [%v]+%v", gotArgs, c.tid, c.args)
 			}
@@ -181,13 +257,20 @@ func TestTenantInjectSelectFailClose(t *testing.T) {
 		{"IN子查询引用隔离表", "SELECT * FROM sys_user WHERE org_id IN (SELECT id FROM sys_org WHERE status=1)", "sys_org"},
 		{"EXISTS子查询引用隔离表", "SELECT * FROM sys_user u WHERE EXISTS (SELECT 1 FROM sys_role r WHERE r.id=u.id)", "sys_role"},
 		{"派生表", "SELECT t.* FROM (SELECT * FROM sys_job WHERE status=1) t", "派生表"},
-		{"A-join-A", "SELECT u.id FROM sys_user u LEFT JOIN sys_role r ON r.id=u.org_id WHERE u.id=1", "sys_role"},
 		{"FROM逗号多表", "SELECT * FROM sys_user u, sys_org o WHERE u.org_id=o.id", "多表"},
 		{"主表非隔离表但引用隔离表", "SELECT u.id FROM casbin_rule c LEFT JOIN sys_user u ON u.id=c.v0", "主表"},
 		{"字段区占位符", "SELECT ? AS x FROM sys_config", "占位符"},
 		{"字段区标量子查询", "SELECT (SELECT COUNT(*) FROM sys_user) AS c FROM sys_org", "sys_user"},
 		{"引号未闭合", "SELECT * FROM sys_user WHERE name='abc", "未闭合"},
-		{"A类表自连接", "SELECT a.id FROM sys_user a JOIN sys_user b ON a.id=b.id", "sys_user"},
+		{"占位符与参数数量不一致", "SELECT * FROM sys_user WHERE id=? AND status=?", "数量不一致"},
+		// ---- JOIN 形态 fail-close (无安全注入点) ----
+		{"JOIN ON无括号手写形态", "SELECT u.id FROM sys_user u LEFT JOIN sys_role r ON r.id=u.org_id", "条件括号"},
+		{"RIGHT JOIN隔离表", "SELECT k.* FROM `sys_org` k RIGHT JOIN `sys_user` i ON (i.id=k.item_id)", "RIGHT"},
+		{"JOIN隔离表缺ON条件", "SELECT k.* FROM `sys_org` k JOIN `sys_role`", "ON"},
+		{"JOIN隔离表使用USING", "SELECT k.* FROM `sys_org` k LEFT JOIN `sys_role` t USING (id)", "USING"},
+		{"JOIN隔离表缺少别名", "SELECT k.* FROM `sys_org` k LEFT JOIN `sys_role` ON (sys_role.id=k.item_id)", "别名"},
+		{"JOIN子查询引用隔离表", "SELECT u.id FROM sys_user u LEFT JOIN (SELECT id FROM sys_org) o ON o.id=u.org_id", "子查询"},
+		{"ON条件引用隔离表裸表名", "SELECT k.* FROM `sys_org` k LEFT JOIN `sys_role` t ON (t.id=sys_user.type_id)", "sys_user"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

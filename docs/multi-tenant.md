@@ -76,10 +76,16 @@ SELECT username FROM sys_user WHERE deleted_at IS NULL AND tenant_id<>1
 
 ### 3.3 SQL 形态注意（隔离表）
 
-- 复杂形态（UNION / 子查询引用隔离表 / 派生表 / WITH / 自连接 / 语句含分号）会被
-  注入器 **fail-close 拒绝**——这不是 bug，是保护；改走 dao 结构化方法或拆分语句；
-- JOIN 只允许主表为隔离表 + 对端为非隔离表（如 `biz_message` LEFT JOIN `biz_message_read`）；
-  A 类表互 JOIN 一律拒绝（列名歧义，请显式拆分）；
+- 复杂形态（UNION / 子查询引用隔离表 / 派生表（gdb 分页 COUNT 包装除外，注入器递归改写内层）/
+  WITH / 语句含分号）会被注入器 **fail-close 拒绝**——这不是 bug，是保护；
+  改走 dao 结构化方法或拆分语句；
+- **顶层 JOIN 受支持**（2026-11 扩展）：主表为隔离表，对端为隔离表
+  或非隔离表均可；隔离表对端必须是 LEFT/INNER JOIN 且带别名与 `ON (...)` 括号条件
+  （gdb 结构化 `LeftJoin(dao.X.Table()+" a", "a.id=b.col")` 的固定形态），注入器改写为
+  `ON ((原条件) AND \`别名\`.\`tenant_id\`=?)` —— 整体加括号防止原条件含 OR 时漏隔离；
+  RIGHT/CROSS JOIN、无 ON、USING、无别名、子查询 JOIN 引用隔离表一律 fail-close；
+  主表条件注入为 `WHERE (<原条件整体>) AND tenant_id=?`（租户条件在括号外，
+  防 `WhereLike/WhereOrLike` 混用链的顶层 OR 分支漏过滤）；
 - 慢查询归因：注入器在语句头部追加 `/*tenant:N*/` 注释，Slow Query Log 可按租户定位。
 
 ### 3.4 配置读取（sys_config）
