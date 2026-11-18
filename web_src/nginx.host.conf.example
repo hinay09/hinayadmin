@@ -1,0 +1,85 @@
+# ============================================================================
+# 真机 (宿主机) nginx 配置模板 —— 公网入口层, 部署在 docker 前置的反向代理
+#
+# 用法: 拷贝到真机 /etc/nginx/conf.d/hinay.conf (Debian 系放 sites-available
+#       + 软链到 sites-enabled), 修改 server_name 与 upstream 端口后
+#       nginx -t && nginx -s reload 生效。
+#
+# 与容器内 nginx (web_src/nginx.conf) 的分工:
+#   - 真机层 = 信任链第一环, 此处 $remote_addr 就是真实访客 IP:
+#     X-Forwarded-For 必须【覆盖式】写 $remote_addr, 丢弃客户端伪造的 XFF。
+#     若用追加式 ($proxy_add_x_forwarded_for), 客户端自带的伪造头
+#     (如 X-Forwarded-For: 127.0.0.1) 会原样传给后端 —— GoFrame 取 XFF 首元素,
+#     导致日志 IP 失真, 并可轮换伪造值绕过按 IP 的限流与登录失败锁定。
+#   - 容器层 = realip 模块还原真实 IP + 覆盖式 XFF 兜底 (双保险, 两层互不依赖)。
+#   - 安全响应头 (CSP/XFO 等) 由容器层统一注入, 真机层不要重复添加 (会出双份头)。
+# ============================================================================
+
+# 反代目标: web 容器的发布口 (docker-compose.yml 里 web.ports, 默认 80:80)。
+# 真机 nginx 自己占用宿主机 80 时, 把 compose 改成 127.0.0.1:8080:80 并同步这里;
+# 或让真机 nginx 加入 docker 网络后直接写容器名 (server 块需加 resolver 127.0.0.11)。
+upstream hinay_web {
+    server 127.0.0.1:80;
+}
+
+server {
+    listen 80;
+    server_name your.domain.com;          # 改成实际域名
+
+    # 与容器层一致的请求体上限: 上传经 /api 中转, 默认 1m 会 413
+    client_max_body_size 20m;
+
+    # 消息 SSE 事件流: 长连接, 两层都要关代理缓冲并放宽读超时,
+    # 真机层漏配会在默认 60s 读超时处断流
+    location /api/v1/message/events {
+        proxy_pass http://hinay_web;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;          # 覆盖式
+        proxy_set_header X-Forwarded-For $remote_addr;    # 覆盖式 (关键)
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        chunked_transfer_encoding on;
+    }
+
+    # 其余请求全部交给 web 容器, 容器内 nginx 再分流 (/api 与 /upload -> Go, 其余 -> Nuxt)
+    location / {
+        proxy_pass http://hinay_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;          # 覆盖式
+        proxy_set_header X-Forwarded-For $remote_addr;    # 覆盖式 (关键)
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 接口文档 (可选): 仅后端开启 openapi/swagger 时需要反代同路径;
+    # docker 部署的 config.docker.yaml 默认已关闭, 公网环境建议保持关闭
+    #location ~ ^/(swagger|api\.json)$ {
+    #    proxy_pass http://hinay_web;
+    #    proxy_set_header Host $host;
+    #    proxy_set_header X-Real-IP $remote_addr;
+    #    proxy_set_header X-Forwarded-For $remote_addr;
+    #    proxy_set_header X-Forwarded-Proto $scheme;
+    #}
+
+    # HTTPS: TLS 终止在本层时启用 443 server 块 (容器层与后端保持 HTTP, 不感知证书);
+    # location 与 proxy_set_header 组需与上面相同, X-Forwarded-Proto 会自动带 https
+    # 一路透传 (容器内 nginx 为透传式); 另追加 HSTS 头, 80 端口整站 301 到 https:
+    #
+    # server {
+    #     listen 443 ssl http2;
+    #     server_name your.domain.com;
+    #     ssl_certificate     /etc/nginx/ssl/your.domain.com.pem;
+    #     ssl_certificate_key /etc/nginx/ssl/your.domain.com.key;
+    #     ssl_protocols TLSv1.2 TLSv1.3;
+    #     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    #     # ... 同上 location ...
+    # }
+    # server {
+    #     listen 80;
+    #     server_name your.domain.com;
+    #     return 301 https://$host$request_uri;
+    # }
+}

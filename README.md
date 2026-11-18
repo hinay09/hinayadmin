@@ -337,6 +337,18 @@ COMPOSE_PROFILES=bundled docker compose up -d --build # 内置模式 (含 MariaD
 > (个人中心改密与用户管理重置密码均返回 403), 同时屏蔽登录后的强制改密引导,
 > 内置 `admin` 账号可一直以默认密码登录演示。
 
+### 公网部署: 真机前置 nginx (可选)
+
+生产建议在真机上前置一层 nginx 作为公网入口 (TLS 终止 / 多站点统一管理), 容器内 nginx 保持不动,
+两层分工见 `web_src/nginx.host.conf.example` 头部注释 (模板拷贝到 `/etc/nginx/conf.d/` 改域名后 reload 即用):
+
+- **真机层** (信任链第一环): `X-Forwarded-For` 必须**覆盖式**写 `$remote_addr`, 丢弃客户端伪造的 XFF;
+- **容器层** (`web_src/nginx.conf`): realip 模块从 XFF 还原真实客户端 IP + 覆盖式 XFF 兜底。
+
+追加式 (`$proxy_add_x_forwarded_for`) 会把客户端伪造的 XFF (如 `X-Forwarded-For: 127.0.0.1`) 透传给后端 ——
+GoFrame 取 XFF 首元素, 日志 IP 失真且可轮换伪造值绕过按 IP 的限流与登录失败锁定。
+两层都漏配也不至失真 (容器层 realip 兜底), 但建议两层均保持覆盖式。
+
 ### 4. 常用命令
 
 ```bash
@@ -370,7 +382,8 @@ docker compose up -d server
 | `server/Dockerfile` | Go 后端多阶段构建 |
 | `server/manifest/config/config.docker.yaml` | Docker 环境专用配置 (连接参数为占位符, 由 entrypoint.sh 环境变量替换注入) |
 | `web_src/Dockerfile` | Nuxt 前端多阶段构建 (Node + Nginx) |
-| `web_src/nginx.conf` | Nginx 配置, `/api` 和 `/upload` 转发到后端 |
+| `web_src/nginx.conf` | 容器内 Nginx 配置: `/api`、`/upload` 转发后端; realip 还原真实客户端 IP, XFF 覆盖式写入防伪造 |
+| `web_src/nginx.host.conf.example` | 真机 (宿主机) 前置 Nginx 模板: 覆盖式 XFF / SSE 长连接 / 可选 swagger 反代 / HTTPS 模板 |
 
 > 生产部署时, 请务必修改 `.env` 中的 `MYSQL_ROOT_PASSWORD` 和 `JWT_SECRET`。
 
