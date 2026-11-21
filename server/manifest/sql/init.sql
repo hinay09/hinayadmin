@@ -1335,9 +1335,9 @@ CREATE TABLE IF NOT EXISTS `ai_chat_message` (
   KEY `idx_conversation` (`conversation_id`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='AI会话消息';
 
--- 菜单 (9100 号段: AI 助手)
+-- 菜单 (9100 号段: AI 聊天助手)
 INSERT IGNORE INTO `sys_menu` (`id`,`parent_id`,`name`,`type`,`path`,`component`,`icon`,`permission`,`sort`,`visible`,`status`) VALUES
-  (9100, 0,    'AI 助手', 1, '/ai',       'Layout',            'MagicStick',   'ai',            40, 1, 1),
+  (9100, 0,    'AI聊天助手', 1, '/ai',       'Layout',            'MagicStick',   'ai',            40, 1, 1),
   (9110, 9100, '智能对话', 2, '/ai/chat', 'ai/chat/index',     'ChatDotRound', 'ai:chat:list',  41, 1, 1);
 
 -- API 资源 (原 p003/p005/p006)
