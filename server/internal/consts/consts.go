@@ -89,6 +89,10 @@ const (
 	PwdResetDailyPrefix = "hinay:pwd:reset:daily:"
 	// PwdResetDailyMax 单账号每日发码上限。
 	PwdResetDailyMax = 10
+	// PwdResetSendIpLimitPrefix 发码接口单 IP 限流计数键前缀 (按账号频控换账号即可绕过, IP 维度兜底)。
+	PwdResetSendIpLimitPrefix = "hinay:pwd:reset:send:limit:"
+	// PwdResetSendIpMaxPerMin 发码接口单 IP 每分钟最大请求次数(短信成本/轰炸防护)。
+	PwdResetSendIpMaxPerMin = 5
 )
 
 // 图形验证码 (登录/注册公开入口的人机挑战, 开源库 base64Captcha) 配置。
@@ -210,5 +214,5 @@ const (
 // 公开租户信息接口 (/auth/tenant/info) 单 IP 每分钟限流 (防租户码枚举, 复用 Redis 计数模式)。
 const (
 	TenantInfoLimitPrefix = "hinay:tenant:info:limit:"
-	TenantInfoMaxPerMin   = 30
+	TenantInfoMaxPerMin   = 10
 )

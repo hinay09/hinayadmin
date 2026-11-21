@@ -242,17 +242,22 @@ type UploadAvatarRes struct {
 }
 
 // ForgotSendCodeReq 找回密码第一步: 发送短信验证码 (公开接口)。
+// 验证码: sys.captcha_enable 开启时 captchaId/captchaCode 必填且须正确 (与登录/注册同款,
+// 置于租户解析之前, 防止脚本化短信轰炸与租户码探测; 答案一次性消费, 失败须重新取图)。
 type ForgotSendCodeReq struct {
 	g.Meta `path:"/auth/password/forgot/send-code" tags:"Auth" method:"post" summary:"找回密码-发送短信验证码"`
 	// Account 登录账号 (用户名或手机号, 与登录同口径: 用户名优先, 手机号一号多户会被拒)。
-	Account    string `json:"account" v:"required#请输入账号" dc:"用户名或手机号"`
-	TenantCode string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
+	Account     string `json:"account" v:"required#请输入账号" dc:"用户名或手机号"`
+	CaptchaId   string `json:"captchaId"   dc:"验证码标识(开启 sys.captcha_enable 时必填)"`
+	CaptchaCode string `json:"captchaCode" dc:"验证码答案(开启 sys.captcha_enable 时必填)"`
+	TenantCode  string `json:"tenantCode" dc:"租户标识(可选, 多租户开启时生效)"`
 }
 
 // ForgotSendCodeRes 发码响应。
-// MaskedPhone 为空表示账号不存在或未绑定手机号 (防枚举: 仍返回成功, 不发码)。
+// 防枚举: MaskedPhone 恒为空串 —— 不区分"账号不存在/未绑定手机/正常发送",
+// 前端统一提示"若账号存在且已绑定手机号, 验证码已发送"。
 type ForgotSendCodeRes struct {
-	MaskedPhone string `json:"maskedPhone" dc:"接收验证码的手机号(打码), 空串=未发送"`
+	MaskedPhone string `json:"maskedPhone" dc:"恒为空串(防枚举, 不回显手机号信息)"`
 }
 
 // ForgotResetReq 找回密码第二步: 验证码 + 新密码重置 (公开接口)。

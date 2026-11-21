@@ -5,8 +5,10 @@
 //
 // 安全设计:
 //   - 防爆破: 验证码 6 位/5 分钟/单次消费 (GETDEL), 单账号失败 5 次锁定 15 分钟;
-//   - 防刷量: 发码间隔 60s + 单账号每日 10 条;
-//   - 防枚举: 账号不存在/未绑定手机号时返回通用成功 (不发码), 与登录页同口径;
+//   - 防刷量: 单 IP 每分钟封顶 + 单账号发码间隔 60s + 单账号每日 10 条;
+//   - 防脚本: 发码入口校验图形验证码 (sys.captcha_enable 开启时, 与登录/注册同款);
+//   - 防枚举: 账号不存在/未绑定手机号时返回通用成功 (不发码); 响应恒不回显手机号
+//     (正常发送与异常账号的响应完全一致);
 //   - 新密码走登录同款一次性 RSA 公钥加密 + 密码策略校验; demo 模式下重置被拦截 (428)。
 package auth
 
@@ -34,10 +36,27 @@ import (
 )
 
 // ForgotSendCode 发送找回密码短信验证码。
-// 账号不存在/未绑定手机号时静默返回成功 (防枚举), MaskedPhone 为空。
+// 防护分层: 单 IP 限流 (兜底, 防换账号轰炸) → 图形验证码 (与登录/注册同款, 挡脚本)
+// → 租户解析 → 单账号频控; 响应恒回空 maskedPhone, 不区分账号状态 (防枚举)。
 func (s *sAuth) ForgotSendCode(ctx context.Context, req *v1.ForgotSendCodeReq) (res *v1.ForgotSendCodeRes, err error) {
 	account := strings.TrimSpace(req.Account)
 	ip, ua := clientIp(ctx), requestUserAgent(ctx)
+
+	// 单 IP 限流: 按账号的间隔/日限换账号即可绕过, IP 维度封顶短信成本与轰炸面
+	limitKey := consts.PwdResetSendIpLimitPrefix + ip
+	if n, lerr := g.Redis().GroupString().Incr(ctx, limitKey); lerr == nil {
+		if n == 1 {
+			_, _ = g.Redis().GroupGeneric().Expire(ctx, limitKey, 60)
+		} else if n > consts.PwdResetSendIpMaxPerMin {
+			return nil, xerror.New(xerror.CodeTooManyReq, "发送过于频繁, 请稍后再试")
+		}
+	}
+
+	// 图形验证码 (sys.captcha_enable 开启时): 置于租户解析之前 —— 与登录同款分层,
+	// 机器人请求在昂贵/可探测操作前即被拦下 (验证码答案一次性消费)
+	if captchaEnabled(ctx) && !verifyCaptcha(req.CaptchaId, req.CaptchaCode) {
+		return nil, xerror.New(xerror.CodeCaptchaInvalid)
+	}
 
 	// 租户识别 (与登录同口径): 请求体 > X-Tenant-Code 头 > 平台租户
 	tenant, terr := ResolveTenantForLogin(ctx, req.TenantCode)
@@ -57,7 +76,7 @@ func (s *sAuth) ForgotSendCode(ctx context.Context, req *v1.ForgotSendCodeReq) (
 	}
 	if u == nil || !mobilePattern.MatchString(u.Phone) {
 		// 防枚举: 账号不存在 / 未绑定手机号 → 通用成功, 不发码
-		return &v1.ForgotSendCodeRes{MaskedPhone: ""}, nil
+		return &v1.ForgotSendCodeRes{}, nil
 	}
 
 	// 频控: 间隔锁 (SET NX EX 原子) + 当日上限
@@ -90,7 +109,8 @@ func (s *sAuth) ForgotSendCode(ctx context.Context, req *v1.ForgotSendCodeReq) (
 		Status: consts.LoginLogStatusSuccess, Message: "找回密码验证码已发送",
 		Ip: ip, UserAgent: ua,
 	})
-	return &v1.ForgotSendCodeRes{MaskedPhone: maskPhone(u.Phone)}, nil
+	// 防枚举: 不回显打码手机号 —— 正常发送与"账号不存在/未绑定手机"的响应完全一致
+	return &v1.ForgotSendCodeRes{}, nil
 }
 
 // ForgotReset 校验验证码并重置密码。
@@ -171,14 +191,6 @@ func (s *sAuth) ForgotReset(ctx context.Context, req *v1.ForgotResetReq) (res *v
 		Ip: ip, UserAgent: ua,
 	})
 	return &v1.ForgotResetRes{}, nil
-}
-
-// maskPhone 手机号打码: 138****5678。
-func maskPhone(phone string) string {
-	if len(phone) != 11 {
-		return strings.Repeat("*", len(phone))
-	}
-	return phone[:3] + "****" + phone[7:]
 }
 
 // randomCode6 6 位数字验证码 (密码学随机, 首位可为 0)。

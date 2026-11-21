@@ -142,11 +142,44 @@ const forgotVisible = ref(false)
 const forgotLoading = ref(false)
 const forgotSent = ref(false)
 const forgotCountdown = ref(0)
-const maskedPhone = ref('')
 const forgotRef = ref<FormInstance>()
-const forgotForm = reactive({ account: '', code: '', password: '' })
+const forgotForm = reactive({ account: '', captchaCode: '', code: '', password: '' })
+// 找回密码弹窗独立取图 (与登录表单的验证码同一开关 sys.captcha_enable,
+// 但答案均一次性消费, 登录/发码各用各的)
+const forgotCaptchaId = ref('')
+const forgotCaptchaImage = ref('')
+
+/** 拉取找回密码弹窗的验证码图 (不影响登录表单已加载的那张) */
+async function loadForgotCaptcha() {
+  forgotCaptchaId.value = ''
+  forgotCaptchaImage.value = ''
+  forgotForm.captchaCode = ''
+  if (!captchaEnabled.value) return
+  try {
+    const res = await api.captcha()
+    forgotCaptchaId.value = res.captchaId || ''
+    forgotCaptchaImage.value = res.image || ''
+  }
+  catch {
+    // 静默失败: 提交侧后端仍会强校验, 弹窗内保留手动刷新按钮
+  }
+}
+
 const forgotRules = computed<FormRules>(() => ({
   account: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  ...(captchaEnabled.value
+    ? {
+        captchaCode: [
+          {
+            validator: (_rule: any, value: string, callback: (e?: Error) => void) => {
+              if (captchaEnabled.value && !value) callback(new Error('请输入验证码'))
+              else callback()
+            },
+            trigger: 'blur',
+          },
+        ],
+      }
+    : {}),
   ...(forgotSent.value
     ? {
         code: [
@@ -168,8 +201,8 @@ function openForgot() {
   forgotForm.code = ''
   forgotForm.password = ''
   forgotSent.value = false
-  maskedPhone.value = ''
   forgotVisible.value = true
+  loadForgotCaptcha()
 }
 
 function closeForgot() {
@@ -186,6 +219,8 @@ function backForgot() {
   forgotSent.value = false
   forgotForm.code = ''
   forgotForm.password = ''
+  // 上一次发码已消费掉弹窗验证码, 重发前换新图
+  loadForgotCaptcha()
 }
 
 function startCountdown() {
@@ -202,22 +237,29 @@ function startCountdown() {
 
 async function handleForgotSend() {
   if (!forgotRef.value) return
-  const valid = await forgotRef.value.validateField('account').catch(() => false)
+  const valid = await forgotRef.value
+    .validateField(captchaEnabled.value ? ['account', 'captchaCode'] : ['account'])
+    .catch(() => false)
   if (!valid) return
   forgotLoading.value = true
   try {
     const tenantCode = multiTenant.value ? tenantForm.code.trim() : undefined
-    const res = await api.forgotSendCode(forgotForm.account.trim(), tenantCode)
-    if (res.maskedPhone) {
-      maskedPhone.value = res.maskedPhone
-      ElMessage.success(`验证码已发送至 ${res.maskedPhone}`)
-    }
-    else {
-      // 防枚举口径: 后端对不存在的账号也返回成功; 前端统一提示
-      ElMessage.success('若该账号存在且已绑定手机号, 验证码已发送')
-    }
+    await api.forgotSendCode(
+      forgotForm.account.trim(),
+      tenantCode,
+      forgotCaptchaId.value,
+      forgotForm.captchaCode.trim(),
+    )
+    // 防枚举口径: 后端不区分账号是否存在/是否绑定手机, 也不回显手机号, 前端统一提示
+    ElMessage.success('若该账号存在且已绑定手机号, 验证码已发送')
     forgotSent.value = true
     startCountdown()
+    // 本次发码已消费验证码, 预取新图供"重新发送"
+    loadForgotCaptcha()
+  }
+  catch {
+    // 失败 (含验证码错误) 后验证码已消费, 换新图重试
+    loadForgotCaptcha()
   }
   finally {
     forgotLoading.value = false
@@ -602,11 +644,11 @@ function backToPassword() {
       @closed="closeForgot"
     >
       <el-alert
-        v-if="forgotSent && maskedPhone"
+        v-if="forgotSent"
         type="info"
         :closable="false"
         show-icon
-        :title="`验证码已发送至 ${maskedPhone}`"
+        title="若该账号存在且已绑定手机号, 验证码已发送, 请查收短信"
         style="margin-bottom:14px"
       />
       <el-form
@@ -624,6 +666,33 @@ function backToPassword() {
             size="large"
             @keyup.enter="forgotSent ? handleForgotReset() : handleForgotSend()"
           />
+        </el-form-item>
+        <!-- 图形验证码 (sys.captcha_enable 开启时展示): 首次发码与"重新发送"都需要, 恒展示 -->
+        <el-form-item v-if="captchaEnabled" prop="captchaCode">
+          <div class="captcha-row">
+            <el-input
+              v-model="forgotForm.captchaCode"
+              size="large"
+              maxlength="8"
+              placeholder="计算结果"
+              :prefix-icon="Histogram"
+            />
+            <img
+              v-if="forgotCaptchaImage"
+              :src="forgotCaptchaImage"
+              class="captcha-img"
+              alt="验证码, 点击刷新"
+              title="点击刷新"
+              @click="loadForgotCaptcha"
+            >
+            <el-button
+              v-else
+              size="large"
+              class="captcha-refresh"
+              :icon="RefreshRight"
+              @click="loadForgotCaptcha"
+            />
+          </div>
         </el-form-item>
         <template v-if="forgotSent">
           <el-form-item prop="code">

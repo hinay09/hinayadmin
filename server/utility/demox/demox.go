@@ -46,9 +46,10 @@ func Enabled(ctx context.Context) bool {
 }
 
 // Guard 演示模式下禁止密码修改类操作, 修改/重置密码入口统一调用。
+// 报错文案不携带配置键名/取值 —— 该错误可被未认证调用方触达, 属对外信息面。
 func Guard(ctx context.Context) error {
 	if Enabled(ctx) {
-		return xerror.New(xerror.CodeForbidden, "演示环境禁止修改密码 (配置 demo.enable=false 后开放)")
+		return xerror.New(xerror.CodeForbidden, "演示环境禁止修改密码, 请联系管理员")
 	}
 	return nil
 }
